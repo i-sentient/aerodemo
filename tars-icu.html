@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>TARS · ICU Ward · Live</title>
+<style>
+  :root{
+    --teal:#5dcaa5;
+    --amber:#f5a623;
+    --red:#e24b4a;
+    --ink:#e9eef1;
+    --ink-dim:rgba(233,238,241,.55);
+    --ink-faint:rgba(233,238,241,.35);
+    --card-bg:rgba(11,13,19,.55);
+    --card-bd:rgba(255,255,255,.09);
+    --card-hi:rgba(255,255,255,.14);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#08080c}
+  body{
+    font-family:"Segoe UI",Inter,-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    user-select:none;
+  }
+  #c{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0;touch-action:none}
+
+  /* soft cinematic vignette + top scrim for legibility */
+  .vignette{
+    position:fixed;inset:0;z-index:5;pointer-events:none;
+    background:
+      radial-gradient(ellipse 120% 90% at 50% 42%, transparent 50%, rgba(0,0,0,.55) 100%),
+      linear-gradient(to bottom, rgba(0,0,0,.35) 0%, transparent 18%, transparent 80%, rgba(0,0,0,.4) 100%);
+  }
+
+  /* ---------- overlay UI ---------- */
+  #ui{position:fixed;inset:0;z-index:10;pointer-events:none}
+
+  .card{
+    position:absolute;
+    background:var(--card-bg);
+    border:1px solid var(--card-bd);
+    border-top-color:var(--card-hi);
+    border-radius:16px;
+    backdrop-filter:blur(16px) saturate(125%);
+    -webkit-backdrop-filter:blur(16px) saturate(125%);
+    box-shadow:0 12px 48px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);
+    will-change:opacity,transform;
+  }
+
+  .lbl{font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim);font-weight:600}
+
+  /* header (top-left) */
+  .hdr{top:24px;left:24px;display:flex;align-items:center;gap:13px;padding:13px 18px 13px 15px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 0 rgba(93,202,165,.6);animation:pulse 2.1s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(93,202,165,.55)}70%{box-shadow:0 0 0 9px rgba(93,202,165,0)}100%{box-shadow:0 0 0 0 rgba(93,202,165,0)}}
+  .hdr-title{font-size:15px;font-weight:700;letter-spacing:.13em}
+  .hdr-title .sep{color:var(--ink-faint);margin:0 7px;font-weight:400}
+  .hdr-title .live{color:var(--teal)}
+  .hdr-sub{font-size:10.5px;letter-spacing:.07em;color:var(--ink-dim);margin-top:3px}
+
+  /* vitals card (top-right) */
+  .vitals{top:24px;right:24px;width:268px;padding:16px 18px 14px;transform:translate(0,var(--y,0))}
+  .v-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .v-bed{font-size:12px;font-weight:700;letter-spacing:.16em}
+  .pill{font-size:9.5px;font-weight:700;letter-spacing:.13em;padding:4px 9px;border-radius:20px;border:1px solid var(--teal);color:var(--teal);background:rgba(93,202,165,.12)}
+  .news{display:flex;align-items:flex-end;gap:12px;padding:6px 0 14px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:13px}
+  .news-num{font-size:58px;line-height:.85;font-weight:700;color:var(--teal);font-variant-numeric:tabular-nums;letter-spacing:-.02em;transition:color .3s}
+  .news-meta{padding-bottom:5px}
+  .news-meta .t{font-size:9px;letter-spacing:.12em;color:var(--ink-faint);margin-top:3px;text-transform:uppercase}
+  .vgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px 16px}
+  .vitem .vv{font-size:23px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em;display:flex;align-items:baseline;gap:4px;margin-top:2px}
+  .vitem .vv i{font-size:11px;font-style:normal;color:var(--ink-faint);font-weight:500;letter-spacing:.04em}
+  .vitem .vv .ar{font-size:13px;margin-left:1px}
+  .up{color:var(--amber)}.down{color:var(--amber)}
+
+  /* deterioration strip (bottom center) */
+  .deter{bottom:30px;left:50%;transform:translate(-50%,var(--y,0));display:flex;align-items:center;gap:11px;padding:12px 20px;border-color:rgba(226,75,74,.4);border-top-color:rgba(226,75,74,.5)}
+  .deter .ic{color:var(--red);font-size:13px}
+  .deter .tx{font-size:12.5px;letter-spacing:.05em;font-weight:500}
+  .deter .tx b{color:var(--red);font-weight:700}
+
+  /* toast (top center) */
+  .toast{top:92px;left:50%;transform:translate(-50%,var(--y,0));padding:11px 20px;font-size:12px;letter-spacing:.09em;font-weight:600;border-color:rgba(245,166,35,.4);border-top-color:rgba(245,166,35,.5);color:#ffe7bf;white-space:nowrap}
+  .toast .b{color:var(--amber)}
+
+  /* intervention card (top center, after) */
+  .interv{top:92px;left:50%;transform:translate(-50%,var(--y,0));padding:11px 20px;font-size:12px;letter-spacing:.09em;font-weight:600;border-color:rgba(93,202,165,.4);border-top-color:rgba(93,202,165,.5);color:#cdeede;white-space:nowrap}
+  .interv .b{color:var(--teal)}
+
+  .wordmark{position:absolute;bottom:26px;right:26px;font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);font-weight:600}
+  .hint{position:absolute;bottom:26px;left:26px;font-size:10px;letter-spacing:.08em;color:var(--ink-faint)}
+
+  /* loading */
+  #loading{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#08080c;transition:opacity .8s}
+  #loading .ld-dot{width:10px;height:10px;border-radius:50%;background:var(--teal);animation:pulse 1.4s infinite}
+  #loading .ld-tx{font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-dim)}
+  #loading.hide{opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="vignette"></div>
+
+  <div id="ui">
+    <div class="hdr card">
+      <span class="dot"></span>
+      <div>
+        <div class="hdr-title">TARS<span class="sep">·</span>ICU WARD<span class="sep">·</span><span class="live">LIVE</span></div>
+        <div class="hdr-sub" id="wardSub">6 patients monitored · all stable</div>
+      </div>
+    </div>
+
+    <div class="vitals card" id="vitals" style="opacity:0">
+      <div class="v-head">
+        <span class="v-bed">BED 06</span>
+        <span class="pill" id="pill">STABLE</span>
+      </div>
+      <div class="news">
+        <div class="news-num" id="news">1</div>
+        <div class="news-meta">
+          <div class="lbl">NEWS2</div>
+          <div class="t">aggregate score</div>
+        </div>
+      </div>
+      <div class="vgrid">
+        <div class="vitem"><div class="lbl">Heart rate</div><div class="vv"><span id="hr">78</span><i>bpm</i></div></div>
+        <div class="vitem"><div class="lbl">SpO₂</div><div class="vv"><span id="spo2">98</span><i>%</i></div></div>
+        <div class="vitem"><div class="lbl">Resp rate</div><div class="vv"><span id="rr">14</span><i>/min</i></div></div>
+        <div class="vitem"><div class="lbl">Blood pressure</div><div class="vv"><span id="bp">122/78</span><i>mmHg</i></div></div>
+      </div>
+    </div>
+
+    <div class="toast card" id="toast" style="opacity:0">⚡ <span class="b">INTENSIVIST PAGED</span> · ICU BED READY</div>
+    <div class="interv card" id="interv" style="opacity:0">✓ <span class="b">ALERT ACKNOWLEDGED</span> · INTERVENTION UNDERWAY</div>
+
+    <div class="deter card" id="deter" style="opacity:0">
+      <span class="ic">▲</span>
+      <span class="tx"><b>BED 06</b> — SpO₂ ↓ · RR ↑ · NEWS2 1→8 · <b>DETERIORATING</b></span>
+    </div>
+
+    <div class="wordmark">TARS · clinical intelligence</div>
+    <div class="hint">drag to orbit · scroll to zoom</div>
+  </div>
+
+  <div id="loading">
+    <span class="ld-dot"></span>
+    <span class="ld-tx" id="ldtx">Initialising TARS</span>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+  import * as THREE from 'three';
+  import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+  import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+  // ---------------------------------------------------------------- utils
+  const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const smooth=u=>{u=clamp(u,0,1);return u*u*(3-2*u);};
+  // smoothstep-interpolated keyframe track
+  function track(t,keys){
+    const n=keys.length;
+    if(t<=keys[0][0])return keys[0][1];
+    if(t>=keys[n-1][0])return keys[n-1][1];
+    for(let i=0;i<n-1;i++){
+      const a=keys[i],b=keys[i+1];
+      if(t>=a[0]&&t<=b[0])return lerp(a[1],b[1],smooth((t-a[0])/(b[0]-a[0])));
+    }
+    return keys[n-1][1];
+  }
+  const jit=(t,f,a)=>(Math.sin(t*f*6.283)+Math.sin(t*f*3.71+1.3))*0.5*a;
+  const rgba=(c,a)=>c.getStyle().replace('rgb(','rgba(').replace(')',', '+a+')');
+
+  // status colour ramp
+  const C_TEAL=new THREE.Color(0x5dcaa5),C_AMBER=new THREE.Color(0xf5a623),C_RED=new THREE.Color(0xe24b4a);
+  function sevColor(s,out){
+    out=out||new THREE.Color();
+    if(s<=0.5)out.copy(C_TEAL).lerp(C_AMBER,s/0.5);
+    else out.copy(C_AMBER).lerp(C_RED,(s-0.5)/0.5);
+    return out;
+  }
+
+  // ---------------------------------------------------------------- timeline (15s loop)
+  const LOOP=15;
+  const SEV   =[[0,0],[3,0],[6,.5],[8,1],[12,1],[12.8,.55],[14,.5],[15,0]];
+  const AZ    =[[0,-.35],[3,-.15],[6,0],[9,.05],[12,0],[13.5,-.2],[15,-.35]];
+  const RAD   =[[0,10],[3,9.5],[6,5.6],[9,4.2],[12,4.7],[13.5,8],[15,10]];
+  const HGT   =[[0,5.6],[3,5],[6,3],[9,2.5],[12,2.7],[13.5,4.6],[15,5.6]];
+  const LKX   =[[0,0],[9,0],[12,.18],[13.5,0],[15,0]];
+  const LKY   =[[0,.6],[6,.85],[12,.85],[15,.6]];
+  const LKZ   =[[0,0],[3,.6],[6,2],[9,2.2],[12,2.2],[13.5,.8],[15,0]];
+  const HR    =[[0,78],[3,79],[6,98],[9,126],[12,124],[13.5,116],[15,78]];
+  const SPO2  =[[0,98],[3,98],[6,92],[9,86],[12,88],[13.5,93],[15,98]];
+  const RR    =[[0,14],[3,14],[6,22],[9,30],[12,28],[13.5,22],[15,14]];
+  const SYS   =[[0,122],[3,122],[6,112],[9,98],[12,100],[13.5,108],[15,122]];
+  const DIA   =[[0,78],[3,78],[6,72],[9,60],[12,62],[13.5,68],[15,78]];
+  const NEWS  =[[0,1],[3,1],[6,4],[8,8],[12,8],[13,6],[14,4],[15,1]];
+  const BEAMSC=[[0,0],[6,0],[7.2,1],[13.3,1],[14.2,0],[15,0]];
+  const BEAMA =[[0,0],[5.8,0],[7,1],[12,1],[13,.6],[14,0],[15,0]];
+  const VITA  =[[0,0],[2.6,0],[3.4,1],[14,1],[14.8,0],[15,0]];
+  const DETA  =[[0,0],[3,0],[3.8,1],[13.8,1],[14.6,0],[15,0]];
+  const TOA   =[[0,0],[8.8,0],[9.3,1],[11.7,1],[12.2,0],[15,0]];
+  const INTA  =[[0,0],[11.9,0],[12.4,1],[14.2,1],[14.9,0],[15,0]];
+  const LBL   =[[0,0],[2.6,0],[3.4,1],[14,1],[14.8,0],[15,0]];
+  const STFX  =[[0,5.8],[9,5.8],[11.8,1.3],[13.6,1.3],[14.6,5.8],[15,5.8]];
+  const STFZ  =[[0,.4],[9,.4],[11.8,2.5],[13.6,2.5],[14.6,.4],[15,.4]];
+
+  // ---------------------------------------------------------------- renderer / scene / camera
+  const canvas=document.getElementById('c');
+  const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
+  const DPR=Math.min(window.devicePixelRatio||1,2);
+  renderer.setPixelRatio(DPR);
+  renderer.setSize(innerWidth,innerHeight);
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.05;
+
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x08080c);
+  scene.fog=new THREE.FogExp2(0x08080c,0.034);
+
+  const camera=new THREE.PerspectiveCamera(46,innerWidth/innerHeight,0.1,200);
+  camera.position.set(0,5.6,10);
+
+  // post: bloom for the Tesla-style glow
+  const rt=new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,samples:4});
+  const composer=new EffectComposer(renderer,rt);
+  composer.setPixelRatio(DPR);
+  composer.setSize(innerWidth,innerHeight);
+  composer.addPass(new RenderPass(scene,camera));
+  const bloom=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.72,0.6,0.55);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
+  // ---------------------------------------------------------------- lights
+  scene.add(new THREE.HemisphereLight(0x4a5a6a,0x05060a,0.55));
+  scene.add(new THREE.AmbientLight(0x223040,0.22));
+  const key=new THREE.DirectionalLight(0xbfd3e6,1.7);
+  key.position.set(6,13,7);
+  key.castShadow=true;
+  key.shadow.mapSize.set(2048,2048);
+  key.shadow.bias=-0.0005;
+  key.shadow.radius=4;
+  const sc=key.shadow.camera;
+  sc.left=-11;sc.right=11;sc.top=11;sc.bottom=-11;sc.near=1;sc.far=42;
+  scene.add(key);
+
+  // ---------------------------------------------------------------- shared materials / textures
+  const matte=(hex,rough=0.85,metal=0.05)=>new THREE.MeshStandardMaterial({color:hex,roughness:rough,metalness:metal});
+  const rbox=(w,h,d,r=0.07)=>new RoundedBoxGeometry(w,h,d,2,r);
+
+  function glowTex(){
+    const cv=document.createElement('canvas');cv.width=cv.height=128;
+    const x=cv.getContext('2d');
+    const g=x.createRadialGradient(64,64,0,64,64,64);
+    g.addColorStop(0,'rgba(255,255,255,1)');
+    g.addColorStop(0.4,'rgba(255,255,255,.5)');
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    x.fillStyle=g;x.fillRect(0,0,128,128);
+    const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;
+  }
+  const GLOW=glowTex();
+  const glowMat=col=>new THREE.MeshBasicMaterial({map:GLOW,color:col.clone().multiplyScalar(1.45),transparent:true,opacity:.55,blending:THREE.AdditiveBlending,depthWrite:false});
+
+  function beamTex(){
+    const cv=document.createElement('canvas');cv.width=8;cv.height=256;
+    const x=cv.getContext('2d');
+    const g=x.createLinearGradient(0,256,0,0);
+    g.addColorStop(0,'rgba(255,255,255,1)');
+    g.addColorStop(0.5,'rgba(255,255,255,.45)');
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    x.fillStyle=g;x.fillRect(0,0,8,256);
+    const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;
+  }
+
+  function textSprite(txt,col='#bcd8cb'){
+    const cv=document.createElement('canvas');cv.width=256;cv.height=128;
+    const x=cv.getContext('2d');
+    x.fillStyle=col;x.font='700 78px "Segoe UI",Arial';x.textAlign='center';x.textBaseline='middle';
+    x.fillText(txt,128,68);
+    const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;
+    const m=new THREE.SpriteMaterial({map:t,transparent:true,opacity:.3,depthWrite:false});
+    const s=new THREE.Sprite(m);s.scale.set(1.4,0.7,1);return s;
+  }
+
+  // ---------------------------------------------------------------- floor
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(60,60),matte(0x0c0d12,0.8,0.12));
+  floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+
+  const grid=new THREE.GridHelper(48,48,0x1c3a33,0x121820);
+  grid.position.y=0.012;grid.material.transparent=true;grid.material.opacity=0.09;grid.material.depthWrite=false;
+  scene.add(grid);
+
+  // ---------------------------------------------------------------- beds
+  const bedDefs=[
+    {id:'01',x:-3,z:-2.4},{id:'02',x:0,z:-2.4},{id:'03',x:3,z:-2.4},
+    {id:'04',x:-3,z:2.2},{id:'06',x:0,z:2.2,focus:true},{id:'05',x:3,z:2.2}
+  ];
+  const beds=[];
+
+  function bayLoop(w,d,col){
+    const hw=w/2,hd=d/2;
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.Float32BufferAttribute([-hw,.02,-hd, hw,.02,-hd, hw,.02,hd, -hw,.02,hd],3));
+    return new THREE.LineLoop(geo,new THREE.LineBasicMaterial({color:col.clone(),transparent:true,opacity:.18}));
+  }
+
+  function makeBed(def){
+    const g=new THREE.Group();g.position.set(def.x,0,def.z);
+
+    const frame=new THREE.Mesh(rbox(1.15,0.45,2.25,0.09),matte(0x1b1f27));frame.position.y=0.34;frame.castShadow=frame.receiveShadow=true;g.add(frame);
+    const mat=new THREE.Mesh(rbox(1.0,0.16,2.05,0.06),matte(0x2c323c));mat.position.y=0.62;mat.castShadow=true;g.add(mat);
+    const hb=new THREE.Mesh(rbox(1.1,0.5,0.16,0.07),matte(0x232830));hb.position.set(0,0.62,-1.05);hb.castShadow=true;g.add(hb);
+
+    // abstract reclining patient: pillow + head + blanket mound + chest rise
+    const pil=new THREE.Mesh(rbox(0.6,0.12,0.32,0.06),matte(0xc2cad2));pil.position.set(0,0.74,-0.75);pil.castShadow=true;g.add(pil);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.15,16,12),matte(0xc9d0d8));head.position.set(0,0.84,-0.72);head.castShadow=true;g.add(head);
+    const blanket=new THREE.Mesh(rbox(0.72,0.26,1.35,0.13),matte(0x9aa6b3));blanket.position.set(0,0.74,-0.05);blanket.castShadow=true;g.add(blanket);
+    const chest=new THREE.Mesh(new THREE.SphereGeometry(0.26,16,12),matte(0x9aa6b3));chest.scale.set(1.1,0.5,0.85);chest.position.set(0,0.74,-0.45);chest.castShadow=true;g.add(chest);
+
+    const halo=new THREE.Mesh(new THREE.PlaneGeometry(2.7,3.5),glowMat(C_TEAL));halo.rotation.x=-Math.PI/2;halo.position.y=0.03;g.add(halo);
+    const bay=bayLoop(1.5,2.7,C_TEAL);g.add(bay);
+    const label=textSprite(def.id);label.position.set(0,0.06,1.5);g.add(label);
+    if(!def.focus){label.material.opacity=0.22;}
+
+    scene.add(g);
+    beds.push({def,group:g,halo,bay,label,phase:Math.random()*6.28});
+  }
+  bedDefs.forEach(makeBed);
+  const bed6=beds.find(b=>b.def.focus);
+
+  // ---------------------------------------------------------------- alert beam (vertical column of light)
+  const BEAMTEX=beamTex();
+  const beamG=new THREE.Group();beamG.position.set(bed6.def.x,0.6,bed6.def.z);
+  function beamMesh(rt2,rb,col,op){
+    const geo=new THREE.CylinderGeometry(rt2,rb,8,18,1,true);geo.translate(0,4,0);
+    const m=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({map:BEAMTEX,color:col.clone().multiplyScalar(1.5),transparent:true,opacity:op,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+    return m;
+  }
+  const beamGlow=beamMesh(0.12,0.5,new THREE.Color(0x4da3ff),0);
+  const beamCore=beamMesh(0.04,0.16,new THREE.Color(0xcfe6ff),0);
+  beamG.add(beamGlow,beamCore);beamG.scale.y=0.001;scene.add(beamG);
+
+  // focus point light (colored dramatic fill on bed 6 during the event)
+  const focusLight=new THREE.PointLight(0xffffff,0,8,2);
+  focusLight.position.set(bed6.def.x,1.3,bed6.def.z);scene.add(focusLight);
+
+  // ---------------------------------------------------------------- staff
+  function makeStaff(x,z){
+    const g=new THREE.Group();g.position.set(x,0,z);
+    const body=new THREE.Mesh(new THREE.CapsuleGeometry(0.22,0.6,4,12),matte(0x7d8c9c));body.position.y=0.75;body.castShadow=true;g.add(body);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.17,16,12),matte(0xc2cad2));head.position.y=1.28;head.castShadow=true;g.add(head);
+    scene.add(g);return {group:g};
+  }
+  const responder=makeStaff(5.8,0.4);
+  const staffB=makeStaff(6.5,-1.1);
+  const respPrev=new THREE.Vector2(5.8,0.4);
+
+  // ---------------------------------------------------------------- overlay refs
+  const el={
+    hr:document.getElementById('hr'),spo2:document.getElementById('spo2'),rr:document.getElementById('rr'),
+    bp:document.getElementById('bp'),news:document.getElementById('news'),pill:document.getElementById('pill'),
+    wardSub:document.getElementById('wardSub'),vitals:document.getElementById('vitals'),
+    deter:document.getElementById('deter'),toast:document.getElementById('toast'),interv:document.getElementById('interv')
+  };
+  function setCard(node,a){node.style.opacity=a.toFixed(3);node.style.setProperty('--y',((1-a)*10).toFixed(1)+'px');}
+
+  // ---------------------------------------------------------------- camera rig + input
+  let userAz=0,userRad=0,userHgt=0,dragging=false,px=0,py=0;
+  const desired=new THREE.Vector3(),curLook=new THREE.Vector3(0,0.6,0),tgtLook=new THREE.Vector3();
+  canvas.addEventListener('pointerdown',e=>{dragging=true;px=e.clientX;py=e.clientY;canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',e=>{if(!dragging)return;userAz-=(e.clientX-px)*0.005;userHgt=clamp(userHgt+(e.clientY-py)*0.03,-3,6);px=e.clientX;py=e.clientY;});
+  canvas.addEventListener('pointerup',()=>dragging=false);
+  canvas.addEventListener('pointercancel',()=>dragging=false);
+  canvas.addEventListener('wheel',e=>{e.preventDefault();userRad=clamp(userRad+e.deltaY*0.01,-5,12);},{passive:false});
+
+  function updateCamera(t,dt){
+    const az=track(t,AZ)+userAz;
+    const rad=clamp(track(t,RAD)+userRad,2.6,24);
+    const hgt=clamp(track(t,HGT)+userHgt,1.2,14);
+    tgtLook.set(track(t,LKX),track(t,LKY),track(t,LKZ));
+    desired.set(tgtLook.x+Math.sin(az)*rad,hgt,tgtLook.z+Math.cos(az)*rad);
+    const k=1-Math.exp(-6*dt);
+    camera.position.lerp(desired,k);
+    curLook.lerp(tgtLook,k);
+    camera.lookAt(curLook);
+  }
+
+  // ---------------------------------------------------------------- per-frame timeline
+  const tmp=new THREE.Color(),tmp2=new THREE.Color();
+  let pulseT=0;
+
+  function update(t,dt){
+    const sev=track(t,SEV);
+    sevColor(sev,tmp);
+    const freq=lerp(0.5,2.6,sev);
+    pulseT+=dt*freq;
+    const pulse=0.5+0.5*Math.sin(pulseT*6.283);
+
+    // beds
+    for(const b of beds){
+      if(b.def.focus){
+        b.halo.material.color.copy(tmp).multiplyScalar(1.45);
+        b.halo.material.opacity=lerp(0.45,0.95,sev)*(0.7+0.3*pulse);
+        const s=1+0.07*pulse*sev;b.halo.scale.set(s,s,1);
+        b.bay.material.color.copy(tmp);b.bay.material.opacity=lerp(0.3,0.8,sev);
+        b.label.material.color.copy(tmp);
+        b.label.material.opacity=track(t,LBL);
+        const ls=1+0.25*sev;b.label.scale.set(1.4*ls,0.7*ls,1);
+      }else{
+        const br=0.5+0.5*Math.sin(t*0.7+b.phase);
+        b.halo.material.opacity=0.4+0.1*br;
+      }
+    }
+
+    focusLight.color.copy(tmp);
+    focusLight.intensity=sev*6*(0.7+0.3*pulse);
+
+    // beam
+    const ba=track(t,BEAMA)*(0.7+0.3*pulse);
+    beamG.scale.y=Math.max(0.001,track(t,BEAMSC));
+    beamGlow.material.opacity=ba*0.6;
+    beamCore.material.opacity=ba;
+
+    // responder staff
+    const rx=track(t,STFX),rz=track(t,STFZ);
+    const spd=Math.hypot(rx-respPrev.x,rz-respPrev.z)/Math.max(dt,1e-3);respPrev.set(rx,rz);
+    responder.group.position.set(rx,Math.min(1,spd*0.5)*0.05*Math.abs(Math.sin(t*13)),rz);
+    staffB.group.rotation.y=Math.sin(t*0.5)*0.18;
+
+    updateCamera(t,dt);
+
+    // ---- overlays ----
+    el.hr.textContent=Math.round(track(t,HR)+jit(t,1.1,1.3));
+    el.spo2.textContent=Math.round(track(t,SPO2));
+    el.rr.textContent=Math.round(track(t,RR)+jit(t,1.7,0.5));
+    el.bp.textContent=Math.round(track(t,SYS))+'/'+Math.round(track(t,DIA));
+    el.news.textContent=Math.round(track(t,NEWS));
+
+    const css=sevColor(sev,tmp2).getStyle();
+    el.news.style.color=css;
+    el.pill.style.color=css;el.pill.style.borderColor=css;el.pill.style.background=rgba(tmp2,0.14);
+    let st='STABLE';
+    if(t>=12&&sev>0.1)st='INTERVENTION';else if(sev>0.6)st='CRITICAL';else if(sev>0.1)st='AT RISK';
+    el.pill.textContent=st;
+    el.wardSub.textContent=sev>0.1?'deterioration detected · bed 06':'6 patients monitored · all stable';
+
+    setCard(el.vitals,track(t,VITA));
+    setCard(el.deter,track(t,DETA));
+    setCard(el.toast,track(t,TOA));
+    setCard(el.interv,track(t,INTA));
+  }
+
+  // ---------------------------------------------------------------- resize
+  addEventListener('resize',()=>{
+    const w=innerWidth,h=innerHeight;
+    camera.aspect=w/h;camera.updateProjectionMatrix();
+    renderer.setSize(w,h);
+    composer.setSize(w,h);
+    bloom.setSize(w,h);
+  });
+
+  // ---------------------------------------------------------------- loop
+  let last=performance.now(),elapsed=0;
+  function frame(now){
+    let dt=(now-last)/1000;last=now;
+    dt=Math.min(dt,0.05);
+    elapsed+=dt;
+    const t=elapsed%LOOP;
+    update(t,dt);
+    composer.render();
+    requestAnimationFrame(frame);
+  }
+
+  // hide loader then start
+  const loading=document.getElementById('loading');
+  requestAnimationFrame(()=>{
+    loading.classList.add('hide');
+    setTimeout(()=>loading.remove(),900);
+    requestAnimationFrame(frame);
+  });
+  </script>
+</body>
+</html>

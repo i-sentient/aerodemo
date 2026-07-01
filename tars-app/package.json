@@ -1,0 +1,19 @@
+{
+  "name": "tars-clinical-intelligence",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "TARS — clinical-intelligence pitch demo (biopunk/FUI scanner, hybrid light app + dark X-ray viewport)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.160.1"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.2.1",
+    "vite": "^5.4.0"
+  }
+}

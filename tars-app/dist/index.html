@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TARS · Clinical Intelligence</title>
+  <script type="module" crossorigin src="./assets/index-BzVIfi41.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-C4ktzhyf.css">
+</head>
+<body>
+  <div id="app">
+    <!-- ===== top bar (light chrome) ===== -->
+    <div id="topbar">
+      <div class="brand"><span class="mk">T</span>TARS<span class="live"><span class="d"></span>LIVE</span></div>
+      <div class="mode-chip"><span class="accent" id="modeDot"></span><span id="modeName">Command Hub</span><span class="sub" id="modeSub">· nurse bay · macro</span></div>
+      <button class="back-btn" id="backBtn">‹ Back to floor</button>
+      <span class="ward" id="wardName">ICU — North · 7 beds</span>
+      <div class="spacer"></div>
+      <div class="legend">
+        <div class="it"><span class="sw auto"></span>Autonomous · operational</div>
+        <div class="it"><span class="sw gate"></span>Gated · clinical sign-off</div>
+      </div>
+    </div>
+
+    <!-- ===== three panels ===== -->
+    <div id="panels">
+      <!-- PANEL A : dark X-ray scanner viewport -->
+      <div class="panel" id="panelA">
+        <div id="stage">
+          <canvas id="c"></canvas>
+          <div id="hud"></div>
+          <div class="stage-hd"><div class="t" id="stageT">Digital State · ICU Floor</div><div class="s" id="stageS">Live spatial twin · 7 monitored beds</div></div>
+        </div>
+      </div>
+
+      <!-- PANEL B : TARS chat (neural / glass) -->
+      <div class="panel" id="panelB">
+        <div class="chat-hd">
+          <div class="chat-id"><div class="nm">TARS</div><div class="st" id="tarsStatus">ready</div></div>
+          <div class="chat-badge">neural agent</div>
+        </div>
+        <div id="chat"></div>
+        <div class="chat-foot"><div class="foot-pill"><span class="hint" id="chatHint">Step through the briefing →</span><button class="next" id="nextBtn">›</button></div></div>
+      </div>
+
+      <!-- PANEL C : apps + dock (light) -->
+      <div class="panel" id="panelC">
+        <div class="panel-hd"><span class="accent" style="background:var(--ink-3)"></span><span class="t" id="appsTitle">Workspace</span></div>
+        <div id="appView"></div>
+        <div class="dock" id="dock"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading"><div class="lg">T</div><div class="tx">Initialising TARS</div></div>
+
+</body>
+</html>
