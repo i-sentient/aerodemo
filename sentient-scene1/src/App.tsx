@@ -19,7 +19,6 @@ import {
   STATE_TYPE_LABEL,
   autonomyColor,
   capacitySense,
-  transferSense,
   useOntologyStore,
   type OntologyData,
   type StateType,
@@ -37,7 +36,7 @@ function SceneRoot() {
       shadows
       dpr={[1, 2]}
       gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
-      camera={{ position: [17, 13, 23], fov: 42 }}
+      camera={{ position: [0, 4.6, -14.5], fov: 49 }}
       onPointerMissed={() => setFocus(null)}
     >
       <SceneEnvironment />
@@ -47,15 +46,15 @@ function SceneRoot() {
       <PatientLayer />
       <OrderLayer />
       <HandoffLayer />
+      {/* Land at the low, forward "flew-in through the doors" angle the dive
+          ends on — looking down the ER. No auto-rotate: the view stays put. */}
       <OrbitControls
-        target={[2, 1.2, 5]}
+        target={[0, 1.1, 3.8]}
         enableDamping
         dampingFactor={0.08}
-        autoRotate
-        autoRotateSpeed={0.25}
-        minDistance={8}
-        maxDistance={60}
-        maxPolarAngle={Math.PI / 2.05}
+        minDistance={5}
+        maxDistance={44}
+        maxPolarAngle={Math.PI / 2.1}
       />
       <Postprocessing />
     </Canvas>
@@ -109,7 +108,6 @@ function Overlay() {
   }, [data.entities])
 
   const erCap = capacitySense(data, 'er')
-  const candidate = transferSense(data, 'er', 'ward')
 
   return (
     <div className="overlay">
@@ -144,17 +142,6 @@ function Overlay() {
           </div>
         </div>
 
-        <div style={{ marginTop: 10, fontSize: 12 }}>
-          <div style={{ color: AERO.inkDim, marginBottom: 4 }}>Transfer-sense</div>
-          {candidate ? (
-            <div>
-              <b style={{ color: CText.green }}>{candidate.patient.label}</b> (flat-green) →{' '}
-              <b style={{ color: CText.teal }}>{candidate.destBed.locationId}</b>
-            </div>
-          ) : (
-            <div style={{ color: AERO.inkDim }}>—</div>
-          )}
-        </div>
       </div>
 
       <div style={{ position: 'absolute', bottom: 96, left: 16, ...panel }}>
@@ -249,7 +236,7 @@ function FlyRig({
       cam.fov = lp(34, 52, p)
       cam.updateProjectionMatrix()
       cam.lookAt(0, ER_INFO.y, 0)
-      onFade(Math.max(0, (p - 0.7) / 0.3))
+      onFade(Math.max(0, (p - 0.92) / 0.08))
       if (prog.current >= 1 && !done.current) {
         done.current = true
         onArrived()

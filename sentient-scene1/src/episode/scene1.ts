@@ -60,17 +60,17 @@ export function applyOp(op: Op, store: OntologyStore): void {
 
 // --- relation id helpers ----------------------------------------------------
 const REL_INBOUND = relationId('inbound', 'ambulance', 'pt-inbound')
-const REL_PROPMOVE = relationId('proposed-move', 'pt-x', 'bed-w7')
-const REL_OCC_X_ER3 = relationId('occupies', 'pt-x', 'bed-er3')
-const REL_OCC_X_W7 = relationId('occupies', 'pt-x', 'bed-w7')
 const REL_OCC_INB_ER3 = relationId('occupies', 'pt-inbound', 'bed-er3')
 const REL_DATAFLOW = relationId('data-flow', 'lab-inbound-ecg', 'pt-inbound')
 const REL_REASONING = relationId('reasoning', 'sam', 'lab-inbound-ecg')
 
-export const EPISODE_DURATION = 32
+export const EPISODE_DURATION = 22
 
+// ── SCENE 1 (ER-only) — one new patient arriving into the open bay (Bay 3).
+//    B1 inbound ghost · B2 capacity (one bay open) · B3 iSAM OMI-read ·
+//    B4 TARS pre-warms Bay 3 · B5 arrival: ghost solidifies (C→A), vitals live.
 export const EPISODE: EpisodeEvent[] = [
-  // ── B1 — inbound provisional ghost ────────────────────────────────────────
+  // ── B1 — inbound provisional ghost at the ER entrance ─────────────────────
   {
     t: 1.5,
     beat: 'B1',
@@ -102,100 +102,19 @@ export const EPISODE: EpisodeEvent[] = [
     ],
   },
 
-  // ── B2 — capacity (READ, no mutation) ─────────────────────────────────────
+  // ── B2 — capacity (READ, no mutation): one bay open ───────────────────────
   {
     t: 5,
     beat: 'B2',
-    title: 'Capacity-sense · ER FULL — no free bay for the ghost',
+    title: 'Capacity-sense · ER 7/8 — Bay 3 open for the inbound',
     ops: [],
   },
 
-  // ── B3 — Transfer-sense proposes the move ─────────────────────────────────
+  // ── B3 — iSAM OMI-read on the inbound ECG ─────────────────────────────────
   {
-    t: 8,
+    t: 9,
     beat: 'B3',
-    title: 'Transfer-sense · Patient-X step-ready → ward-bed-7',
-    ops: [
-      {
-        op: 'upsertEntity',
-        entity: {
-          entity: 'order', id: 'ord-move-x', patientId: 'pt-x', kind: 'move',
-          status: 'proposed', autonomy: 'clinicalGated',
-        },
-      },
-      {
-        op: 'upsertRelation',
-        relation: {
-          id: REL_PROPMOVE, from: 'pt-x', to: 'bed-w7',
-          kind: 'proposed-move', committed: false,
-        },
-      },
-    ],
-  },
-
-  // ── B4a — Governor: gated move WAITS; autonomous display fires teal ───────
-  {
-    t: 11,
-    beat: 'B4',
-    title: 'Autonomy Governor · clinical-gated move WAITS for a hand',
-    ops: [
-      {
-        op: 'upsertEntity',
-        entity: {
-          entity: 'order', id: 'ord-display', patientId: 'pt-x',
-          kind: 'activation', status: 'inProgress', autonomy: 'autonomous',
-        },
-      },
-    ],
-  },
-
-  // ── B4b — the nurse tap: authorize → commit ───────────────────────────────
-  {
-    t: 14.5,
-    beat: 'B4',
-    title: 'Nurse authorized · move commits (dashed coral → solid teal)',
-    ops: [
-      { op: 'patchEntity', id: 'ord-move-x', patch: { status: 'authorized' } },
-      { op: 'patchRelation', id: REL_PROPMOVE, patch: { committed: true } },
-    ],
-  },
-
-  // ── B5 — Pre-warm + transfer ──────────────────────────────────────────────
-  {
-    t: 17,
-    beat: 'B5',
-    title: 'Pre-warm · ward-bed-7 warming · Patient-X transfers · bay vacated',
-    ops: [
-      { op: 'patchEntity', id: 'bed-w7', patch: { status: 'warming', occupantPatientId: 'pt-x' } },
-      { op: 'patchEntity', id: 'enc-x', patch: { status: 'transferring' } },
-      { op: 'patchEntity', id: 'pt-x', patch: { locationId: 'ward-bed-7' } },
-      { op: 'patchEntity', id: 'bed-er3', patch: { status: 'dirty', occupantPatientId: undefined } },
-      { op: 'removeRelation', id: REL_OCC_X_ER3 },
-      { op: 'removeRelation', id: REL_PROPMOVE },
-      {
-        op: 'upsertRelation',
-        relation: { id: REL_OCC_X_W7, from: 'pt-x', to: 'bed-w7', kind: 'occupies', committed: true },
-      },
-    ],
-  },
-
-  // ── B5b — Patient-X settled; bay cleaned for the inbound ──────────────────
-  {
-    t: 20,
-    beat: 'B5',
-    title: 'Ward bed occupied · Patient-X settled · ER bay cleaned',
-    ops: [
-      { op: 'patchEntity', id: 'bed-w7', patch: { status: 'occupied' } },
-      { op: 'patchEntity', id: 'enc-x', patch: { status: 'active' } },
-      { op: 'patchEntity', id: 'bed-er3', patch: { status: 'clean' } },
-    ],
-  },
-
-  // ── B6 — iSAM OMI-read ────────────────────────────────────────────────────
-  {
-    t: 22.5,
-    beat: 'B6',
-    title: 'iSAM OMI-read · de Winter → CRITICAL · cath pre-warm · ICU reserved',
+    title: 'iSAM OMI-read · de Winter → CRITICAL (raw strip shown with the read)',
     ops: [
       {
         op: 'upsertEntity',
@@ -223,20 +142,35 @@ export const EPISODE: EpisodeEvent[] = [
           reason: 'Lysis-guard: no contraindication — primary PCI preferred', acknowledged: false,
         },
       },
-      // Cath-ready + Downstream-stage
-      { op: 'patchEntity', id: 'bed-cath', patch: { status: 'warming' } },
-      { op: 'patchEntity', id: 'bed-icu2', patch: { status: 'reserved' } },
     ],
   },
 
-  // ── B7 — arrival: ghost solidifies (C→A), vitals live, lands in prepared bay
+  // ── B4 — TARS pre-warms the open bay (autonomous operational action) ──────
   {
-    t: 27,
-    beat: 'B7',
-    title: 'Arrival · ghost solidifies (C→A) · vitals live · handoff to physician',
+    t: 12.5,
+    beat: 'B4',
+    title: 'Autonomy Governor · TARS pre-warms Bay 3 for the STEMI (autonomous)',
+    ops: [
+      {
+        op: 'upsertEntity',
+        entity: {
+          entity: 'order', id: 'ord-prep-bay', patientId: 'pt-inbound',
+          kind: 'activation', status: 'inProgress', autonomy: 'autonomous',
+        },
+      },
+      { op: 'patchEntity', id: 'bed-er3', patch: { status: 'warming' } },
+    ],
+  },
+
+  // ── B5 — arrival: ghost solidifies (C→A), lands in Bay 3, vitals live ──────
+  {
+    t: 16.5,
+    beat: 'B5',
+    title: 'Arrival · ghost solidifies (C→A) · lands in Bay 3 · vitals live · handoff',
     ops: [
       { op: 'patchEntity', id: 'pt-inbound', patch: { stateType: 'A', locationId: 'er-bay-3' } },
       { op: 'patchEntity', id: 'bed-er3', patch: { status: 'occupied', occupantPatientId: 'pt-inbound' } },
+      { op: 'patchEntity', id: 'ord-prep-bay', patch: { status: 'done' } },
       {
         op: 'upsertEntity',
         entity: {

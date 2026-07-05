@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
+import { RoundERLab } from './lab/RoundERLab'
 import { useOntologyStore } from './ontology'
 import './index.css'
 
@@ -10,8 +11,11 @@ if (import.meta.env.DEV) {
     useOntologyStore
 }
 
+// Default view is the ER lab (what we're building). The old full app (intro
+// dive + corridor scene) is parked behind #app.
+const showOldApp =
+  typeof window !== 'undefined' && window.location.hash.includes('app')
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
+  <React.StrictMode>{showOldApp ? <App /> : <RoundERLab />}</React.StrictMode>,
 )

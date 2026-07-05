@@ -213,52 +213,6 @@ function GreyboxBed({ loc, bed }: { loc: LocationNode; bed?: Bed }) {
   )
 }
 
-// --- raised ICU platform (floating slab) -----------------------------------
-function IcuPlatform() {
-  return (
-    <group>
-      <mesh position={[0, 4.88, 14]} castShadow receiveShadow>
-        <boxGeometry args={[13, 0.24, 7]} />
-        <meshStandardMaterial color={FROST} transparent opacity={0.88} roughness={0.3} metalness={0.12} envMapIntensity={0.9} />
-        <Edges scale={1.001} threshold={15} color={CText.blue} />
-      </mesh>
-      {/* soft underglow strip */}
-      <mesh position={[0, 4.72, 14]} rotation-x={-Math.PI / 2}>
-        <planeGeometry args={[13.4, 7.4]} />
-        <meshBasicMaterial color={AERO.edge} transparent opacity={0.1} depthWrite={false} />
-      </mesh>
-    </group>
-  )
-}
-
-// --- cath lab module -------------------------------------------------------
-function CathLab({ bed }: { bed?: Bed }) {
-  const p = LOCATIONS['cath-lab'].position
-  const warming = bed?.status === 'warming'
-  return (
-    <group position={p}>
-      {/* procedure table */}
-      <FrostBox size={[1.2, 0.5, 2.6]} position={[0, 0.25, 0]} edge={CText.coral} />
-      {/* C-arm gantry (greybox) */}
-      <FrostBox size={[0.4, 2.6, 0.4]} position={[-1.6, 1.3, 0]} edge={CText.coral} opacity={0.8} />
-      <FrostBox size={[2.2, 0.4, 0.4]} position={[-0.6, 2.5, 0]} edge={CText.coral} opacity={0.8} />
-      {/* Cath-ready → warming bloom */}
-      {warming && (
-        <mesh position={[0, 0.03, 0]} rotation-x={-Math.PI / 2}>
-          <ringGeometry args={[1.9, 2.3, 64]} />
-          <meshBasicMaterial color={hdrCss(bedStatusColor.warming, 1.8)} transparent opacity={0.9} toneMapped={false} />
-        </mesh>
-      )}
-      <Label
-        position={[0, 3.1, 0]}
-        title="Cath Lab"
-        sub={warming ? 'PRE-WARM' : 'ready'}
-        accent={CText.coral}
-      />
-    </group>
-  )
-}
-
 // --- inbound staging holo-pad (where the ghost patient will hover) ---------
 function StagingPad() {
   const [x, , z] = LOCATIONS['staging'].position
@@ -296,21 +250,6 @@ function Ambulance() {
   )
 }
 
-// --- physician view (floating frosted panel — handoff card lands here) -----
-function PhysicianView() {
-  const p = LOCATIONS['physician-view'].position
-  return (
-    <group position={p}>
-      <mesh>
-        <boxGeometry args={[3.4, 2.2, 0.08]} />
-        <meshPhysicalMaterial color={AERO.smoke} transparent opacity={0.4} roughness={0.2} metalness={0.2} clearcoat={0.8} envMapIntensity={1.0} />
-        <Edges scale={1.001} threshold={15} color={CText.teal} />
-      </mesh>
-      <Label position={[0, 1.5, 0]} title="Physician view" accent={CText.teal} />
-    </group>
-  )
-}
-
 // ===========================================================================
 export function Building() {
   // reactive but low-frequency: bed statuses change on episode beats, not per frame
@@ -331,23 +270,16 @@ export function Building() {
     <group>
       <AeroFloor />
 
-      {/* zone footprints */}
-      <ZoneOutline center={[0, 0, 0]} size={[18, 8]} color={CText.blue} label="EMERGENCY" />
-      <ZoneOutline center={[0, 0, 10]} size={[18, 8]} color={CText.green} label="WARD" />
-      <ZoneOutline center={[12, 0, 3]} size={[8.5, 8.5]} color={CText.coral} label="CATH LAB" />
-      <ZoneOutline center={[0, 5, 14]} size={[13, 7]} color={CText.blue} label="ICU" />
+      {/* single ER zone footprint */}
+      <ZoneOutline center={[0, 0, 3]} size={[15, 16]} color={CText.blue} label="EMERGENCY" />
 
-      <IcuPlatform />
-
-      {/* every bay & bed, placed from the registry */}
+      {/* every ER bay, placed from the registry */}
       {placeable.map((l) => (
         <GreyboxBed key={l.id} loc={l} bed={bedByLoc.get(l.id)} />
       ))}
 
-      <CathLab bed={bedByLoc.get('cath-lab')} />
       <StagingPad />
       <Ambulance />
-      <PhysicianView />
     </group>
   )
 }
