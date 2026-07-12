@@ -314,6 +314,34 @@ export const samStemiTex = make(560, 350, (c) => {
   c.fillText('activate cath lab', 82, 282)
 })
 
+// --- EMERGENCY wall signage: white letters (tinted red + bloomed by the
+//     material), transparent elsewhere so only the word floats on the glass ---
+export const emergencyTex = make(1800, 320, (c) => {
+  const w = 1800
+  const h = 320
+  const WORD = 'EMERGENCY'
+  const FAMILY = '"Helvetica Neue", Helvetica, Arial, sans-serif'
+  c.clearRect(0, 0, w, h)
+  c.fillStyle = '#ffffff'
+  c.textAlign = 'center'
+  c.textBaseline = 'middle'
+  ;(c as unknown as { letterSpacing: string }).letterSpacing = '8px'
+  // auto-fit: shrink the font until the whole word fits inside 88% of the canvas
+  let size = 210
+  const target = w * 0.88
+  c.font = `700 ${size}px ${FAMILY}`
+  const measured = c.measureText(WORD).width
+  if (measured > target) {
+    size = Math.floor((size * target) / measured)
+    c.font = `700 ${size}px ${FAMILY}`
+  }
+  c.fillText(WORD, w / 2, h / 2 + 6)
+})
+// the signs render on the cylinder's INNER face (BackSide), which mirrors the
+// texture — pre-flip it horizontally so the word reads left-to-right from inside
+emergencyTex.center.set(0.5, 0.5)
+emergencyTex.repeat.x = -1
+
 // --- command board: all bays overview ---------------------------------------
 export const commandTex = make(600, 320, (c) => {
   const w = 600

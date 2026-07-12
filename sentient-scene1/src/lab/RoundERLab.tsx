@@ -79,7 +79,7 @@ type Shot = { pos: [number, number, number]; look: [number, number, number] }
 // heights stay BELOW the roof (wall = 7.5) so the fly-in threads through the
 // glass wall instead of diving over the ceiling (which used to fill the frame).
 const SHOTS: Shot[] = [
-  { pos: [0, 6.8, 52], look: [0, 3, 0] },           // 0 · outside — the whole drum, side-on
+  { pos: [0, 6.8, -52], look: [0, 3, 0] },          // 0 · outside — approach from behind (same side as the dive, so no overshoot)
   { pos: [0, 5.5, -8], look: [0, 1, 2] },           // 1 · fly in — both consoles / the hub
   { pos: [0, 2.7, -0.6], look: [0, 0.7, 9] },       // 2 · dive deeper — over-console (+alert)
   { pos: [1.6, 2.5, 10.6], look: [-0.3, 1.25, 15] }, // 3 · zoom to the hero bed (+SAM console)
@@ -129,7 +129,7 @@ export function RoundERLab() {
         shadows
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
-        camera={{ position: [0, 6.8, 52], fov: 55 }}
+        camera={{ position: [0, 6.8, -52], fov: 55 }}
       >
         <CinematicCamera step={step} />
         <ERStudio />

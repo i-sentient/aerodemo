@@ -12,7 +12,8 @@ if (import.meta.env.DEV) {
 }
 
 // Default view is the ER lab (what we're building). The old full app (intro
-// dive + corridor scene) is parked behind #app.
+// dive + corridor scene) now lives in its own project — ../sentient-ward — but
+// is still reachable here behind #app for convenience.
 const showOldApp =
   typeof window !== 'undefined' && window.location.hash.includes('app')
 

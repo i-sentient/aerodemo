@@ -1,6 +1,7 @@
 import { RoundedBox } from '@react-three/drei'
-import { DoubleSide } from 'three'
+import { BackSide, DoubleSide } from 'three'
 import { hdrCss } from './glow'
+import { emergencyTex } from '../lab/screenTex'
 
 // ===========================================================================
 //  ROUND ER — architecture shell only (no patients, no story, no tags).
@@ -15,6 +16,7 @@ const WALL_H = 7.5    // glass wall height (taller = more elegant, counters the 
 const N_BEDS = 16     // beds around the rim
 const R_BED = 15.3    // radius the beds sit at
 const N_MULLIONS = 40 // vertical window posts
+const N_SIGNS = 1     // a single red "EMERGENCY" on the back glass wall
 const COVE = '#eaf2fb' // cool-white cove light (no green)
 
 // Bed layout published so the population layer (patients / consoles / props)
@@ -98,6 +100,32 @@ export function RoundER() {
         <torusGeometry args={[R, 0.18, 16, 160]} />
         <meshStandardMaterial color="#cdd3d9" metalness={1} roughness={0.16} envMapIntensity={1.7} />
       </mesh>
+
+      {/* ── red EMERGENCY signage — curved to hug the glass so the whole
+          word stays inside the drum (a flat panel would bow out & clip) ── */}
+      {Array.from({ length: N_SIGNS }, (_, i) => {
+        const Rs = R - 0.15         // sign radius, just inside the glass
+        const signH = 1.92          // sign height
+        const arc = 10.8 / Rs       // arc length → angular span of the word
+        // place the single sign on the back (+z) wall the camera faces
+        const a = Math.PI / 2 + (i / N_SIGNS) * Math.PI * 2
+        // cylinder theta 0 sits on +Z; our bed angle a sits on (cos a, sin a),
+        // so centre the arc at (π/2 − a) and open it symmetrically.
+        const thetaStart = Math.PI / 2 - a - arc / 2
+        return (
+          <mesh key={`sign-${i}`} position={[0, WALL_H * 0.5 + 1.0, 0]}>
+            <cylinderGeometry args={[Rs, Rs, signH, 24, 1, true, thetaStart, arc]} />
+            <meshBasicMaterial
+              map={emergencyTex}
+              color={hdrCss('#ff3535', 1.7)}
+              transparent
+              toneMapped={false}
+              side={BackSide} // inner face → reads from the room centre
+              depthWrite={false}
+            />
+          </mesh>
+        )
+      })}
 
       {/* ── ceiling annulus + faint cool cove ──────────────────────── */}
       <mesh rotation-x={Math.PI / 2} position={[0, WALL_H, 0]}>
