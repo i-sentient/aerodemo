@@ -2,37 +2,148 @@ import { bedById } from './ontology.js';
 import { state, onModeChange } from './state.js';
 import { agentUpdateEMAR, agentStopPressor, agentOrderTroponin, agentGiveMeds, agentOrderRoutine, emrNavigate } from './apps.js';
 
+/* ============================================================
+   SPLIT 2 — the agent-swap surface (ported from the React v4).
+   - top notch  = active SYSTEM agent  (LSam · TARS · iSAM), tap to swap
+   - bottom notch = active HUMAN        (Clinician · Nurse),  tap to swap
+   - notches minimise to a slim bar; caret expands the full card
+   - each message washes its speaker's colour radially across the panel
+   - firewall preserved: AUTO/GATED order cards + emrNavigate still fire
+   ============================================================ */
+
+const MARKER = '#F4E23A';
+
+const AGENTS = {
+  lsam: { name: 'LSam', role: 'Sensing', stat: '98', unit: 'SIGNAL', gauge: 84, dot: '#3E8EF7',
+    wash: ['#3E8EF7', '#7BD4FF'],
+    blobs: [['#2E6FE0', '20%', '20%', '115%'], ['#3E8EF7', '86%', '62%', '110%'], ['#A9D6FF', '42%', '112%', '125%']] },
+  tars: { name: 'TARS', role: 'Orchestration', stat: '12', unit: 'ORDERS', gauge: 62, dot: '#A9744F',
+    wash: ['#A9744F', '#D9B08C'],
+    blobs: [['#A9744F', '16%', '18%', '115%'], ['#8A5A3B', '86%', '64%', '105%'], ['#E2C3A2', '48%', '112%', '125%']] },
+  isam: { name: 'iSAM', role: 'Reasoning', stat: '07', unit: 'OPEN', gauge: 38, dot: '#2FA96E',
+    wash: ['#2FA96E', '#A8E8C8'],
+    blobs: [['#1F7A50', '18%', '20%', '110%'], ['#2FA96E', '86%', '58%', '105%'], ['#A8E8C8', '50%', '114%', '125%']] },
+};
+const AGENT_ORDER = ['lsam', 'tars', 'isam'];
+const HUMANS = {
+  clinician: { name: 'Clinician', role: 'Clinical gate · in the loop', stat: '51', unit: 'REVIEWED', label: 'Clinician · Dr. Rao' },
+  nurse: { name: 'Nurse', role: 'Bedside · executing', stat: '24', unit: 'TASKS', label: 'Nurse · N. Adeyemi' },
+};
+const HUMAN_ORDER = ['clinician', 'nurse'];
+
+/* ---------- dot-matrix numerals ---------- */
+const DIGITS = {
+  '0': ['01110', '10001', '10011', '10101', '11001', '10001', '01110'],
+  '1': ['00100', '01100', '00100', '00100', '00100', '00100', '01110'],
+  '2': ['01110', '10001', '00001', '00010', '00100', '01000', '11111'],
+  '3': ['11111', '00010', '00100', '00010', '00001', '10001', '01110'],
+  '4': ['00010', '00110', '01010', '10010', '11111', '00010', '00010'],
+  '5': ['11111', '10000', '11110', '00001', '00001', '10001', '01110'],
+  '6': ['00110', '01000', '10000', '11110', '10001', '10001', '01110'],
+  '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
+  '8': ['01110', '10001', '10001', '01110', '10001', '10001', '01110'],
+  '9': ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
+};
+function dotDigitsSVG(value, cell = 4.4, color = '#fff') {
+  const chars = String(value).split('');
+  const adv = 5 * cell + cell * 0.9;
+  const W = chars.length * adv, H = 7 * cell;
+  let cir = '';
+  chars.forEach((ch, ci) => (DIGITS[ch] || DIGITS['0']).forEach((row, r) => row.split('').forEach((b, c) => {
+    if (b === '1') cir += `<circle cx="${(ci * adv + c * cell + cell / 2).toFixed(1)}" cy="${(r * cell + cell / 2).toFixed(1)}" r="${(cell * 0.34).toFixed(1)}" fill="${color}"/>`;
+  })));
+  return `<svg width="${W.toFixed(1)}" height="${H.toFixed(1)}" viewBox="0 0 ${W.toFixed(1)} ${H.toFixed(1)}" style="display:block">${cir}</svg>`;
+}
+function arcGaugeSVG(value, dim = 82) {
+  const c = dim / 2, r = c - 8, a0 = -115, a1 = 115;
+  const pol = (d) => [c + r * Math.sin(d * Math.PI / 180), c - r * Math.cos(d * Math.PI / 180)];
+  const [sx, sy] = pol(a0), [ex, ey] = pol(a1);
+  const ang = a0 + ((a1 - a0) * value) / 100;
+  return `<svg width="${dim}" height="${(dim * 0.62).toFixed(0)}" viewBox="0 0 ${dim} ${(dim * 0.62).toFixed(0)}" style="overflow:visible">
+    <path d="M ${sx.toFixed(1)} ${sy.toFixed(1)} A ${r} ${r} 0 1 1 ${ex.toFixed(1)} ${ey.toFixed(1)}" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round"/>
+    <g style="transform:rotate(${ang}deg);transform-origin:${c}px ${c}px">
+      <line x1="${c}" y1="${(c - r + 8).toFixed(1)}" x2="${c}" y2="${(c - 4).toFixed(1)}" stroke="rgba(255,255,255,0.75)" stroke-width="1" stroke-dasharray="1 3"/>
+      <path d="M ${(c - 4.5).toFixed(1)} ${(c - r - 2).toFixed(1)} L ${(c + 4.5).toFixed(1)} ${(c - r - 2).toFixed(1)} L ${c} ${(c - r + 6).toFixed(1)} Z" fill="${MARKER}"/>
+    </g></svg>`;
+}
+function blobsHTML(blobs) {
+  return blobs.map((b, i) => `<div class="nblob" style="left:${b[1]};top:${b[2]};width:${b[3]};height:${b[3]};background:radial-gradient(circle, ${b[0]} 0%, ${b[0]} 24%, transparent 70%);animation:bd${i % 3} ${15 + i * 3}s ease-in-out infinite"></div>`).join('');
+}
+
+/* ---------- module state ---------- */
 let chatEl, nextBtn, hintEl, panelB, statusEl;
+let washPrev, washCur, agentNotch, humanNotch;
 let steps = [], idx = 0, gated = false, ordSeq = 0, busy = false;
+let activeAgent = 'lsam', activeHuman = 'clinician', dark = false, expTop = false, expBottom = false;
 
 function scroll() { chatEl.scrollTop = chatEl.scrollHeight; }
 
-// ambient glow responds to the live session, not a timer:
-// thinking → teal; otherwise it settles to the focused patient's acuity.
-function setAmbient(name) {
-  if (!panelB) return;
-  panelB.classList.remove('amb-think', 'amb-stable', 'amb-watch', 'amb-critical');
-  if (name) panelB.classList.add(name);
+/* ---------- the notches ---------- */
+function renderAgent() {
+  const a = AGENTS[activeAgent];
+  agentNotch.classList.toggle('exp', expTop);
+  agentNotch.querySelector('#agentBlobs').innerHTML = blobsHTML(a.blobs);
+  agentNotch.querySelector('#agentName').textContent = a.name;
+  agentNotch.querySelector('#agentRole').textContent = a.role;
+  agentNotch.querySelector('#agentStat').innerHTML = dotDigitsSVG(a.stat, 4.4, 'rgba(255,255,255,0.96)') + `<span class="unit">${a.unit}</span>`;
+  agentNotch.querySelector('#agentGauge').innerHTML = arcGaugeSVG(a.gauge, 80);
+  agentNotch.querySelector('#agentDots').innerHTML = AGENT_ORDER.map((k) => `<span class="pd${k === activeAgent ? ' on' : ''}"></span>`).join('');
 }
-function contextAmbient() {
-  if (state.mode !== 'patient') return '';                 // floor view → calm default (blue)
-  const acu = (bedById(state.focusId) || {}).patient?.acuity;
-  return acu === 'critical' ? 'amb-critical' : acu === 'watch' ? 'amb-watch' : acu ? 'amb-stable' : '';
-}
-function thinking(on, label) {
-  setAmbient(on ? 'amb-think' : contextAmbient());
-  if (statusEl) statusEl.textContent = on ? (label || 'thinking…') : 'ready';
+function renderHuman() {
+  const h = HUMANS[activeHuman];
+  const ink = dark ? '#171717' : 'rgba(255,255,255,0.95)';   // SVG fill can't read a CSS var attribute
+  humanNotch.classList.toggle('exp', expBottom);
+  humanNotch.querySelector('#humanName').textContent = h.name;
+  humanNotch.querySelector('#humanRole').textContent = h.role;
+  humanNotch.querySelector('#humanStat').innerHTML = dotDigitsSVG(h.stat, 4.4, ink) + `<span class="unit">${h.unit}</span>`;
+  humanNotch.querySelector('#humanDots').innerHTML = HUMAN_ORDER.map((k) => `<span class="pd${k === activeHuman ? ' on' : ''}"></span>`).join('');
 }
 
-function addMsg(who, html) {
-  const m = document.createElement('div'); m.className = 'msg ' + who;
-  const label = who === 'nurse' ? 'Nurse · N. Adeyemi' : who === 'lsam' ? 'LSam · trajectory' : 'TARS';
-  m.innerHTML = `<div class="who">${label}</div><div class="bub">${html}</div>`;
-  chatEl.appendChild(m); scroll();
+/* ---------- per-speaker ambient wash ---------- */
+function washCss(kind, fromTop) {
+  const y = fromTop ? '14%' : '86%';
+  if (kind && AGENTS[kind]) { const w = AGENTS[kind].wash; return `radial-gradient(circle at 50% ${y}, ${w[0]}66 0%, ${w[1]}33 32%, transparent 68%)`; }
+  return `radial-gradient(circle at 50% ${y}, var(--p2-nw0) 0%, var(--p2-nw1) 32%, transparent 66%)`;
 }
-function addTyping() { const t = document.createElement('div'); t.className = 'msg tars typing-msg'; t.innerHTML = `<div class="bub typing"><i></i><i></i><i></i></div>`; chatEl.appendChild(t); scroll(); return t; }
+function fireWash(kind, fromTop) {
+  washPrev.style.background = washCur.style.background || 'transparent';
+  washPrev.style.opacity = washCur.style.background ? '0.4' : '0';
+  washCur.style.background = washCss(kind, fromTop);
+  washCur.style.animation = 'none'; void washCur.offsetWidth; washCur.style.animation = 'ambientIn 2.6s ease-out both';
+}
+
+function thinking(on, label) {
+  if (statusEl) statusEl.textContent = on ? (label || 'thinking…') : 'live';
+  agentNotch.classList.toggle('busy', !!on);
+}
+
+/* ---------- messages ---------- */
+function addMsg(who, html) {
+  const isSys = !!AGENTS[who];
+  if (isSys) { activeAgent = who; renderAgent(); fireWash(who, true); }
+  else { activeHuman = who; renderHuman(); fireWash(null, false); }
+
+  const m = document.createElement('div'); m.className = 'msg ' + (isSys ? 'sys ' : 'hum ') + who;
+  const label = isSys ? AGENTS[who].name : (HUMANS[who] || {}).label || who;
+  const dot = isSys ? AGENTS[who].dot : 'var(--p2-hdot)';
+  m.innerHTML = `<div class="who">${isSys ? `<span class="wd" style="background:${dot}"></span>` : ''}${label}${!isSys ? `<span class="wd" style="background:${dot}"></span>` : ''}</div><div class="bub">${html}</div>`;
+  chatEl.appendChild(m); trimFeed(); scroll();
+}
+function addTyping() {
+  activeAgent && renderAgent();
+  const t = document.createElement('div'); t.className = 'msg sys typing-msg ' + activeAgent;
+  t.innerHTML = `<div class="bub typing"><i></i><i></i><i></i></div>`; chatEl.appendChild(t); trimFeed(); scroll(); return t;
+}
+function trimFeed() {
+  // keep the feed light: fade older, cap DOM
+  const msgs = [...chatEl.querySelectorAll('.msg')];
+  msgs.forEach((m, i) => m.classList.toggle('old', i < msgs.length - 3));
+  const all = [...chatEl.children];
+  while (all.length > 10) { chatEl.removeChild(all.shift()); }
+}
 
 function addOrders(list) {
+  activeAgent = 'tars'; renderAgent(); fireWash('tars', true);
   const wrap = document.createElement('div'); wrap.className = 'orders';
   list.forEach((o) => {
     const el = document.createElement('div'); el.className = 'ord ' + o.autonomy; el.id = 'ord' + (++ordSeq);
@@ -48,8 +159,9 @@ function addOrders(list) {
       act.appendChild(btn);
     }
   });
-  chatEl.appendChild(wrap); scroll();
+  chatEl.appendChild(wrap); trimFeed(); scroll();
 }
+
 function updateNext() {
   const done = idx >= steps.length;
   nextBtn.disabled = gated || done || busy;
@@ -57,29 +169,24 @@ function updateNext() {
   nextBtn.title = done ? 'Replay' : 'Next';
   hintEl.textContent = gated ? 'Awaiting clinical sign-off →' : done ? 'Replay the scripted demo' : (state.mode === 'patient' ? 'TARS is navigating the record →' : 'Step through the briefing →');
 }
-
 function runStep() {
   busy = true; updateNext(); thinking(true, state.mode === 'patient' ? 'reading record…' : 'thinking…');
   const typing = addTyping();
-  setTimeout(() => {
-    typing.remove(); thinking(false);
-    steps[idx](); idx++; busy = false; updateNext();
-  }, 480);
+  setTimeout(() => { typing.remove(); thinking(false); steps[idx](); idx++; busy = false; updateNext(); }, 480);
 }
-
 function load(kind, bedId) {
   chatEl.innerHTML = ''; idx = 0; gated = false; busy = false;
-  setAmbient(contextAmbient());
   steps = kind === 'patient' ? patientScript(bedById(bedId)) : floorScript();
   if (steps.length) { steps[0](); idx = 1; }
   updateNext();
 }
 
+/* ---------- scripts (re-voiced: LSam senses · iSAM reasons · TARS orchestrates) ---------- */
 function floorScript() {
   return [
     () => addMsg('tars', `Good morning. ICU—North is <b>7 of 7 occupied</b>. Acuity: <span class="em">4 stable</span>, <b style="color:var(--amberD)">2 watch</b>, <b style="color:var(--redD)">1 critical</b> (ICU-04, anterior STEMI).`),
-    () => addMsg('nurse', `What's our real capacity if cardiology needs a Level-3 bed?`),
-    () => addMsg('tars', `LSam reviewed all trajectories. <b>ICU-05</b> (A. Kristof, sepsis) is <span class="em">step-down eligible</span> — NEWS2 2, falling, lactate normalised. Stepping her down frees one Level-3 bed. Operational steps are autonomous; I'll proceed.`),
+    () => addMsg('clinician', `What's our real capacity if cardiology needs a Level-3 bed?`),
+    () => addMsg('isam', `LSam's trajectories reviewed. <b>ICU-05</b> (A. Kristof, sepsis) is <span class="em">step-down eligible</span> — NEWS2 2, falling, lactate normalised. Stepping her down frees one Level-3 bed. Advisory — logistics can proceed autonomously.`),
     () => { addMsg('tars', `Executing transfer logistics:`); addOrders([
       { label: 'Reserve step-down bed B-12', detail: 'Bed management · operational', autonomy: 'autonomous' },
       { label: 'Page portering for transfer', detail: 'Transport · operational', autonomy: 'autonomous' },
@@ -91,12 +198,11 @@ function floorScript() {
     () => addMsg('tars', `Always — it's the unit's highest risk. Click the red bed to open its Patient Hub and I'll walk the record with you.`),
   ];
 }
-
 function patientScript(b) {
   if (b.patient.acuity === 'critical') return [
     () => { addMsg('lsam', `Scanning <b>${b.id}</b> — ${b.patient.name}, ${b.patient.age}${b.patient.sex}. Opening the chart…`); emrNavigate('summary'); },
     () => { addMsg('lsam', `Vitals: HR ${b.vitals.hr}, BP ${b.vitals.sys}/${b.vitals.dia}, SpO₂ ${b.vitals.spo2}. Tachycardic and hypotensive.`); emrNavigate('vitals', 'emr-vit-hr', 'Heart rate'); },
-    () => { addMsg('lsam', `<b>Anterior ST-elevation</b> on 12-lead, troponin trend rising. Deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b>`); emrNavigate('labs', 'emr-lab-troponin', 'Troponin I'); },
+    () => { addMsg('isam', `<b>Anterior ST-elevation</b> on 12-lead, troponin trend rising. Deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b> Advisory: activate STEMI pathway.`); emrNavigate('labs', 'emr-lab-troponin', 'Troponin I'); },
     () => { addMsg('tars', `Activating STEMI pathway. Operational actions fire autonomously:`); emrNavigate('orders'); addOrders([
       { label: 'Notify cath lab — activate', detail: 'Operational · door-to-balloon clock started', autonomy: 'autonomous' },
       { label: 'Page interventional cardiology', detail: 'Dr. Mensah · on call · operational', autonomy: 'autonomous' },
@@ -110,7 +216,7 @@ function patientScript(b) {
   ];
   return [
     () => { addMsg('lsam', `Scanning <b>${b.id}</b> — ${b.patient.name}. ${b.patient.dx}. Opening the chart…`); emrNavigate('summary'); },
-    () => { addMsg('lsam', `NEWS2 <b>${b.traj.news2}</b>, trend <b>${b.traj.trend}</b>. Verdict: <b class="em">${b.traj.verdict}</b>.`); emrNavigate('vitals', 'emr-vit-news2', 'NEWS2'); },
+    () => { addMsg('isam', `NEWS2 <b>${b.traj.news2}</b>, trend <b>${b.traj.trend}</b>. Verdict: <b class="em">${b.traj.verdict}</b>.`); emrNavigate('vitals', 'emr-vit-news2', 'NEWS2'); },
     () => { addMsg('tars', `${b.patient.acuity === 'watch' ? 'Keeping this one under closer watch. ' : 'Trajectory looks reassuring. '}Reviewing the latest labs.`); emrNavigate('labs'); },
     () => { addMsg('tars', `Routine labs can be re-checked — place a repeat panel?`); addOrders([
       { label: 'Order repeat bloods (FBC, U&E, CRP)', detail: 'Lab · requires sign-off', autonomy: 'gated', exec: () => { agentOrderRoutine(b); emrNavigate('labs'); } }]); },
@@ -118,12 +224,76 @@ function patientScript(b) {
   ];
 }
 
+/* ---------- interactions ---------- */
+function cycleAgent() { activeAgent = AGENT_ORDER[(AGENT_ORDER.indexOf(activeAgent) + 1) % AGENT_ORDER.length]; renderAgent(); fireWash(activeAgent, true); }
+function cycleHuman() { activeHuman = HUMAN_ORDER[(HUMAN_ORDER.indexOf(activeHuman) + 1) % HUMAN_ORDER.length]; renderHuman(); fireWash(null, false); }
+function setDark(v) { dark = v; panelB.classList.toggle('dark', dark); renderHuman(); }
+
+function buildPanel2() {
+  panelB.classList.add('p2');
+  panelB.innerHTML = `
+    <div class="p2-wash prev"></div>
+    <div class="p2-wash cur"></div>
+
+    <div class="p2-notch top" id="agentNotch">
+      <div class="nblobs" id="agentBlobs"></div>
+      <div class="notch-inner">
+        <div class="notch-dots" id="agentDots"></div>
+        <div class="notch-id">
+          <div class="notch-name" id="agentName">LSam</div>
+          <div class="notch-role"><span id="agentRole">Sensing</span> · <span id="tarsStatus">live</span></div>
+        </div>
+        <div class="notch-detail">
+          <div class="notch-stat" id="agentStat"></div>
+          <div class="notch-gauge" id="agentGauge"></div>
+        </div>
+      </div>
+      <button class="notch-caret" id="agentCaret" aria-label="Expand agent">⌄</button>
+    </div>
+
+    <div id="chat" class="p2-feed"></div>
+
+    <div class="p2-foot">
+      <span class="p2-hint" id="chatHint">Step through the briefing →</span>
+      <button class="p2-next" id="nextBtn">›</button>
+    </div>
+
+    <button class="p2-dark" id="p2Dark" aria-label="Toggle dark mode"></button>
+
+    <div class="p2-notch bottom" id="humanNotch">
+      <button class="notch-caret" id="humanCaret" aria-label="Expand human">⌃</button>
+      <div class="notch-inner">
+        <div class="notch-id">
+          <div class="notch-name" id="humanName">Clinician</div>
+          <div class="notch-role" id="humanRole">Clinical gate · in the loop</div>
+        </div>
+        <div class="notch-detail"><div class="notch-stat" id="humanStat"></div></div>
+        <div class="notch-dots" id="humanDots"></div>
+      </div>
+    </div>`;
+
+  chatEl = panelB.querySelector('#chat');
+  nextBtn = panelB.querySelector('#nextBtn');
+  hintEl = panelB.querySelector('#chatHint');
+  statusEl = panelB.querySelector('#tarsStatus');
+  washPrev = panelB.querySelector('.p2-wash.prev');
+  washCur = panelB.querySelector('.p2-wash.cur');
+  agentNotch = panelB.querySelector('#agentNotch');
+  humanNotch = panelB.querySelector('#humanNotch');
+
+  // tap notch body = swap · caret = expand/collapse (stop the tap swallowing it)
+  agentNotch.addEventListener('click', cycleAgent);
+  humanNotch.addEventListener('click', cycleHuman);
+  panelB.querySelector('#agentCaret').addEventListener('click', (e) => { e.stopPropagation(); expTop = !expTop; renderAgent(); });
+  panelB.querySelector('#humanCaret').addEventListener('click', (e) => { e.stopPropagation(); expBottom = !expBottom; renderHuman(); });
+  panelB.querySelector('#p2Dark').addEventListener('click', () => setDark(!dark));
+
+  renderAgent(); renderHuman(); fireWash('lsam', true);
+}
+
 export function initChat() {
-  chatEl = document.getElementById('chat');
-  nextBtn = document.getElementById('nextBtn');
-  hintEl = document.getElementById('chatHint');
   panelB = document.getElementById('panelB');
-  statusEl = document.getElementById('tarsStatus');
+  buildPanel2();
   nextBtn.onclick = () => {
     if (gated || busy) return;
     if (idx >= steps.length) { load(state.mode, state.focusId); return; }
