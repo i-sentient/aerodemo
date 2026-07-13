@@ -10,7 +10,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 import { beds, COL, bedById } from './ontology.js';
 import { state, setMode, onModeChange } from './state.js';
-import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial } from './xray.js';
+import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial, makeVascularMaterial } from './xray.js';
 
 // Patient figure = real anatomical system layers (GLB) rendered as teal holograms.
 import { buildHuman } from './human.js';
@@ -22,6 +22,7 @@ const GLOW = glowTexture();
 
 const HOME = { pos: new THREE.Vector3(0, 1.1, 4.3), look: new THREE.Vector3(0.5, 0.95, 0) }; // look.x>0 shifts the body left, clearing the roster on the right
 const PATIENT = { pos: new THREE.Vector3(0, 1.12, 4.1), look: new THREE.Vector3(0, 0.95, 0) };
+const HEART = { pos: new THREE.Vector3(0.03, 1.34, 0.82), look: new THREE.Vector3(0.02, 1.31, 0.14) }; // tight close-up centred on the heart
 
 let renderer, composer, renderPass, bloom, camera, canvas;
 let floorScene, patientScene, human;
@@ -32,6 +33,7 @@ const camPos = HOME.pos.clone(), camLook = HOME.look.clone();
 const raycaster = new THREE.Raycaster(), ptr = new THREE.Vector2();
 let reveal = 1, driftT = 0, swapTimer = 0;
 let activeLayer = 'skeletal', layerToggleEl = null, floorBody = null;
+let heartBtn = null, zoomHeart = false;
 
 function gradientTex(top, bottom) {
   const cv = document.createElement('canvas'); cv.width = 4; cv.height = 256;
@@ -171,7 +173,7 @@ const SYSTEM_URLS = {
 const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f72 };
 const SKELETON_URL = SYSTEM_URLS.skeletal; // floor twin reuses the skeleton
 
-function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff } = {}) {
+function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = false } = {}) {
   const root = gltf.scene; root.updateMatrixWorld(true);
   let box = new THREE.Box3().setFromObject(root), size = new THREE.Vector3(); box.getSize(size);
   root.scale.setScalar(1.72 / (size.y || 1.72)); root.updateMatrixWorld(true);
@@ -179,7 +181,17 @@ function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff } = {}) {
   root.position.x -= c.x; root.position.z -= c.z; root.position.y -= box.min.y;
   const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
   const mats = [];
-  root.traverse((o) => { if (o.isMesh) { o.material = makeClinicalXrayMaterial(clip, color); o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; mats.push(o.material); } });
+  root.traverse((o) => {
+    if (o.isMesh) {
+      if (vascular) {
+        const isHeart = /atrium|ventricl|heart|cardi|aort/i.test(o.name);   // heart chambers → cardiac red
+        o.material = makeVascularMaterial(clip, { heart: isHeart });
+      } else {
+        o.material = makeClinicalXrayMaterial(clip, color);
+      }
+      o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; mats.push(o.material);
+    }
+  });
   const group = new THREE.Group(); group.add(root); group.visible = false;
   let hsp = null;
   if (heart) { hsp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0xff5a52, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); hsp.scale.set(0.34, 0.34, 1); hsp.position.set(0.02, 1.24, 0.14); group.add(hsp); }
@@ -188,10 +200,12 @@ function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff } = {}) {
     group, clip,
     setHeartColor(hex, isC) { cardiac = !!isC; if (hsp) hsp.material.color.set(hex); },
     setReveal(r) { clip.constant = THREE.MathUtils.lerp(-0.05, 1.92, r); },
-    update(dt, { hr = 70, reveal = 1, spinSpeed = 0.32 } = {}) {
-      spin += dt * spinSpeed; group.rotation.y = spin; this.setReveal(reveal);
+    update(dt, { hr = 70, reveal = 1, spinSpeed = 0.32, freeze = false, focus = false } = {}) {
+      if (freeze) { const tgt = Math.round(spin / (Math.PI * 2)) * Math.PI * 2; spin = THREE.MathUtils.lerp(spin, tgt, 1 - Math.exp(-dt * 3.2)); } // ease to anterior (front)
+      else spin += dt * spinSpeed;
+      group.rotation.y = spin; this.setReveal(reveal);
       const t = performance.now() / 1000; for (const m of mats) m.userData.uTime.value = t;
-      if (hsp) { const beat = 0.5 + 0.5 * Math.sin(t * (hr / 60) * Math.PI * 2); hsp.material.opacity = (0.12 + beat * 0.22) * (cardiac ? reveal : 0); hsp.scale.setScalar(0.3 + beat * 0.14); }
+      if (hsp) { const beat = 0.5 + 0.5 * Math.sin(t * (hr / 60) * Math.PI * 2); const fb = focus ? 1.55 : 1.0; hsp.material.opacity = (0.12 + beat * 0.22) * (cardiac ? reveal : 0) * fb; hsp.scale.setScalar((0.3 + beat * 0.14) * (focus ? 1.25 : 1.0)); }
     },
   };
 }
@@ -211,7 +225,7 @@ function ensureLayer(name, cb) {
   if (loadingNames.has(name)) return;
   loadingNames.add(name);
   getLoader().load(SYSTEM_URLS[name], (g) => {
-    figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name] });
+    figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name], vascular: name === 'vascular' });
     patientScene.add(figs[name].group); loadingNames.delete(name); cb && cb();
   }, undefined, (e) => { loadingNames.delete(name); console.warn('[TARS] layer load failed', name, e); });
 }
@@ -228,8 +242,15 @@ function applyLayer() {
   human = fig; fig.group.visible = true; fig.setReveal(reveal);
   const b = bedById(state.focusId); if (b) configurePatient(b);
   if (layerToggleEl) layerToggleEl.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.l === activeLayer));
+  // heart zoom is only offered on the vascular layer (that's where the heart lives)
+  if (heartBtn) heartBtn.style.display = (activeLayer === 'vascular' && displayMode === 'patient') ? 'flex' : 'none';
+  if (activeLayer !== 'vascular' && zoomHeart) toggleHeartZoom(false);
 }
 function setLayer(name) { activeLayer = name; ensureLayer(name, applyLayer); applyLayer(); }
+function toggleHeartZoom(force) {
+  zoomHeart = force != null ? force : !zoomHeart;
+  if (heartBtn) { heartBtn.classList.toggle('on', zoomHeart); heartBtn.innerHTML = zoomHeart ? '↩ EXIT HEART' : '♥ ZOOM HEART'; }
+}
 function configurePatient(b) { human.setHeartColor(b.cardiac ? 0xff5a52 : b.patient.acuity === 'watch' ? 0xffb24a : 0x9be8ff, b.cardiac); }
 
 onModeChange((mode, focusId) => {
@@ -244,6 +265,7 @@ onModeChange((mode, focusId) => {
     } else {
       activeScene = floorScene; camPos.copy(HOME.pos); camLook.copy(HOME.look);
       if (layerToggleEl) layerToggleEl.style.display = 'none';
+      toggleHeartZoom(false); if (heartBtn) heartBtn.style.display = 'none';
     }
   }, 360);
 });
@@ -275,8 +297,9 @@ function frame(now) {
   let dt = (now - last) / 1000; last = now; dt = Math.min(dt, 0.05); driftT += dt;
   let dp, dl;
   if (displayMode === 'floor') { dp = HOME.pos.clone(); dp.x += Math.sin(driftT * 0.16) * 0.22; dl = HOME.look.clone(); }
+  else if (zoomHeart) { dp = HEART.pos; dl = HEART.look; }
   else { dp = PATIENT.pos; dl = PATIENT.look; }
-  const k = damp(dt, 2.3); camPos.lerp(dp, k); camLook.lerp(dl, k);
+  const k = damp(dt, zoomHeart ? 3.0 : 2.3); camPos.lerp(dp, k); camLook.lerp(dl, k);
   camera.position.copy(camPos); camera.lookAt(camLook);
 
   if (displayMode === 'floor') updateFloor(dt); else updatePatient(dt);
@@ -290,7 +313,7 @@ function updateFloor(dt) { if (floorBody) floorBody.rotation.y += dt * 0.16; }
 function updatePatient(dt) {
   if (reveal < 1) reveal = Math.min(1, reveal + dt / 1.3);
   const b = bedById(state.focusId) || beds[3];
-  human.update(dt, { hr: b.vitals.hr, reveal, spinSpeed: 0.38 });
+  human.update(dt, { hr: b.vitals.hr, reveal, spinSpeed: zoomHeart ? 0 : 0.38, freeze: zoomHeart, focus: zoomHeart });
   const ring = patientScene.userData.ring; if (ring) ring.rotation.z += dt * 0.2;
 }
 
@@ -321,6 +344,16 @@ export function initScene(canvasEl) {
   layerToggleEl.innerHTML = '<button data-l="skeletal" class="on">SKELETAL</button><button data-l="vascular">VASCULAR</button><button data-l="nervous">NERVOUS</button>';
   document.getElementById('stage').appendChild(layerToggleEl);
   layerToggleEl.querySelectorAll('button').forEach((b) => (b.onclick = () => setLayer(b.dataset.l)));
+
+  // heart-zoom toggle (shown only on the vascular layer)
+  heartBtn = document.createElement('button');
+  heartBtn.className = 'heart-zoom'; heartBtn.style.display = 'none';
+  heartBtn.innerHTML = '♥ ZOOM HEART';
+  heartBtn.onclick = () => toggleHeartZoom();
+  document.getElementById('stage').appendChild(heartBtn);
+
+  // dev-only test hook: snap the camera straight to its target (screenshots can't wait for the eased glide)
+  if (import.meta.env && import.meta.env.DEV) window.__snapCam = () => { const t = displayMode !== 'patient' ? HOME : zoomHeart ? HEART : PATIENT; camPos.copy(t.pos); camLook.copy(t.look); if (human && zoomHeart) human.group.rotation.y = Math.round(human.group.rotation.y / (Math.PI * 2)) * Math.PI * 2; };
 
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
