@@ -1,0 +1,127 @@
+/* ============================================================
+   WARD WORKSPACE — Panel C. Mounts the REAL tars workspace (apps.js):
+   eMAR · Inventory · Staffing · Protocols, plus the full sectioned EMR.
+   These rules are the tars Panel C block (tars/styles.css) copied VERBATIM but
+   scoped under .ward-workspace-dock — none of tars' global body/:root leaks into
+   the bright ward. The dock slides in from the far right on the final ICU step.
+   ============================================================ */
+
+/* slide-in wrapper + a local copy of tars' :root vars so the copied rules resolve */
+.ward-workspace-dock{
+  position:fixed;top:0;right:0;bottom:0;width:30vw;z-index:11;
+  transform:translateX(108%);transition:transform 1s cubic-bezier(.65,0,.35,1);
+  pointer-events:none;overflow:hidden;display:flex;flex-direction:column;background:#070a0e;
+  --ink:#e8eef4; --ink-2:rgba(232,238,244,.62); --ink-3:rgba(232,238,244,.36);
+  --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.06);
+  --glass:rgba(255,255,255,.05); --glass-2:rgba(255,255,255,.07); --glass-brd:rgba(255,255,255,.12);
+  --teal:#5dcaa5; --tealD:#6fe3b8; --amber:#f5a623; --amberD:#ffc34a;
+  --red:#e24b4a; --redD:#ff7a73; --green:#37b46a; --greenD:#5fd38a; --blue:#6aa6ff;
+  --shadow:0 14px 40px rgba(0,0,0,.5); --shadow-sm:0 4px 16px rgba(0,0,0,.4);
+  --font:"Segoe UI",Inter,-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,"SF Mono",Menlo,monospace;
+  font-family:var(--font);color:var(--ink)}
+.ward-workspace-dock.in{transform:none;pointer-events:auto}
+.ward-workspace-dock::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 50% at 80% 0%,rgba(66,133,244,.1),transparent 55%)}
+.ward-workspace-dock .mono{font-variant-numeric:tabular-nums}
+
+/* header */
+.ward-workspace-dock .panel-hd{display:flex;align-items:center;gap:9px;padding:13px 16px 11px;flex:0 0 auto;position:relative;z-index:1}
+.ward-workspace-dock .panel-hd .t{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.ward-workspace-dock .panel-hd .accent{width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
+
+/* app view */
+.ward-workspace-dock #appView{flex:1;overflow-y:auto;padding:0;position:relative;z-index:1}
+.ward-workspace-dock #appView::-webkit-scrollbar{width:7px}
+.ward-workspace-dock #appView::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px}
+
+/* floor app cards */
+.ward-workspace-dock .app-card{background:var(--glass);border:1px solid var(--glass-brd);border-radius:14px;box-shadow:var(--shadow-sm);overflow:hidden;animation:rise .3s ease both;margin:14px 16px;backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%)}
+.ward-workspace-dock .app-top{padding:12px 15px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;justify-content:space-between}
+.ward-workspace-dock .app-top .nm{font-weight:800;font-size:13px;display:flex;align-items:center;gap:9px}
+.ward-workspace-dock .app-top .nm .ai{width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px}
+.ward-workspace-dock .app-top .sub{font-size:10px;color:var(--ink-3);letter-spacing:.04em;margin-left:6px}
+
+/* tables */
+.ward-workspace-dock .tbl{width:100%;border-collapse:collapse;font-size:12px}
+.ward-workspace-dock .tbl th{text-align:left;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:700;padding:9px 15px;border-bottom:1px solid var(--line-2)}
+.ward-workspace-dock .tbl td{padding:10px 15px;border-bottom:1px solid var(--line-2);position:relative;color:var(--ink)}
+.ward-workspace-dock .tbl tr:last-child td{border-bottom:none}
+.ward-workspace-dock .tbl .dim{color:var(--ink-3)}
+.ward-workspace-dock .s-due{color:var(--amberD);font-weight:700}
+.ward-workspace-dock .s-given,.ward-workspace-dock .s-done{color:var(--greenD);font-weight:700}
+.ward-workspace-dock .s-low{color:var(--redD);font-weight:700}
+
+/* pill badges + agent tag */
+.ward-workspace-dock .pillbadge{font-size:9px;font-weight:800;letter-spacing:.06em;padding:3px 7px;border-radius:7px;text-transform:uppercase}
+.ward-workspace-dock .b-auto{background:rgba(55,180,106,.18);color:var(--greenD)}
+.ward-workspace-dock .b-flag{background:rgba(226,75,74,.18);color:var(--redD)}
+.ward-workspace-dock .b-ok{background:rgba(93,202,165,.2);color:var(--tealD)}
+.ward-workspace-dock .flashG{animation:flashG 2.2s ease 1}
+.ward-workspace-dock .agent-tag{font-size:9px;font-weight:800;letter-spacing:.08em;color:var(--tealD);display:flex;align-items:center;gap:5px}
+.ward-workspace-dock .agent-tag .d{width:6px;height:6px;border-radius:50%;background:var(--teal);animation:bp 1.4s infinite}
+
+/* LIS / PACS */
+.ward-workspace-dock .lis-order{margin:14px 15px;display:flex;gap:9px}
+.ward-workspace-dock .lis-order button{cursor:pointer;border:none;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;background:linear-gradient(150deg,#5dcaa5,#2faa83);color:#06281f;box-shadow:var(--shadow-sm)}
+.ward-workspace-dock .lis-order button:disabled{background:rgba(255,255,255,.1);color:var(--ink-3);cursor:default}
+.ward-workspace-dock .pacs{margin:15px;border-radius:12px;background:#05080c;height:200px;position:relative;overflow:hidden;border:1px solid var(--line)}
+.ward-workspace-dock .pacs .scan{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#5dcaa5,transparent);animation:scanp 2.4s linear infinite}
+.ward-workspace-dock .pacs .lbl{position:absolute;top:10px;left:12px;color:#5dcaa5;font-size:10px;letter-spacing:.1em;font-family:var(--mono)}
+.ward-workspace-dock .pacs .lbl2{position:absolute;bottom:10px;right:12px;color:#6b7886;font-size:9px;font-family:var(--mono)}
+.ward-workspace-dock .pacs svg{position:absolute;inset:0;width:100%;height:100%}
+
+/* sectioned EMR */
+.ward-workspace-dock .emr{display:flex;height:100%;animation:rise .3s ease both}
+.ward-workspace-dock .emr-rail{width:140px;flex:0 0 auto;border-right:1px solid var(--line);padding:10px 8px;overflow-y:auto;background:rgba(255,255,255,.025)}
+.ward-workspace-dock .emr-rail::-webkit-scrollbar{width:6px}
+.ward-workspace-dock .emr-rail::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:8px}
+.ward-workspace-dock .emr-pt{display:flex;gap:8px;align-items:center;padding:4px 6px 12px;border-bottom:1px solid var(--line-2);margin-bottom:8px}
+.ward-workspace-dock .emr-pt .av{width:30px;height:30px;border-radius:9px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:11px;background:linear-gradient(150deg,#6aa6ff,#9b6dff);box-shadow:0 4px 12px rgba(106,134,240,.4)}
+.ward-workspace-dock .emr-pt .nm{font-size:12px;font-weight:700;line-height:1.2}
+.ward-workspace-dock .emr-pt .mn{font-size:9px;color:var(--ink-3)}
+.ward-workspace-dock .ri{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;font-size:12px;color:var(--ink-2);cursor:pointer;font-weight:600;margin-bottom:2px}
+.ward-workspace-dock .ri .ic{font-size:13px;filter:saturate(1.2)}
+.ward-workspace-dock .ri:hover{background:rgba(255,255,255,.05);color:var(--ink)}
+.ward-workspace-dock .ri.on{background:var(--glass-2);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.ward-workspace-dock .emr-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.ward-workspace-dock .emr-crumb{padding:11px 16px;font-size:11px;color:var(--ink-3);border-bottom:1px solid var(--line-2);font-family:var(--mono)}
+.ward-workspace-dock .emr-crumb b{color:var(--ink-2)}
+.ward-workspace-dock .emr-crumb em{color:var(--blue);font-style:normal;font-weight:700}
+.ward-workspace-dock .emr-body{flex:1;overflow-y:auto;padding:14px 16px;position:relative}
+.ward-workspace-dock .emr-body::-webkit-scrollbar{width:7px}
+.ward-workspace-dock .emr-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:8px}
+.ward-workspace-dock .fgrid,.ward-workspace-dock .vgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ward-workspace-dock .fld{border:1px solid var(--glass-brd);border-radius:11px;padding:10px 12px;position:relative;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:box-shadow .3s,background .3s}
+.ward-workspace-dock .fld .k{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.ward-workspace-dock .fld .val{font-size:14px;margin-top:3px;font-weight:600;color:var(--ink)}
+.ward-workspace-dock .fld .val i{font-size:10px;color:var(--ink-3);font-weight:500;font-style:normal}
+.ward-workspace-dock .fld .val b{font-variant-numeric:tabular-nums}
+.ward-workspace-dock .fld.big{grid-column:span 2}
+.ward-workspace-dock .fld.big .val{font-size:28px;font-weight:800}
+.ward-workspace-dock .sec-h{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin:16px 0 8px}
+.ward-workspace-dock .plist{margin-left:18px;font-size:13px;line-height:1.8;color:var(--ink)}
+.ward-workspace-dock .emr-tbl{border:1px solid var(--glass-brd);border-radius:11px;overflow:hidden;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.ward-workspace-dock .note{border:1px solid var(--glass-brd);border-radius:11px;padding:12px 14px;margin-bottom:10px;background:var(--glass);position:relative;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.ward-workspace-dock .note .nh{display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px;color:var(--ink-2)}
+.ward-workspace-dock .note p{font-size:12.5px;line-height:1.55;color:var(--ink)}
+.ward-workspace-dock .agent-focus{background:rgba(106,166,255,.14)!important}
+.ward-workspace-dock .fld.agent-focus,.ward-workspace-dock .note.agent-focus{box-shadow:0 0 0 1px var(--blue),0 12px 30px rgba(106,166,255,.3)}
+.ward-workspace-dock .agent-caret{position:absolute;top:-10px;right:8px;background:linear-gradient(120deg,#4f8cff,#7a6cf0);color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.08em;padding:2px 8px;border-radius:8px;box-shadow:0 4px 14px rgba(95,108,240,.6);white-space:nowrap;pointer-events:none;animation:caretIn .35s ease both;z-index:3}
+
+/* dock */
+.ward-workspace-dock .dock{flex:0 0 auto;display:flex;justify-content:center;gap:10px;padding:10px;margin:0 12px 12px;background:rgba(255,255,255,.05);backdrop-filter:blur(20px) saturate(150%);-webkit-backdrop-filter:blur(20px) saturate(150%);border:1px solid var(--glass-brd);border-radius:18px;box-shadow:var(--shadow);position:relative;z-index:1}
+.ward-workspace-dock .dock .ico{position:relative;width:46px;height:46px;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:20px;transition:transform .18s ease,box-shadow .18s;border:1px solid transparent}
+.ward-workspace-dock .dock .ico:hover{transform:translateY(-5px) scale(1.04)}
+.ward-workspace-dock .dock .ico.active{box-shadow:0 6px 18px rgba(0,0,0,.5);border-color:var(--glass-brd)}
+.ward-workspace-dock .dock .ico.active::after{content:"";position:absolute;bottom:-6px;width:5px;height:5px;border-radius:50%;background:var(--ink-2)}
+.ward-workspace-dock .dock .ico .nm{font-size:7.5px;letter-spacing:.04em;color:var(--ink-2);margin-top:1px;font-weight:700}
+.ward-workspace-dock .dock .ico.pinged{animation:ping .6s ease 2}
+
+/* keyframes used by the copied rules (uniquely named; harmless if re-declared) */
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes flashG{0%{background:rgba(106,166,255,0)}25%{background:rgba(106,166,255,.34)}100%{background:rgba(106,166,255,0)}}
+@keyframes scanp{0%{top:0}100%{top:100%}}
+@keyframes caretIn{from{opacity:0;transform:translateY(4px) scale(.9)}to{opacity:1;transform:none}}
+@keyframes ping{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px) scale(1.08)}}
+@keyframes bp{0%{box-shadow:0 0 0 0 rgba(93,202,165,.55)}70%{box-shadow:0 0 0 7px rgba(93,202,165,0)}100%{box-shadow:0 0 0 0 rgba(93,202,165,0)}}
