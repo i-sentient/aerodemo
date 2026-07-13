@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
 import { RoundERLab } from './lab/RoundERLab'
+import { CathLabScene } from './lab/CathLabScene'
 import { useOntologyStore } from './ontology'
 import './index.css'
 
@@ -11,12 +12,18 @@ if (import.meta.env.DEV) {
     useOntologyStore
 }
 
-// Default view is the ER lab (what we're building). The old full app (intro
-// dive + corridor scene) now lives in its own project — ../sentient-ward — but
-// is still reachable here behind #app for convenience.
-const showOldApp =
-  typeof window !== 'undefined' && window.location.hash.includes('app')
+// Views by hash:
+//   (default) → ER shell lab   ·   #cath-lab → Cath Lab shell   ·   #app → old full app
+// The old full app (intro dive + corridor scene) also lives in ../sentient-ward.
+const hash = typeof window !== 'undefined' ? window.location.hash : ''
+const view = hash.includes('app') ? (
+  <App />
+) : hash.includes('cath') ? (
+  <CathLabScene />
+) : (
+  <RoundERLab />
+)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>{showOldApp ? <App /> : <RoundERLab />}</React.StrictMode>,
+  <React.StrictMode>{view}</React.StrictMode>,
 )
