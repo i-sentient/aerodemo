@@ -227,10 +227,10 @@ body{font-family:var(--font);color:var(--ink);background:radial-gradient(1200px 
 /* ---- the two notches (tap body = swap · caret = expand) ---- */
 .p2-notch{position:absolute;left:14px;right:14px;height:72px;overflow:hidden;z-index:4;cursor:pointer;
   transition:height .45s cubic-bezier(.4,0,.2,1),background .5s ease;-webkit-tap-highlight-color:transparent}
-.p2-notch.top{top:0;border-radius:0 0 40px 40px;background:var(--p2-plate);box-shadow:0 16px 44px rgba(20,16,12,.16)}
+.p2-notch.top{top:0;height:84px;border-radius:0 0 40px 40px;background:var(--p2-plate);box-shadow:0 16px 44px rgba(20,16,12,.16)}
 .p2-notch.top.exp{height:206px}
 .p2-notch.bottom{bottom:0;border-radius:40px 40px 0 0;background:var(--p2-hbg);box-shadow:0 -16px 44px rgba(20,16,12,.16)}
-.p2-notch.bottom.exp{height:196px}
+.p2-notch.bottom.exp{height:222px}
 .nblobs{position:absolute;inset:0;z-index:0}
 #panelB.p2.dark .nblobs{mix-blend-mode:screen}
 .nblob{position:absolute;transform:translate(-50%,-50%);border-radius:50%;filter:blur(30px);will-change:transform}
@@ -239,8 +239,7 @@ body{font-family:var(--font);color:var(--ink);background:radial-gradient(1200px 
 @keyframes bd2{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(calc(-50% + 7px),calc(-50% + 9px))}}
 
 .notch-inner{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;padding:11px 18px 12px}
-.notch-dots{display:flex;justify-content:center;gap:6px;flex:0 0 auto}
-.p2-notch.bottom .notch-dots{margin-top:auto}
+.notch-dots{position:absolute;top:14px;right:18px;z-index:3;display:flex;gap:6px}
 .pd{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.35);transition:background .4s}
 .pd.on{background:rgba(255,255,255,.95)}
 .p2-notch.bottom .pd{background:var(--p2-hinksoft)}.p2-notch.bottom .pd.on{background:var(--p2-hink)}
@@ -249,6 +248,24 @@ body{font-family:var(--font);color:var(--ink);background:radial-gradient(1200px 
 .notch-role{margin-top:5px;font-size:9.5px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.7)}
 .p2-notch.bottom .notch-name{color:var(--p2-hink)}
 .p2-notch.bottom .notch-role{color:var(--p2-hinksoft)}
+.p2-notch.bottom.awaiting #humanStatus{color:var(--redD);font-weight:700}
+.p2-notch.bottom.awaiting{animation:chinAwait 1.5s ease-in-out infinite}
+@keyframes chinAwait{0%,100%{box-shadow:0 -16px 44px rgba(20,16,12,.16)}50%{box-shadow:0 -16px 44px rgba(20,16,12,.16),0 0 0 2px var(--redD)}}
+.notch-action{display:none;margin-top:12px}
+.p2-notch.bottom.exp .notch-action{display:block;animation:fadeUp .45s ease both}
+.ord.signoff{align-items:center;border-radius:8px}
+.ord.signoff .bd{display:flex;flex-direction:column;gap:8px}
+.ord.signoff .sel{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;font-weight:600;color:#fff;line-height:1.2;user-select:none}
+.ord.signoff .sel input{position:absolute;opacity:0;width:0;height:0}
+.ord.signoff .ball{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.7);background:transparent;flex:0 0 auto;transition:all .15s}
+.ord.signoff .sel input:checked + .ball{background:#fff;border-color:#fff}
+.ord.signoff .sel:has(input:not(:checked)){opacity:.5}
+.chin-input{display:none;margin-top:auto;margin-bottom:14px;align-items:center;gap:8px;padding-top:12px}
+.p2-notch.bottom.exp .chin-input{display:flex;animation:fadeUp .45s ease both}
+.chin-field{flex:1;min-width:0;background:rgba(127,127,127,.12);border:1px solid rgba(127,127,127,.28);border-radius:8px;padding:10px 14px;color:var(--p2-hink);font-size:12.5px;outline:none}
+.chin-field::placeholder{color:var(--p2-hinksoft)}
+.chin-mic{flex:0 0 auto;width:40px;height:40px;border-radius:8px;border:1px solid rgba(127,127,127,.28);background:rgba(127,127,127,.12);color:var(--p2-hink);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s}
+.chin-mic:hover{background:rgba(127,127,127,.22)}
 .notch-detail{display:none;margin-top:auto;align-items:flex-end;justify-content:space-between;gap:8px}
 .p2-notch.exp .notch-detail{display:flex;animation:fadeUp .45s ease both}
 .notch-stat{display:flex;align-items:flex-end;gap:6px}

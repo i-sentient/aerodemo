@@ -26,8 +26,8 @@ const AGENTS = {
 };
 const AGENT_ORDER = ['lsam', 'tars', 'isam'];
 const HUMANS = {
-  clinician: { name: 'Clinician', role: 'Clinical gate · in the loop', stat: '51', unit: 'REVIEWED', label: 'Clinician · Dr. Rao' },
-  nurse: { name: 'Nurse', role: 'Bedside · executing', stat: '24', unit: 'TASKS', label: 'Nurse · N. Adeyemi' },
+  clinician: { name: 'Clinician', role: 'Clinical gate', status: 'in the loop', stat: '51', unit: 'REVIEWED', label: 'Clinician · Dr. Rao' },
+  nurse: { name: 'Nurse', role: 'Bedside', status: 'executing', stat: '24', unit: 'TASKS', label: 'Nurse · N. Adeyemi' },
 };
 const HUMAN_ORDER = ['clinician', 'nurse'];
 
@@ -92,7 +92,35 @@ function renderHuman() {
   humanNotch.classList.toggle('exp', expBottom);
   humanNotch.querySelector('#humanName').textContent = h.name;
   humanNotch.querySelector('#humanRole').textContent = h.role;
+  const st = humanNotch.querySelector('#humanStatus');
+  if (st && !humanNotch.classList.contains('awaiting')) st.textContent = h.status;
   humanNotch.querySelector('#humanDots').innerHTML = HUMAN_ORDER.map((k) => `<span class="pd${k === activeHuman ? ' on' : ''}"></span>`).join('');
+}
+
+// The human "chin" as a prompt surface: a pending gate lights it up and it says
+// what it's waiting for; confirming resolves it. Seed of the elicitation
+// (question-with-options) widget — sign-off is the one-option version.
+function humanPrompt(order, onAccept) {
+  activeHuman = 'clinician';
+  humanNotch.classList.add('awaiting');
+  expBottom = true; // the panel opens itself for the decision
+  renderHuman();
+  const st = humanNotch.querySelector('#humanStatus'); if (st) st.textContent = 'requesting sign-off';
+  const slot = humanNotch.querySelector('#humanAction');
+  if (slot) {
+    const rows = (order.items || [order.label]).map((t) => `<label class="sel"><input type="checkbox" checked /><span class="ball"></span>${t}</label>`).join('');
+    slot.innerHTML = `<div class="ord gated signoff"><div class="bd">${rows}</div><button class="confirm">APPROVE</button></div>`;
+    const btn = slot.querySelector('.confirm');
+    if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); onAccept(); });
+  }
+}
+function humanResolve(text) {
+  humanNotch.classList.remove('awaiting');
+  const slot = humanNotch.querySelector('#humanAction'); if (slot) slot.innerHTML = '';
+  expBottom = false; // panel closes itself once the decision is made
+  renderHuman();
+  const st = humanNotch.querySelector('#humanStatus'); if (st) st.textContent = text;
+  setTimeout(() => { if (!humanNotch.classList.contains('awaiting')) renderHuman(); }, 1600);
 }
 
 /* ---------- per-speaker ambient wash ---------- */
@@ -150,9 +178,15 @@ function addOrders(list) {
       act.innerHTML = `<div class="state"><span class="spin"></span>firing</div>`;
       setTimeout(() => { o.exec && o.exec(); act.innerHTML = `<div class="state">✓ done</div>`; el.classList.add('done'); }, 1100 + Math.random() * 500);
     } else {
-      const btn = document.createElement('button'); btn.className = 'confirm'; btn.textContent = 'Confirm'; gated = true; updateNext();
-      btn.onclick = () => { o.exec && o.exec(); act.innerHTML = `<div class="state">✓ authorised</div>`; el.querySelector('.tag').style.opacity = 0.5; el.classList.add('done'); gated = false; updateNext(); };
-      act.appendChild(btn);
+      gated = true; updateNext();
+      act.innerHTML = `<div class="state">awaiting sign-off ↓</div>`; // the Accept lives in the clinician panel now
+      humanPrompt(o, () => {
+        o.exec && o.exec();
+        act.innerHTML = `<div class="state">✓ authorised</div>`;
+        el.querySelector('.tag').style.opacity = 0.5; el.classList.add('done');
+        gated = false; updateNext();
+        humanResolve('signed off ✓');
+      });
     }
   });
   chatEl.appendChild(wrap); trimFeed(); scroll();
@@ -205,7 +239,7 @@ function patientScript(b) {
     // 4 · TARS activates the workup: cath lab to STANDBY (auto) + gated diagnostics
     () => { addMsg('tars', `Activating <b>MI Workup Protocol</b>. Pre-alerting the cath lab to standby — the diagnostics need your sign-off:`, 'placing orders'); emrNavigate('orders'); addOrders([
       { label: 'Pre-alert cath lab — STANDBY', detail: 'Operational · provisional, not yet committed', autonomy: 'autonomous' },
-      { label: 'STAT troponin + repeat lactate + 12-lead', detail: 'Diagnostics · requires sign-off', autonomy: 'gated', exec: () => { agentOrderTroponin(); emrNavigate('labs'); } }]); },
+      { label: 'STAT troponin + repeat lactate + 12-lead', items: ['STAT Troponin', 'Repeat Lactate', '12-lead ECG'], detail: 'Diagnostics · requires sign-off', autonomy: 'gated', exec: () => { agentOrderTroponin(); emrNavigate('labs'); } }]); },
     // 5 · order placed → awaiting results
     () => { addMsg('tars', `Signed off — samples to the lab. Results returning live.`, 'awaiting results'); emrNavigate('labs'); },
     // 6 · LSam takes the returning result and forms the trajectory
@@ -217,7 +251,7 @@ function patientScript(b) {
       { label: 'Cath lab — ACTIVATE', detail: 'Operational · standby → live · door-to-balloon clock started', autonomy: 'autonomous' },
       { label: 'Page interventional cardiology', detail: 'Dr. Mensah · on call · operational', autonomy: 'autonomous' },
       { label: 'Hold ICU bed post-PCI', detail: 'Bed management · operational', autonomy: 'autonomous' },
-      { label: 'Give ticagrelor 180 mg + heparin 5000u', detail: 'Antiplatelet/anticoag loading · requires sign-off', autonomy: 'gated', exec: () => { agentGiveMeds(b); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); } }]); },
+      { label: 'Give ticagrelor 180 mg + heparin 5000u', items: ['Ticagrelor 180 mg', 'Heparin 5000u'], detail: 'Antiplatelet/anticoag loading · requires sign-off', autonomy: 'gated', exec: () => { agentGiveMeds(b); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); } }]); },
     // 9 · done
     () => { addMsg('tars', `Documented in the EMR. Cath lab confirmed ready. <span class="em">Pathway active — clock running.</span>`, 'pathway live'); emrNavigate('summary'); },
   ];
@@ -232,6 +266,15 @@ function patientScript(b) {
 }
 
 /* ---------- interactions ---------- */
+// one tap = expand/collapse the card · double tap = swap to the next agent/human
+function wireNotch(notch, cycle, toggleExpand) {
+  let t = null;
+  notch.addEventListener('click', () => {
+    if (t) return;
+    t = setTimeout(() => { t = null; toggleExpand(); }, 240);
+  });
+  notch.addEventListener('dblclick', () => { if (t) { clearTimeout(t); t = null; } cycle(); });
+}
 function cycleAgent() { activeAgent = AGENT_ORDER[(AGENT_ORDER.indexOf(activeAgent) + 1) % AGENT_ORDER.length]; renderAgent(); fireWash(activeAgent, true); }
 function cycleHuman() { activeHuman = HUMAN_ORDER[(HUMAN_ORDER.indexOf(activeHuman) + 1) % HUMAN_ORDER.length]; renderHuman(); fireWash(null, false); }
 function setDark(v) { dark = v; panelB.classList.toggle('dark', dark); renderHuman(); }
@@ -251,7 +294,6 @@ function buildPanel2() {
           <div class="notch-role"><span id="agentRole">Sensing</span> · <span id="tarsStatus">live</span></div>
         </div>
       </div>
-      <button class="notch-caret" id="agentCaret" aria-label="Expand agent">⌄</button>
     </div>
 
     <div id="chat" class="p2-feed"></div>
@@ -264,11 +306,15 @@ function buildPanel2() {
     <button class="p2-dark" id="p2Dark" aria-label="Toggle dark mode"></button>
 
     <div class="p2-notch bottom" id="humanNotch">
-      <button class="notch-caret" id="humanCaret" aria-label="Expand human">⌃</button>
       <div class="notch-inner">
         <div class="notch-id">
           <div class="notch-name" id="humanName">Clinician</div>
-          <div class="notch-role" id="humanRole">Clinical gate · in the loop</div>
+          <div class="notch-role"><span id="humanRole">Clinical gate</span> · <span id="humanStatus">in the loop</span></div>
+        </div>
+        <div class="notch-action" id="humanAction"></div>
+        <div class="chin-input" id="humanInput">
+          <input class="chin-field" id="humanField" placeholder="Add a note or ask…" />
+          <button class="chin-mic" id="humanMic" aria-label="Voice input"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
         </div>
         <div class="notch-dots" id="humanDots"></div>
       </div>
@@ -283,11 +329,15 @@ function buildPanel2() {
   agentNotch = panelB.querySelector('#agentNotch');
   humanNotch = panelB.querySelector('#humanNotch');
 
-  // tap notch body = swap · caret = expand/collapse (stop the tap swallowing it)
-  agentNotch.addEventListener('click', cycleAgent);
-  humanNotch.addEventListener('click', cycleHuman);
-  panelB.querySelector('#agentCaret').addEventListener('click', (e) => { e.stopPropagation(); expTop = !expTop; renderAgent(); });
-  panelB.querySelector('#humanCaret').addEventListener('click', (e) => { e.stopPropagation(); expBottom = !expBottom; renderHuman(); });
+  // one tap = expand/collapse · double tap = swap to the next agent/human
+  wireNotch(agentNotch, cycleAgent, () => { expTop = !expTop; renderAgent(); });
+  wireNotch(humanNotch, cycleHuman, () => { expBottom = !expBottom; renderHuman(); });
+  // clicks inside the clinician input must not bubble up and toggle the panel
+  const hi = panelB.querySelector('#humanInput');
+  if (hi) { hi.addEventListener('click', (e) => e.stopPropagation()); hi.addEventListener('dblclick', (e) => e.stopPropagation()); }
+  // clicks inside the sign-off card (select balls, Approve) must not toggle the panel
+  const ha = panelB.querySelector('#humanAction');
+  if (ha) { ha.addEventListener('click', (e) => e.stopPropagation()); ha.addEventListener('dblclick', (e) => e.stopPropagation()); }
   panelB.querySelector('#p2Dark').addEventListener('click', () => setDark(!dark));
 
   renderAgent(); renderHuman(); fireWash('lsam', true);
