@@ -85,17 +85,13 @@ function renderAgent() {
   agentNotch.querySelector('#agentBlobs').innerHTML = blobsHTML(a.blobs);
   agentNotch.querySelector('#agentName').textContent = a.name;
   agentNotch.querySelector('#agentRole').textContent = a.role;
-  agentNotch.querySelector('#agentStat').innerHTML = dotDigitsSVG(a.stat, 4.4, 'rgba(255,255,255,0.96)') + `<span class="unit">${a.unit}</span>`;
-  agentNotch.querySelector('#agentGauge').innerHTML = arcGaugeSVG(a.gauge, 80);
   agentNotch.querySelector('#agentDots').innerHTML = AGENT_ORDER.map((k) => `<span class="pd${k === activeAgent ? ' on' : ''}"></span>`).join('');
 }
 function renderHuman() {
   const h = HUMANS[activeHuman];
-  const ink = dark ? '#171717' : 'rgba(255,255,255,0.95)';   // SVG fill can't read a CSS var attribute
   humanNotch.classList.toggle('exp', expBottom);
   humanNotch.querySelector('#humanName').textContent = h.name;
   humanNotch.querySelector('#humanRole').textContent = h.role;
-  humanNotch.querySelector('#humanStat').innerHTML = dotDigitsSVG(h.stat, 4.4, ink) + `<span class="unit">${h.unit}</span>`;
   humanNotch.querySelector('#humanDots').innerHTML = HUMAN_ORDER.map((k) => `<span class="pd${k === activeHuman ? ' on' : ''}"></span>`).join('');
 }
 
@@ -200,18 +196,29 @@ function floorScript() {
 }
 function patientScript(b) {
   if (b.patient.acuity === 'critical') return [
+    // 1 · LSam opens the record
     () => { addMsg('lsam', `Scanning <b>${b.id}</b> — ${b.patient.name}, ${b.patient.age}${b.patient.sex}. Opening the chart…`); emrNavigate('summary'); },
-    () => { addMsg('lsam', `Vitals: HR ${b.vitals.hr}, BP ${b.vitals.sys}/${b.vitals.dia}, SpO₂ ${b.vitals.spo2}. Tachycardic and hypotensive.`); emrNavigate('vitals', 'emr-vit-hr', 'Heart rate'); },
-    () => { addMsg('isam', `<b>Anterior ST-elevation</b> on 12-lead, troponin trend rising. Deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b> Advisory: activate STEMI pathway.`); emrNavigate('labs', 'emr-lab-troponin-i', 'Troponin I'); },
-    () => { addMsg('tars', `Activating STEMI pathway. Operational actions fire autonomously:`); emrNavigate('orders'); addOrders([
-      { label: 'Notify cath lab — activate', detail: 'Operational · door-to-balloon clock started', autonomy: 'autonomous' },
+    // 2 · LSam reports ONLY what the monitor + ECG show — no troponin yet
+    () => { addMsg('lsam', `Monitor: <b>HR ${b.vitals.hr}, climbing</b> · BP ${b.vitals.sys}/${b.vitals.dia} · SpO₂ ${b.vitals.spo2}. 12-lead: <b>anterior ST-elevation (V1–V4)</b>.`); emrNavigate('vitals', 'emr-vit-hr', 'Heart rate'); },
+    // 3 · iSAM — PROVISIONAL read; recommends a workup, no verdict yet
+    () => { addMsg('isam', `ST-elevation pattern — <b class="em">suspected anterior MI</b>. Provisional; recommend an MI workup to confirm and stage before we commit the pathway.`); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
+    // 4 · TARS activates the workup: cath lab to STANDBY (auto) + gated diagnostics
+    () => { addMsg('tars', `Activating <b>MI Workup Protocol</b>. Pre-alerting the cath lab to standby — the diagnostics need your sign-off:`); emrNavigate('orders'); addOrders([
+      { label: 'Pre-alert cath lab — STANDBY', detail: 'Operational · provisional, not yet committed', autonomy: 'autonomous' },
+      { label: 'STAT troponin + repeat lactate + 12-lead', detail: 'Diagnostics · requires sign-off', autonomy: 'gated', exec: () => { agentOrderTroponin(); emrNavigate('labs'); } }]); },
+    // 5 · order placed → awaiting results
+    () => { addMsg('tars', `Signed off — samples to the lab. Results returning live.`); emrNavigate('labs'); },
+    // 6 · LSam takes the returning result and forms the trajectory
+    () => { addMsg('lsam', `Result in: troponin <b>elevated 8.4</b> (ref &lt;0.04), lactate 2.4, HR still climbing. Formulating trajectory — logging to the note.`); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
+    // 7 · iSAM — COMMITTED verdict, derived from the trajectory
+    () => { addMsg('isam', `Trajectory confirms it — deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>, <b>rising</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b> Commit the reperfusion pathway.`); emrNavigate('notes', 'emr-note-1', 'LSam · trajectory'); },
+    // 8 · TARS commits the pathway — ONE bundle: auto operational + gated clinical
+    () => { addMsg('tars', `Committing STEMI pathway. Operational actions fire autonomously; the loading doses need your sign-off:`); emrNavigate('orders'); addOrders([
+      { label: 'Cath lab — ACTIVATE', detail: 'Operational · standby → live · door-to-balloon clock started', autonomy: 'autonomous' },
       { label: 'Page interventional cardiology', detail: 'Dr. Mensah · on call · operational', autonomy: 'autonomous' },
-      { label: 'Hold ICU bed post-PCI', detail: 'Bed management · operational', autonomy: 'autonomous' }]); },
-    () => { addMsg('tars', `Clinical orders need your confirmation:`); addOrders([
-      { label: 'STAT troponin + repeat 12-lead', detail: 'Lab + diagnostics · requires sign-off', autonomy: 'gated', exec: () => { agentOrderTroponin(); emrNavigate('labs', 'emr-lab-troponin', 'Troponin I'); } }]); },
-    () => { addMsg('tars', `Order placed — result returning live. Logging to the trajectory note.`); emrNavigate('notes', 'emr-note-1', 'LSam note'); },
-    () => { addMsg('tars', `Aspirin given. <b>Ticagrelor 180 mg</b> + <b>heparin</b> are due — confirm administration?`); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); addOrders([
-      { label: 'Give ticagrelor 180 mg + heparin 5000u', detail: 'Antiplatelet/anticoag · requires sign-off', autonomy: 'gated', exec: () => { agentGiveMeds(b); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); } }]); },
+      { label: 'Hold ICU bed post-PCI', detail: 'Bed management · operational', autonomy: 'autonomous' },
+      { label: 'Give ticagrelor 180 mg + heparin 5000u', detail: 'Antiplatelet/anticoag loading · requires sign-off', autonomy: 'gated', exec: () => { agentGiveMeds(b); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); } }]); },
+    // 9 · done
     () => { addMsg('tars', `Documented in the EMR. Cath lab confirmed ready. <span class="em">Pathway active — clock running.</span>`); emrNavigate('summary'); },
   ];
   return [
@@ -243,10 +250,6 @@ function buildPanel2() {
           <div class="notch-name" id="agentName">LSam</div>
           <div class="notch-role"><span id="agentRole">Sensing</span> · <span id="tarsStatus">live</span></div>
         </div>
-        <div class="notch-detail">
-          <div class="notch-stat" id="agentStat"></div>
-          <div class="notch-gauge" id="agentGauge"></div>
-        </div>
       </div>
       <button class="notch-caret" id="agentCaret" aria-label="Expand agent">⌄</button>
     </div>
@@ -267,7 +270,6 @@ function buildPanel2() {
           <div class="notch-name" id="humanName">Clinician</div>
           <div class="notch-role" id="humanRole">Clinical gate · in the loop</div>
         </div>
-        <div class="notch-detail"><div class="notch-stat" id="humanStat"></div></div>
         <div class="notch-dots" id="humanDots"></div>
       </div>
     </div>`;
