@@ -1,0 +1,134 @@
+/* ============================================================
+   WARD-PHASE PANEL B — the agent-swap surface, docked over the ICU.
+   Rules below the dock block are copied VERBATIM from tars/styles.css
+   (its Panel B section) so the panel is pixel-identical — but scoped:
+   none of tars' global body/:root styling leaks into the bright ward.
+   ============================================================ */
+
+/* the sliding dock: far-right corner, real Panel-B dimensions (30% × below-topbar height) */
+.ward-agent-dock{position:fixed;top:0;right:0;bottom:0;width:30vw;z-index:10;
+  transform:translateX(108%);transition:transform 1s cubic-bezier(.65,0,.35,1),right 1s cubic-bezier(.65,0,.35,1);pointer-events:none}
+.ward-agent-dock.in{transform:none;pointer-events:auto}
+/* #panelB must FILL the dock. NOTE: #panelB.p2{position:relative} (below, copied from
+   tars) has equal specificity and comes later, so it was winning and collapsing the panel
+   to height 0 (all children are absolute → nothing in flow). Target #panelB.p2 here to
+   outrank it and keep the panel stretched to the dock's full height. */
+.ward-agent-dock #panelB.p2{position:absolute;inset:0}
+/* a real column beside the ICU — a crisp divider seam, NOT a drop shadow (no overlay look) */
+.ward-agent-dock #panelB{border-left:1px solid rgba(40,70,110,.28)}
+
+/* tars' global font vars, provided locally so the copied rules resolve */
+#panelB{--font:"Segoe UI",Inter,-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,"SF Mono",Menlo,monospace}
+
+/* ===================================================== PANEL B : SPLIT 2 — agent-swap surface (LSam · TARS · iSAM) */
+#panelB.p2{position:relative;overflow:hidden;font-family:var(--font);
+  --p2-canvas:#F2F1EF; --p2-plate:#17151d;
+  --p2-text:#171717; --p2-soft:rgba(23,23,23,.5);
+  --p2-hbg:#1A1A1A; --p2-hink:rgba(255,255,255,.95); --p2-hinksoft:rgba(255,255,255,.6); --p2-hdot:#1A1A1A;
+  --p2-nw0:rgba(23,23,23,.22); --p2-nw1:rgba(23,23,23,.08);
+  --p2-em:#1f7a6a; --redD:#b3122a; --amberD:#8a5a00; --greenD:#0d6b45;
+  background:var(--p2-canvas);transition:background .5s ease}
+#panelB.p2.dark{--p2-canvas:#121114; --p2-plate:#191720;
+  --p2-text:rgba(255,255,255,.92); --p2-soft:rgba(255,255,255,.45);
+  --p2-hbg:#F5F4F2; --p2-hink:#171717; --p2-hinksoft:rgba(23,23,23,.55); --p2-hdot:#F5F4F2;
+  --p2-nw0:rgba(255,255,255,.30); --p2-nw1:rgba(255,255,255,.12);
+  --p2-em:#8fe6d4; --redD:#ff8a8a; --amberD:#ffcf6a; --greenD:#7fe0b0}
+
+/* per-speaker radial washes */
+.p2-wash{position:absolute;inset:0;z-index:0;pointer-events:none}
+#panelB.p2.dark .p2-wash{mix-blend-mode:screen}
+.p2-wash.prev{opacity:.4;transition:opacity .8s ease}
+@keyframes ambientIn{0%{opacity:0}30%{opacity:.8}100%{opacity:.4}}
+
+/* ---- the two notches (tap body = swap · caret = expand) ---- */
+.p2-notch{position:absolute;left:14px;right:14px;height:72px;overflow:hidden;z-index:4;cursor:pointer;
+  transition:height .45s cubic-bezier(.4,0,.2,1),background .5s ease;-webkit-tap-highlight-color:transparent}
+.p2-notch.top{top:0;border-radius:0 0 40px 40px;background:var(--p2-plate);box-shadow:0 16px 44px rgba(20,16,12,.16)}
+.p2-notch.top.exp{height:206px}
+.p2-notch.bottom{bottom:0;border-radius:40px 40px 0 0;background:var(--p2-hbg);box-shadow:0 -16px 44px rgba(20,16,12,.16)}
+.p2-notch.bottom.exp{height:196px}
+.nblobs{position:absolute;inset:0;z-index:0}
+#panelB.p2.dark .nblobs{mix-blend-mode:screen}
+.nblob{position:absolute;transform:translate(-50%,-50%);border-radius:50%;filter:blur(30px);will-change:transform}
+@keyframes bd0{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(calc(-50% + 9px),calc(-50% - 8px))}}
+@keyframes bd1{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(calc(-50% - 8px),calc(-50% + 7px))}}
+@keyframes bd2{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(calc(-50% + 7px),calc(-50% + 9px))}}
+
+.notch-inner{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;padding:11px 18px 12px}
+.notch-dots{display:flex;justify-content:center;gap:6px;flex:0 0 auto}
+.p2-notch.bottom .notch-dots{margin-top:auto}
+.pd{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.35);transition:background .4s}
+.pd.on{background:rgba(255,255,255,.95)}
+.p2-notch.bottom .pd{background:var(--p2-hinksoft)}.p2-notch.bottom .pd.on{background:var(--p2-hink)}
+.notch-id{margin-top:9px}
+.notch-name{font-size:26px;font-weight:300;letter-spacing:-.01em;line-height:1;color:rgba(255,255,255,.96)}
+.notch-role{margin-top:5px;font-size:9.5px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+.p2-notch.bottom .notch-name{color:var(--p2-hink)}
+.p2-notch.bottom .notch-role{color:var(--p2-hinksoft)}
+.notch-detail{display:none;margin-top:auto;align-items:flex-end;justify-content:space-between;gap:8px}
+.p2-notch.exp .notch-detail{display:flex;animation:fadeUp .45s ease both}
+.notch-stat{display:flex;align-items:flex-end;gap:6px}
+.notch-stat .unit{font-size:8.5px;font-weight:500;letter-spacing:.16em;color:rgba(255,255,255,.7);padding-bottom:2px}
+.p2-notch.bottom .notch-stat .unit{color:var(--p2-hinksoft)}
+.notch-caret{position:absolute;z-index:3;right:15px;width:26px;height:26px;border-radius:50%;border:none;cursor:pointer;
+  background:rgba(255,255,255,.15);color:rgba(255,255,255,.9);font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;
+  transition:transform .4s ease;-webkit-tap-highlight-color:transparent}
+.p2-notch.top .notch-caret{top:13px}
+.p2-notch.bottom .notch-caret{bottom:13px;background:var(--p2-hink);color:var(--p2-hbg)}
+.p2-notch.exp .notch-caret{transform:rotate(180deg)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---- conversation feed ---- */
+#chat.p2-feed{position:absolute;top:86px;bottom:120px;left:18px;right:18px;z-index:1;
+  display:flex;flex-direction:column;justify-content:center;gap:13px;overflow-y:auto}
+#chat.p2-feed::-webkit-scrollbar{width:6px}#chat.p2-feed::-webkit-scrollbar-thumb{background:rgba(120,120,120,.25);border-radius:8px}
+.msg{max-width:84%;display:flex;flex-direction:column;gap:5px;animation:msgIn .5s ease both;transition:opacity .6s ease}
+.msg.old{opacity:.32}
+.msg.sys{align-self:flex-start;text-align:left}
+.msg.hum{align-self:flex-end;text-align:right}
+.msg .who{display:flex;align-items:center;gap:6px;font-size:9px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--p2-soft)}
+.msg.hum .who{justify-content:flex-end}
+.msg .who .wd{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.msg .bub{font-size:14.5px;font-weight:400;line-height:1.5;color:var(--p2-text);letter-spacing:-.005em;transition:color .5s ease}
+.msg.old .bub{font-weight:300}
+.bub b{font-weight:600}.bub .em{font-weight:600;color:var(--p2-em)}
+.bub.typing{display:inline-flex;gap:6px;align-items:center}
+.bub.typing i{width:7px;height:7px;border-radius:50%;background:var(--p2-soft);animation:td 1s infinite}
+.bub.typing i:nth-child(2){animation-delay:.15s}.bub.typing i:nth-child(3){animation-delay:.3s}
+@keyframes td{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:.9;transform:translateY(-3px)}}
+@keyframes msgIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+/* ---- order cards (autonomy firewall) ---- */
+.orders{display:flex;flex-direction:column;gap:9px;align-self:flex-start;max-width:94%;margin-top:2px;animation:msgIn .5s ease both}
+.ord{position:relative;border-radius:18px;padding:11px 13px;display:flex;align-items:center;gap:11px;font-size:12.5px;overflow:hidden;color:#fff;
+  border:1px solid rgba(255,255,255,.28);box-shadow:0 10px 26px rgba(40,30,20,.2)}
+.ord::before{content:"";position:absolute;left:0;right:0;top:0;height:46%;pointer-events:none;background:linear-gradient(to bottom,rgba(255,255,255,.14),transparent)}
+.ord .ic{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto;color:#fff;background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.4)}
+.ord .bd{flex:1;min-width:0}.ord .bd .lb{font-weight:600;color:#fff}.ord .bd .dt{font-size:10.5px;color:rgba(255,255,255,.74);margin-top:1px}
+.ord .tag{font-size:8px;font-weight:700;letter-spacing:.12em;padding:3px 8px;border-radius:8px;text-transform:uppercase;white-space:nowrap;background:rgba(255,255,255,.26);color:#fff;border:1px solid rgba(255,255,255,.32)}
+.ord.autonomous{background:linear-gradient(150deg,#1F7A50,#2FA96E)}
+.ord.gated{background:linear-gradient(145deg,#E0627A,#F0945E)}
+.ord .confirm{cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.04em;padding:8px 15px;border-radius:16px;border:1px solid rgba(255,255,255,.25);background:rgba(28,30,36,.92);color:#fff;animation:gpulse 1.6s infinite}
+@keyframes gpulse{0%,100%{box-shadow:0 5px 14px rgba(20,22,28,.4)}50%{box-shadow:0 5px 20px rgba(20,22,28,.5),0 0 0 5px rgba(255,255,255,.14)}}
+.ord .state{font-size:10px;font-weight:700;letter-spacing:.06em;color:#fff;display:flex;align-items:center;gap:6px;white-space:nowrap}.ord.done{opacity:.94}
+.spin{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ---- stepping foot ---- */
+.p2-foot{position:absolute;bottom:80px;left:20px;right:20px;z-index:3;display:flex;align-items:center;gap:10px;pointer-events:none}
+.p2-hint{flex:1;font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--p2-soft);animation:hintPulse 2.6s ease-in-out infinite}
+@keyframes hintPulse{0%,100%{opacity:.4}50%{opacity:.85}}
+.p2-next{pointer-events:auto;cursor:pointer;border:none;width:38px;height:38px;border-radius:50%;font-size:17px;font-weight:700;flex:0 0 auto;
+  background:var(--p2-text);color:var(--p2-canvas);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.22);transition:transform .18s,opacity .18s}
+.p2-next:hover{transform:translateY(-1px)}
+.p2-next:disabled{opacity:.3;cursor:default;transform:none}
+
+/* ---- dark-mode toggle (right edge) ---- */
+.p2-dark{position:absolute;top:50%;right:12px;transform:translateY(-50%);z-index:6;width:40px;height:40px;border-radius:50%;cursor:pointer;
+  border:1px solid var(--p2-soft);background:transparent;display:flex;align-items:center;justify-content:center;transition:border .5s ease;-webkit-tap-highlight-color:transparent}
+.p2-dark::before{content:"";width:15px;height:15px;border-radius:50%;background:var(--p2-text);box-shadow:inset -6px -2px 0 0 var(--p2-canvas);transition:box-shadow .5s ease,background .5s ease}
+#panelB.p2.dark .p2-dark::before{box-shadow:none}
+
+/* keep @keyframes rise — shared with Panel C (.app-card / .emr) */
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
