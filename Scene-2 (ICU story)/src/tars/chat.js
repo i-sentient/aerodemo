@@ -70,6 +70,39 @@ function blobsHTML(blobs) {
   return blobs.map((b, i) => `<div class="nblob" style="left:${b[1]};top:${b[2]};width:${b[3]};height:${b[3]};background:radial-gradient(circle, ${b[0]} 0%, ${b[0]} 24%, transparent 70%);animation:bd${i % 3} ${15 + i * 3}s ease-in-out infinite"></div>`).join('');
 }
 
+/* ---------- LSam trajectory trend widget (agent chin, beat 6) ---------- */
+function trendHTML(b) {
+  const news2 = (b.traj && b.traj.news2) || 8;
+  const THRESH = 5; // NEWS2 >= 5 crosses into the escalation zone -> the line turns red there
+  const series = [2, 3, 4, 6, news2]; // NEWS2 early-warning score climbing over recent readings
+  const W = 210, H = 56, pad = 6, min = 0, max = 12;
+  const yOf = (v) => H - pad - ((v - min) / (max - min)) * (H - 2 * pad);
+  const pts = series.map((v, i) => [pad + (i / (series.length - 1)) * (W - 2 * pad), yOf(v)]);
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  const area = `M${pts[0][0].toFixed(1)},${(H - pad).toFixed(1)} ` + pts.map((p) => `L${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ') + ` L${pts[pts.length - 1][0].toFixed(1)},${(H - pad).toFixed(1)} Z`;
+  const last = pts[pts.length - 1];
+  const thr = (yOf(THRESH) / H).toFixed(3); // vertical gradient stop at the threshold line: white below, red above
+  return `<div class="trend">
+    <svg class="trend-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs><linearGradient id="tgGrad" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="${H}">
+        <stop offset="0" stop-color="var(--redD)"/><stop offset="${thr}" stop-color="var(--redD)"/>
+        <stop offset="${thr}" stop-color="#ffffff"/><stop offset="1" stop-color="#ffffff"/>
+      </linearGradient></defs>
+      <path d="${area}" fill="var(--redD)" opacity="0.12"/>
+      <path d="${line}" fill="none" stroke="url(#tgGrad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.4" fill="var(--redD)"/>
+    </svg>
+    <div class="trend-lb">NEWS2 trajectory · <b>rising</b></div>
+  </div>`;
+}
+function showTrend(b) {
+  const slot = agentNotch && agentNotch.querySelector('#agentAction');
+  if (!slot) return;
+  slot.innerHTML = trendHTML(b);
+  expTop = true; // LSam's chin opens itself to show the trajectory it just built
+  renderAgent();
+}
+
 /* ---------- module state ---------- */
 let chatEl, nextBtn, hintEl, panelB, statusEl;
 let washPrev, washCur, agentNotch, humanNotch;
@@ -144,7 +177,7 @@ function thinking(on, label) {
 /* ---------- messages ---------- */
 function addMsg(who, html, status) {
   const isSys = !!AGENTS[who];
-  if (isSys) { activeAgent = who; state.speaker = who; renderAgent(); fireWash(who, true); if (statusEl && status) statusEl.textContent = status; }
+  if (isSys) { activeAgent = who; state.speaker = who; const as = agentNotch && agentNotch.querySelector('#agentAction'); if (as) as.innerHTML = ''; expTop = false; renderAgent(); fireWash(who, true); if (statusEl && status) statusEl.textContent = status; }
   else { activeHuman = who; renderHuman(); fireWash(null, false); }
 
   const m = document.createElement('div'); m.className = 'msg ' + (isSys ? 'sys ' : 'hum ') + who;
@@ -243,7 +276,7 @@ function patientScript(b) {
     // 5 · order placed → awaiting results
     () => { addMsg('tars', `Signed off — samples to the lab. Results returning live.`, 'awaiting results'); emrNavigate('labs'); },
     // 6 · LSam takes the returning result and forms the trajectory
-    () => { addMsg('lsam', `Result in: troponin <b>elevated 8.4</b> (ref &lt;0.04), lactate 2.4, HR still climbing. Formulating trajectory — logging to the note.`, 'formulating trajectory'); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
+    () => { addMsg('lsam', `Result in: troponin <b>elevated 8.4</b> (ref &lt;0.04), lactate 2.4, HR still climbing. Formulating trajectory — logging to the note.`, 'formulating trajectory'); showTrend(b); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
     // 7 · iSAM — COMMITTED verdict, derived from the trajectory
     () => { addMsg('isam', `Trajectory confirms it — deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>, <b>rising</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b> Commit the reperfusion pathway.`, 'committing verdict'); emrNavigate('notes', 'emr-note-1', 'LSam · trajectory'); },
     // 8 · TARS commits the pathway — ONE bundle: auto operational + gated clinical
@@ -293,6 +326,7 @@ function buildPanel2() {
           <div class="notch-name" id="agentName">LSam</div>
           <div class="notch-role"><span id="agentRole">Sensing</span> · <span id="tarsStatus">live</span></div>
         </div>
+        <div class="notch-action" id="agentAction"></div>
       </div>
     </div>
 

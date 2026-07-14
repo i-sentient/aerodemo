@@ -252,7 +252,11 @@ body{font-family:var(--font);color:var(--ink);background:radial-gradient(1200px 
 .p2-notch.bottom.awaiting{animation:chinAwait 1.5s ease-in-out infinite}
 @keyframes chinAwait{0%,100%{box-shadow:0 -16px 44px rgba(20,16,12,.16)}50%{box-shadow:0 -16px 44px rgba(20,16,12,.16),0 0 0 2px var(--redD)}}
 .notch-action{display:none;margin-top:12px}
-.p2-notch.bottom.exp .notch-action{display:block;animation:fadeUp .45s ease both}
+.p2-notch.exp .notch-action{display:block;animation:fadeUp .45s ease both}
+.trend{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:12px}
+.trend-lb{font-size:9.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.92);text-align:center}
+.trend-lb b{color:var(--redD)}
+.trend-spark{width:100%;height:56px;display:block}
 .ord.signoff{align-items:center;border-radius:8px}
 .ord.signoff .bd{display:flex;flex-direction:column;gap:8px}
 .ord.signoff .sel{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;font-weight:600;color:#fff;line-height:1.2;user-select:none}
