@@ -103,10 +103,79 @@ function showTrend(b) {
   renderAgent();
 }
 
+/* ---------- iSAM verdict widget (agent chin, beat 7): OMI ECG read + risk ---------- */
+let ecgRaf = null, ecgBuf = [], ecgPh = 0, ecgLast = 0;
+// ST-elevation morphology when critical (mirrors the hud's ecgSample)
+function ecgWave(p, crit) {
+  let y = 0;
+  if (p < 0.12) y = Math.sin(p / 0.12 * Math.PI) * 0.08;
+  else if (p < 0.18) y = -0.05;
+  else if (p < 0.2) y = -0.18;
+  else if (p < 0.23) y = 1.0;
+  else if (p < 0.26) y = -0.32;
+  else if (p < 0.46) y = crit ? 0.34 : 0.02;
+  else if (p < 0.62) y = Math.sin((p - 0.46) / 0.16 * Math.PI) * (crit ? 0.42 : 0.26);
+  return y + (Math.random() - 0.5) * 0.015;
+}
+function stopEcg() { if (ecgRaf) cancelAnimationFrame(ecgRaf); ecgRaf = null; ecgBuf = []; ecgPh = 0; ecgLast = 0; }
+function startEcg(cv, crit, hr) {
+  stopEcg();
+  const ctx = cv.getContext('2d');
+  const GAP = 2.2, SPEED = 60;
+  const stroke = (getComputedStyle(cv).getPropertyValue('--redD') || '#ff7a73').trim();
+  const loop = (t) => {
+    if (!cv.isConnected) { stopEcg(); return; } // widget gone -> stop the loop
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (w && cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const dt = ecgLast ? Math.min(0.05, (t - ecgLast) / 1000) : 0.016; ecgLast = t;
+    const n = Math.max(1, Math.round(dt * SPEED));
+    for (let i = 0; i < n; i++) { ecgPh = (ecgPh + (hr / 60) / SPEED) % 1; ecgBuf.push(ecgWave(ecgPh, crit)); }
+    while (ecgBuf.length > Math.ceil(w / GAP) + 2) ecgBuf.shift();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.beginPath();
+    const mid = h * 0.6, amp = h * 0.33;
+    for (let i = 0; i < ecgBuf.length; i++) { const x = i * GAP, y = mid - ecgBuf[i] * amp; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.strokeStyle = stroke; ctx.lineWidth = 1.6; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+    ecgRaf = requestAnimationFrame(loop);
+  };
+  ecgRaf = requestAnimationFrame(loop);
+}
+// the empty seat: iSAM's chin opens with ONLY the live ECG (reading it), no verdict yet
+function showEcgRead(b) {
+  const slot = agentNotch && agentNotch.querySelector('#agentAction');
+  if (!slot) return;
+  setTimeout(() => { // a beat of gap after LSam's graph closes, then the ECG opens
+    if (activeAgent !== 'isam') return;
+    slot.innerHTML = `<div class="verdict"><canvas class="v-ecg"></canvas><div class="v-risk v-reading">reading…</div></div>`;
+    expTop = true; renderAgent();
+    const cv = slot.querySelector('.v-ecg');
+    if (cv) startEcg(cv, b.patient.acuity === 'critical', (b.vitals && b.vitals.hr) || 118);
+  }, 450);
+}
+// the verdict lands ON TOP of the already-running ECG — no restart
+function showVerdict(b) {
+  const slot = agentNotch && agentNotch.querySelector('#agentAction');
+  if (!slot) return;
+  const pct = Math.round((b.traj && b.traj.detProb ? b.traj.detProb : 0.82) * 100);
+  let risk = slot.querySelector('.v-risk');
+  if (!risk) { // read beat was skipped/too fast — build the whole widget now
+    slot.innerHTML = `<div class="verdict"><canvas class="v-ecg"></canvas><div class="v-risk"></div></div>`;
+    const cv = slot.querySelector('.v-ecg');
+    if (cv) startEcg(cv, b.patient.acuity === 'critical', (b.vitals && b.vitals.hr) || 118);
+    risk = slot.querySelector('.v-risk');
+  }
+  risk.classList.remove('v-reading');
+  risk.innerHTML = `<div class="v-num">${dotDigitsSVG(pct, 6, 'var(--redD)')}<span class="v-pct">%</span></div><div class="v-lb">deterioration</div>`;
+  if (!slot.querySelector('.v-verdict')) { const v = document.createElement('div'); v.className = 'v-verdict'; v.innerHTML = 'OMI-positive · anterior <b>STEMI</b>'; slot.appendChild(v); }
+  expTop = true; renderAgent();
+}
+
 /* ---------- module state ---------- */
 let chatEl, nextBtn, hintEl, panelB, statusEl;
 let washPrev, washCur, agentNotch, humanNotch;
-let steps = [], idx = 0, gated = false, ordSeq = 0, busy = false;
+let steps = [], idx = 0, gated = false, ordSeq = 0, busy = false, pendingNurse = null;
 let activeAgent = 'lsam', activeHuman = 'clinician', dark = false, expTop = false, expBottom = false;
 
 function scroll() { chatEl.scrollTop = chatEl.scrollHeight; }
@@ -155,6 +224,29 @@ function humanResolve(text) {
   const st = humanNotch.querySelector('#humanStatus'); if (st) st.textContent = text;
   setTimeout(() => { if (!humanNotch.classList.contains('awaiting')) renderHuman(); }, 1600);
 }
+// clinician approved -> hand to the Nurse to administer each drug (reconciliation),
+// then it's "given". The chin swaps Clinician -> Nurse without closing.
+function nursePrompt(order, onDone) {
+  activeHuman = 'nurse';
+  humanNotch.classList.add('awaiting');
+  expBottom = true;
+  renderHuman();
+  const st = humanNotch.querySelector('#humanStatus'); if (st) st.textContent = 'administering';
+  const slot = humanNotch.querySelector('#humanAction');
+  if (!slot) return;
+  const items = order.items || [order.label];
+  slot.innerHTML = `<div class="recon">${items.map((t) => `<div class="adm"><span class="adm-lb">${t}</span><button class="adm-btn">Administered</button></div>`).join('')}</div>`;
+  let remaining = items.length;
+  slot.querySelectorAll('.adm').forEach((row) => {
+    row.querySelector('.adm-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (row.classList.contains('done')) return;
+      row.classList.add('done');
+      const btn = row.querySelector('.adm-btn'); btn.textContent = '✓ Administered'; btn.disabled = true;
+      if (--remaining === 0) onDone();
+    });
+  });
+}
 
 /* ---------- per-speaker ambient wash ---------- */
 function washCss(kind, fromTop) {
@@ -177,7 +269,12 @@ function thinking(on, label) {
 /* ---------- messages ---------- */
 function addMsg(who, html, status) {
   const isSys = !!AGENTS[who];
-  if (isSys) { activeAgent = who; state.speaker = who; const as = agentNotch && agentNotch.querySelector('#agentAction'); if (as) as.innerHTML = ''; expTop = false; renderAgent(); fireWash(who, true); if (statusEl && status) statusEl.textContent = status; }
+  if (isSys) {
+    const changed = who !== activeAgent; // only close the widget when a DIFFERENT agent takes over
+    activeAgent = who; state.speaker = who;
+    if (changed) { const as = agentNotch && agentNotch.querySelector('#agentAction'); if (as) as.innerHTML = ''; stopEcg(); expTop = false; }
+    renderAgent(); fireWash(who, true); if (statusEl && status) statusEl.textContent = status;
+  }
   else { activeHuman = who; renderHuman(); fireWash(null, false); }
 
   const m = document.createElement('div'); m.className = 'msg ' + (isSys ? 'sys ' : 'hum ') + who;
@@ -214,11 +311,31 @@ function addOrders(list) {
       gated = true; updateNext();
       act.innerHTML = `<div class="state">awaiting sign-off ↓</div>`; // the Accept lives in the clinician panel now
       humanPrompt(o, () => {
-        o.exec && o.exec();
-        act.innerHTML = `<div class="state">✓ authorised</div>`;
-        el.querySelector('.tag').style.opacity = 0.5; el.classList.add('done');
-        gated = false; updateNext();
-        humanResolve('signed off ✓');
+        if (o.administer) {
+          // clinician approved -> close the clinician card, drop a handoff line, and arm
+          // the nurse card behind Next (a real gap: you press → to bring the nurse up)
+          act.innerHTML = `<div class="state">approved · awaiting nurse ↓</div>`;
+          humanResolve('signed off ✓');
+          addMsg('tars', `Approved. Nurse — go ahead and administer the loading doses.`, 'awaiting nurse');
+          gated = false;
+          pendingNurse = () => {
+            nursePrompt(o, () => {
+              o.exec && o.exec(); // chart flips to "given" only once the nurse administers
+              act.innerHTML = `<div class="state">✓ administered</div>`;
+              el.querySelector('.tag').style.opacity = 0.5; el.classList.add('done');
+              gated = false; updateNext();
+              humanResolve('given ✓');
+            });
+            gated = true; updateNext(); // re-gate while the nurse administers
+          };
+          updateNext(); hintEl.textContent = 'Nurse to administer →';
+        } else {
+          o.exec && o.exec();
+          act.innerHTML = `<div class="state">✓ authorised</div>`;
+          el.querySelector('.tag').style.opacity = 0.5; el.classList.add('done');
+          gated = false; updateNext();
+          humanResolve('signed off ✓');
+        }
       });
     }
   });
@@ -238,7 +355,7 @@ function runStep() {
   setTimeout(() => { typing.remove(); thinking(false); steps[idx](); idx++; busy = false; updateNext(); }, 480);
 }
 function load(kind, bedId) {
-  chatEl.innerHTML = ''; idx = 0; gated = false; busy = false;
+  chatEl.innerHTML = ''; idx = 0; gated = false; busy = false; pendingNurse = null;
   steps = kind === 'patient' ? patientScript(bedById(bedId)) : floorScript();
   if (steps.length) { steps[0](); idx = 1; }
   updateNext();
@@ -277,15 +394,17 @@ function patientScript(b) {
     () => { addMsg('tars', `Signed off — samples to the lab. Results returning live.`, 'awaiting results'); emrNavigate('labs'); },
     // 6 · LSam takes the returning result and forms the trajectory
     () => { addMsg('lsam', `Result in: troponin <b>elevated 8.4</b> (ref &lt;0.04), lactate 2.4, HR still climbing. Formulating trajectory — logging to the note.`, 'formulating trajectory'); showTrend(b); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
-    // 7 · iSAM — COMMITTED verdict, derived from the trajectory
-    () => { addMsg('isam', `Trajectory confirms it — deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>, <b>rising</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b> Commit the reperfusion pathway.`, 'committing verdict'); emrNavigate('notes', 'emr-note-1', 'LSam · trajectory'); },
-    // 8 · TARS commits the pathway — ONE bundle: auto operational + gated clinical
+    // 7 · the empty seat — iSAM pulls the ECG and runs OMI (no verdict yet)
+    () => { addMsg('isam', `Pulling the 12-lead — running the <b>OMI model</b>.`, 'reading ECG'); showEcgRead(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
+    // 8 · iSAM verdict — the risk + call land on top of the ECG it just read
+    () => { addMsg('isam', `<b>OMI-positive</b> — occlusive anterior MI. Deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b> Commit the reperfusion pathway.`, 'committing verdict'); showVerdict(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
+    // 9 · TARS commits the pathway — ONE bundle: auto operational + gated clinical
     () => { addMsg('tars', `Committing STEMI pathway. Operational actions fire autonomously; the loading doses need your sign-off:`, 'activating pathway'); emrNavigate('orders'); addOrders([
       { label: 'Cath lab — ACTIVATE', detail: 'Operational · standby → live · door-to-balloon clock started', autonomy: 'autonomous' },
       { label: 'Page interventional cardiology', detail: 'Dr. Mensah · on call · operational', autonomy: 'autonomous' },
       { label: 'Hold ICU bed post-PCI', detail: 'Bed management · operational', autonomy: 'autonomous' },
-      { label: 'Give ticagrelor 180 mg + heparin 5000u', items: ['Ticagrelor 180 mg', 'Heparin 5000u'], detail: 'Antiplatelet/anticoag loading · requires sign-off', autonomy: 'gated', exec: () => { agentGiveMeds(b); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); } }]); },
-    // 9 · done
+      { label: 'Give ticagrelor 180 mg + heparin 5000u', items: ['Ticagrelor 180 mg', 'Heparin 5000u'], administer: true, detail: 'Antiplatelet/anticoag loading · requires sign-off', autonomy: 'gated', exec: () => { agentGiveMeds(b); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); } }]); },
+    // 10 · done
     () => { addMsg('tars', `Documented in the EMR. Cath lab confirmed ready. <span class="em">Pathway active — clock running.</span>`, 'pathway live'); emrNavigate('summary'); },
   ];
   return [
@@ -377,14 +496,25 @@ function buildPanel2() {
   renderAgent(); renderHuman(); fireWash('lsam', true);
 }
 
+function advance() {
+  if (busy) return;
+  if (pendingNurse) { const p = pendingNurse; pendingNurse = null; p(); return; } // bring up the armed nurse card
+  if (gated) return;
+  if (idx >= steps.length) { load(state.mode, state.focusId); return; }
+  runStep();
+}
 export function initChat() {
   panelB = document.getElementById('panelB');
   buildPanel2();
-  nextBtn.onclick = () => {
-    if (gated || busy) return;
-    if (idx >= steps.length) { load(state.mode, state.focusId); return; }
-    runStep();
-  };
+  nextBtn.onclick = advance; // button kept for the ward dock, hidden in the tars phase
+  // keyboard-driven: Space / → advance the briefing (ignored while typing in the note field)
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' && e.code !== 'ArrowRight') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    e.preventDefault();
+    advance();
+  });
   onModeChange((mode, focusId) => load(mode, focusId));
 }
 
