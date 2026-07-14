@@ -114,9 +114,9 @@ function thinking(on, label) {
 }
 
 /* ---------- messages ---------- */
-function addMsg(who, html) {
+function addMsg(who, html, status) {
   const isSys = !!AGENTS[who];
-  if (isSys) { activeAgent = who; state.speaker = who; renderAgent(); fireWash(who, true); }
+  if (isSys) { activeAgent = who; state.speaker = who; renderAgent(); fireWash(who, true); if (statusEl && status) statusEl.textContent = status; }
   else { activeHuman = who; renderHuman(); fireWash(null, false); }
 
   const m = document.createElement('div'); m.className = 'msg ' + (isSys ? 'sys ' : 'hum ') + who;
@@ -197,29 +197,29 @@ function floorScript() {
 function patientScript(b) {
   if (b.patient.acuity === 'critical') return [
     // 1 · LSam opens the record
-    () => { addMsg('lsam', `Scanning <b>${b.id}</b> — ${b.patient.name}, ${b.patient.age}${b.patient.sex}. Opening the chart…`); emrNavigate('summary'); },
+    () => { addMsg('lsam', `Scanning <b>${b.id}</b> — ${b.patient.name}, ${b.patient.age}${b.patient.sex}. Opening the chart…`, 'opening record'); emrNavigate('summary'); },
     // 2 · LSam reports ONLY what the monitor + ECG show — no troponin yet
-    () => { addMsg('lsam', `Monitor: <b>HR ${b.vitals.hr}, climbing</b> · BP ${b.vitals.sys}/${b.vitals.dia} · SpO₂ ${b.vitals.spo2}. 12-lead: <b>anterior ST-elevation (V1–V4)</b>.`); emrNavigate('vitals', 'emr-vit-hr', 'Heart rate'); },
+    () => { addMsg('lsam', `Monitor: <b>HR ${b.vitals.hr}, climbing</b> · BP ${b.vitals.sys}/${b.vitals.dia} · SpO₂ ${b.vitals.spo2}. 12-lead: <b>anterior ST-elevation (V1–V4)</b>.`, 'reading vitals'); emrNavigate('vitals', 'emr-vit-hr', 'Heart rate'); },
     // 3 · iSAM — PROVISIONAL read; recommends a workup, no verdict yet
-    () => { addMsg('isam', `ST-elevation pattern — <b class="em">suspected anterior MI</b>. Provisional; recommend an MI workup to confirm and stage before we commit the pathway.`); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
+    () => { addMsg('isam', `ST-elevation pattern — <b class="em">suspected anterior MI</b>. Provisional; recommend an MI workup to confirm and stage before we commit the pathway.`, 'provisional read'); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
     // 4 · TARS activates the workup: cath lab to STANDBY (auto) + gated diagnostics
-    () => { addMsg('tars', `Activating <b>MI Workup Protocol</b>. Pre-alerting the cath lab to standby — the diagnostics need your sign-off:`); emrNavigate('orders'); addOrders([
+    () => { addMsg('tars', `Activating <b>MI Workup Protocol</b>. Pre-alerting the cath lab to standby — the diagnostics need your sign-off:`, 'placing orders'); emrNavigate('orders'); addOrders([
       { label: 'Pre-alert cath lab — STANDBY', detail: 'Operational · provisional, not yet committed', autonomy: 'autonomous' },
       { label: 'STAT troponin + repeat lactate + 12-lead', detail: 'Diagnostics · requires sign-off', autonomy: 'gated', exec: () => { agentOrderTroponin(); emrNavigate('labs'); } }]); },
     // 5 · order placed → awaiting results
-    () => { addMsg('tars', `Signed off — samples to the lab. Results returning live.`); emrNavigate('labs'); },
+    () => { addMsg('tars', `Signed off — samples to the lab. Results returning live.`, 'awaiting results'); emrNavigate('labs'); },
     // 6 · LSam takes the returning result and forms the trajectory
-    () => { addMsg('lsam', `Result in: troponin <b>elevated 8.4</b> (ref &lt;0.04), lactate 2.4, HR still climbing. Formulating trajectory — logging to the note.`); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
+    () => { addMsg('lsam', `Result in: troponin <b>elevated 8.4</b> (ref &lt;0.04), lactate 2.4, HR still climbing. Formulating trajectory — logging to the note.`, 'formulating trajectory'); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
     // 7 · iSAM — COMMITTED verdict, derived from the trajectory
-    () => { addMsg('isam', `Trajectory confirms it — deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>, <b>rising</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b> Commit the reperfusion pathway.`); emrNavigate('notes', 'emr-note-1', 'LSam · trajectory'); },
+    () => { addMsg('isam', `Trajectory confirms it — deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>, <b>rising</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b> Commit the reperfusion pathway.`, 'committing verdict'); emrNavigate('notes', 'emr-note-1', 'LSam · trajectory'); },
     // 8 · TARS commits the pathway — ONE bundle: auto operational + gated clinical
-    () => { addMsg('tars', `Committing STEMI pathway. Operational actions fire autonomously; the loading doses need your sign-off:`); emrNavigate('orders'); addOrders([
+    () => { addMsg('tars', `Committing STEMI pathway. Operational actions fire autonomously; the loading doses need your sign-off:`, 'activating pathway'); emrNavigate('orders'); addOrders([
       { label: 'Cath lab — ACTIVATE', detail: 'Operational · standby → live · door-to-balloon clock started', autonomy: 'autonomous' },
       { label: 'Page interventional cardiology', detail: 'Dr. Mensah · on call · operational', autonomy: 'autonomous' },
       { label: 'Hold ICU bed post-PCI', detail: 'Bed management · operational', autonomy: 'autonomous' },
       { label: 'Give ticagrelor 180 mg + heparin 5000u', detail: 'Antiplatelet/anticoag loading · requires sign-off', autonomy: 'gated', exec: () => { agentGiveMeds(b); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); } }]); },
     // 9 · done
-    () => { addMsg('tars', `Documented in the EMR. Cath lab confirmed ready. <span class="em">Pathway active — clock running.</span>`); emrNavigate('summary'); },
+    () => { addMsg('tars', `Documented in the EMR. Cath lab confirmed ready. <span class="em">Pathway active — clock running.</span>`, 'pathway live'); emrNavigate('summary'); },
   ];
   return [
     () => { addMsg('lsam', `Scanning <b>${b.id}</b> — ${b.patient.name}. ${b.patient.dx}. Opening the chart…`); emrNavigate('summary'); },
