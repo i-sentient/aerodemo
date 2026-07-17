@@ -9,47 +9,46 @@
 export type WardLine = { who: string; html: string }
 
 export const WARD_BEATS: Record<number, WardLine[]> = {
-  // state 2 — bird's-eye scan · hero bed flags green (de-escalation eligible)
+  // state 2 — the unit + why we're making room (capacity motivation), Bed 8 flagged
   2: [
-    { who: 'lsam', html: `Ward scan complete — ICU·North, <b>8 beds</b>. Trajectories nominal on seven.` },
-    { who: 'isam', html: `Bed 8 reviewed: NEWS2 falling, pressors off 12h. <span class="em">Step-down eligible.</span>` },
-    { who: 'tars', html: `Flagging Bed 8 for de-escalation.` },
+    { who: 'lsam', html: `Overnight scan's in — ICU·North, <b>eight beds</b>. Seven holding steady.` },
+    { who: 'tars', html: `Cardiology just called: a STEMI's inbound and there's no Level-3 bed. Let me find them one.` },
+    { who: 'isam', html: `Bed 8 — <b>Jagan Mohan</b>. Sepsis, but he's turned the corner: off pressors, NEWS2 down to 2. <span class="em">He's ready to step down.</span>` },
   ],
 
   // state 3 — hero push-in · violet orb grows (patient lifted out)
   3: [
-    { who: 'tars', html: `Initiating transfer — step-down bed reserved, portering paged.` },
+    { who: 'tars', html: `Moving him — step-down bed booked, porters paged. All handled.` },
   ],
 
   // state 4 — orb shrinks away · bed brown/blinking (dirty, needs making)
   4: [
-    { who: 'tars', html: `Patient off the unit. Bed 8 marked <b>unmade</b> — housekeeping queued.` },
+    { who: 'tars', html: `Jagan's on his way to the ward. Housekeeping's turning Bed 8 now.` },
   ],
 
   // state 5 — bed blue (clean & ready)
   5: [
-    { who: 'tars', html: `Bed 8 turned. <span class="em">Clean and ready.</span> Net effect: +1 Level-3 bed.` },
+    { who: 'lsam', html: `Bed 8 turned — <span class="em">clean and ready.</span> There's your Level-3 bed.` },
   ],
 
   // state 6 — red orb + halo (inbound critical patient)
   6: [
-    { who: 'lsam', html: `Inbound — chest pain, ETA 9 minutes. Routing to Bed 8.` },
-    { who: 'isam', html: `ECG relayed: <b style="color:var(--redD)">anterior STEMI pattern.</b> Advisory: pre-activate pathway.` },
+    { who: 'lsam', html: `And here's the inbound — chest pain, <b>nine minutes out</b>. Routing him to Bed 8.` },
+    { who: 'isam', html: `Pre-hospital ECG's already through — <b style="color:var(--redD)">front-wall STEMI pattern.</b> I'd pre-warn the cath lab.` },
   ],
 
   // state 7 — arrival · patient solidifies onto the bed
   7: [
-    { who: 'tars', html: `Patient arrived — Bed 8 occupied. Vitals streaming live.` },
+    { who: 'tars', html: `Chandrababu's in. Bed 8 occupied, monitors live.` },
   ],
 
   // state 8 — bed blinks red (deterioration)
   8: [
-    { who: 'lsam', html: `Deterioration alarm — Bed 8 trajectory <b style="color:var(--redD)">rising fast.</b>` },
-    { who: 'tars', html: `Opening the Patient Hub. Entering the interface…` },
+    { who: 'lsam', html: `He's not settling — heart rate climbing, sats dropping. <b style="color:var(--redD)">This one's going the wrong way, fast.</b>` },
   ],
 
-  // state 9 — the eMAR workspace (Panel C) slides in
+  // state 9 — the dive: hand straight into his Patient Hub (→ enters)
   9: [
-    { who: 'tars', html: `Workspace online — <b>eMAR</b> loaded. Med-admin queue ready across the unit.` },
+    { who: 'tars', html: `Taking us in — opening his Patient Hub.` },
   ],
 }

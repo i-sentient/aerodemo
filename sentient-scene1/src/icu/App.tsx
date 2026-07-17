@@ -150,16 +150,19 @@ export function WardApp({ onEnterICU }: { onEnterICU: () => void }) {
   const [step, setStep] = useState(0)
   const [leaving, setLeaving] = useState(false)
   const [interfaceReady, setInterfaceReady] = useState(false)
-  const LAST = N_BEATS - 1 // final step (9) — Panel C docks, then the roster arms for click-to-enter
+  const LAST = N_BEATS - 1 // final ward beat ("Taking us in") — → past it dives into the Patient Hub
+  const stepRef = useRef(0)
+  stepRef.current = step
 
-  // presentation control: Space / → advance a beat, ← / Backspace go back.
-  // Arrows only walk the ward states (0…LAST). The ICU handoff is NO LONGER armed
-  // by the arrow keys — it fires only when the ENTER ICU button is clicked.
+  // presentation control: Space / → advance a beat (← / Backspace go back). The
+  // final → (at LAST) dives straight into Chandrababu's Patient Hub — one
+  // continuous keyboard flow, no separate roster click.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowRight') {
         e.preventDefault()
-        setStep((s) => Math.min(s + 1, LAST))
+        if (stepRef.current >= LAST) setLeaving(true) // dive in
+        else setStep((s) => Math.min(s + 1, LAST))
       } else if (e.code === 'ArrowLeft' || e.code === 'Backspace') {
         e.preventDefault()
         setStep((s) => Math.max(s - 1, 0))
@@ -167,6 +170,14 @@ export function WardApp({ onEnterICU }: { onEnterICU: () => void }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [LAST])
+
+  // once the ward tour is on screen, tell the host shell to drop its loader cover
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'icu:ready' }, '*') } catch { /* not framed */ }
+    })
+    return () => cancelAnimationFrame(id)
   }, [])
 
   // the ENTER ICU button arms `leaving`; once leaving, hand off to the ICU (tars)

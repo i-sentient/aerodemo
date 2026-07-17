@@ -10,8 +10,8 @@ export const ACU_HEX = { stable: 0x5dcaa5, watch: 0xf5a623, critical: 0xe24b4a }
 export const ward = { id: 'WARD-N', name: 'ICU — North', bed_count: 8, command_center_status: 'online' };
 
 export const clinicians = [
-  { id: 'C1', name: 'N. Adeyemi', role: 'nurse', shift: 'Day 07:00–19:00', assigned: ['ICU-01', 'ICU-02', 'ICU-04'], on_call: false },
-  { id: 'C2', name: 'Dr. Okafor', role: 'intensivist', shift: 'On unit', assigned: ['ICU-03', 'ICU-05', 'ICU-06', 'ICU-07'], on_call: true },
+  { id: 'C1', name: 'N. Adeyemi', role: 'nurse', shift: 'Day 07:00–19:00', assigned: ['ICU-01', 'ICU-02', 'ICU-04', 'ICU-08'], on_call: false },
+  { id: 'C2', name: 'Dr. Okafor', role: 'intensivist', shift: 'On unit', assigned: ['ICU-03', 'ICU-05', 'ICU-06', 'ICU-07', 'ICU-08'], on_call: true },
   { id: 'C3', name: 'Dr. Mensah', role: 'cardiologist', shift: 'On call', assigned: [], on_call: true },
 ];
 
@@ -76,8 +76,8 @@ export const beds = [
     { name: 'M. Haddad', age: 46, sex: 'M', mrn: 'MRN-31002', chief: 'Altered consciousness', dx: 'DKA — resolving', comorbid: ['T1DM'], admit: '01:20' },
     { hr: 82, spo2: 97, rr: 16, sys: 118, dia: 72, temp: 37.0 }, { news2: 2, trend: 'falling', prob: 0.10, lsam: 'stable', verdict: 'DKA — IMPROVING' }),
   mk('ICU-04', { x: 0, z: -6.5 }, 0, 'critical',
-    { name: 'J. Okonkwo', age: 63, sex: 'M', mrn: 'MRN-28840', chief: 'Crushing chest pain', dx: 'Anterior STEMI', comorbid: ['HTN', 'Hyperlipidaemia', 'Smoker'], admit: '08:05' },
-    { hr: 124, spo2: 90, rr: 28, sys: 98, dia: 60, temp: 37.1 }, { news2: 8, trend: 'rising', prob: 0.86, lsam: 'flagged', verdict: 'STEMI — CRITICAL' }, true),
+    { name: 'J. Okonkwo', age: 63, sex: 'M', mrn: 'MRN-28840', chief: 'Fever, hypotension', dx: 'Septic shock', comorbid: ['T2DM', 'CKD'], admit: '08:05' },
+    { hr: 124, spo2: 90, rr: 28, sys: 98, dia: 60, temp: 38.9 }, { news2: 8, trend: 'rising', prob: 0.72, lsam: 'flagged', verdict: 'SEPTIC SHOCK — CRITICAL' }),
   mk('ICU-05', { x: 4, z: -6 }, 0, 'stable',
     { name: 'A. Kristof', age: 52, sex: 'F', mrn: 'MRN-30765', chief: 'Sepsis (urinary)', dx: 'Sepsis — responding', comorbid: [], admit: 'Yesterday 22:10' },
     { hr: 78, spo2: 98, rr: 15, sys: 120, dia: 76, temp: 37.2 }, { news2: 2, trend: 'falling', prob: 0.08, lsam: 'stable', verdict: 'STEP-DOWN ELIGIBLE' }),

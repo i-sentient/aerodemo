@@ -9,3 +9,12 @@ export function setMode(mode, focusId = null) {
   state.focusId = focusId;
   for (const fn of subs) fn(mode, focusId);
 }
+
+// global light/dark theme — ONE toggle flips all three splits (light default).
+state.dark = false;
+const tsubs = [];
+export function onThemeChange(fn) { tsubs.push(fn); }
+export function setTheme(dark) {
+  state.dark = dark;
+  for (const fn of tsubs) fn(dark);
+}

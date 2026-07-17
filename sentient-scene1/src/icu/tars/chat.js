@@ -1,5 +1,5 @@
 import { bedById } from './ontology.js';
-import { state, onModeChange } from './state.js';
+import { state, onModeChange, onThemeChange } from './state.js';
 import { agentUpdateEMAR, agentStopPressor, agentOrderTroponin, agentGiveMeds, agentOrderRoutine, emrNavigate, openApp } from './apps.js';
 
 /* ============================================================
@@ -96,6 +96,7 @@ function trendHTML(b) {
   </div>`;
 }
 function showTrend(b) {
+  window.dispatchEvent(new Event('hud:trajectory')); // summon the scanner's trajectory block
   const slot = agentNotch && agentNotch.querySelector('#agentAction');
   if (!slot) return;
   slot.innerHTML = trendHTML(b);
@@ -156,6 +157,7 @@ function showEcgRead(b) {
 }
 // the verdict lands ON TOP of the already-running ECG — no restart
 function showVerdict(b) {
+  window.dispatchEvent(new Event('hud:trajectory')); // verdict lands → make sure the block is up
   const slot = agentNotch && agentNotch.querySelector('#agentAction');
   if (!slot) return;
   const pct = Math.round((b.traj && b.traj.detProb ? b.traj.detProb : 0.82) * 100);
@@ -389,32 +391,32 @@ function patientScript(b) {
     () => { addMsg('tars', `Culprit vessel reperfused. ${b.patient.name} is back under ICU watch — post-PCI. I'll walk the record with you.`, 'post-pci watch'); emrNavigate('summary'); },
     // ── continuation beats go here ──
   ] : [
-    // 1 · LSam opens the record
-    () => { addMsg('lsam', `Scanning <b>${b.id}</b> — ${b.patient.name}, ${b.patient.age}${b.patient.sex}. Opening the chart…`, 'opening record'); emrNavigate('summary'); },
-    // 2 · LSam reports ONLY what the monitor + ECG show — no troponin yet
-    () => { addMsg('lsam', `Monitor: <b>HR ${b.vitals.hr}, climbing</b> · BP ${b.vitals.sys}/${b.vitals.dia} · SpO₂ ${b.vitals.spo2}. 12-lead: <b>anterior ST-elevation (V1–V4)</b>.`, 'reading vitals'); emrNavigate('vitals', 'emr-vit-hr', 'Heart rate'); },
-    // 3 · iSAM — PROVISIONAL read; recommends a workup, no verdict yet
-    () => { addMsg('isam', `ST-elevation pattern — <b class="em">suspected anterior MI</b>. Provisional; recommend an MI workup to confirm and stage before we commit the pathway.`, 'provisional read'); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
+    // 1 · we're already in — the chart's up (continues straight from the ward dive)
+    () => { addMsg('lsam', `${b.patient.name}, ${b.patient.age}. His chart's up.`, 'opening record'); emrNavigate('summary'); },
+    // 2 · what the monitor + ECG show — no troponin yet
+    () => { addMsg('lsam', `Monitor's ugly — <b>HR ${b.vitals.hr} and climbing</b>, sats ${b.vitals.spo2}, and the ECG's got the whole front wall lit.`, 'reading vitals'); emrNavigate('vitals', 'emr-vit-hr', 'Heart rate'); },
+    // 3 · iSAM — PROVISIONAL read; wants to confirm before committing
+    () => { addMsg('isam', `Looks like a big anterior heart attack. I won't call it yet — <span class="em">let's confirm before we commit him.</span>`, 'provisional read'); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
     // 4 · TARS activates the workup: cath lab to STANDBY (auto) + gated diagnostics
-    () => { addMsg('tars', `Activating <b>MI Workup Protocol</b>. Pre-alerting the cath lab to standby — the diagnostics need your sign-off:`, 'placing orders'); emrNavigate('orders'); addOrders([
-      { label: 'Pre-alert cath lab — STANDBY', detail: 'Operational · provisional, not yet committed', autonomy: 'autonomous' },
-      { label: 'STAT troponin + repeat lactate + 12-lead', items: ['STAT Troponin', 'Repeat Lactate', '12-lead ECG'], detail: 'Diagnostics · requires sign-off', autonomy: 'gated', exec: () => { agentOrderTroponin(); emrNavigate('labs'); } }]); },
+    () => { addMsg('tars', `Cath lab's on standby. Before I commit — bloods and a repeat ECG. That one needs your name.`, 'placing orders'); emrNavigate('orders'); addOrders([
+      { label: 'Pre-alert cath lab — STANDBY', detail: 'Operational · not committed yet', autonomy: 'autonomous' },
+      { label: 'STAT troponin + repeat 12-lead', items: ['STAT Troponin', 'Repeat Lactate', '12-lead ECG'], detail: 'Diagnostics · needs your sign-off', autonomy: 'gated', exec: () => { agentOrderTroponin(); emrNavigate('labs'); } }]); },
     // 5 · order placed → awaiting results
-    () => { addMsg('tars', `Signed off — samples to the lab. Results returning live.`, 'awaiting results'); emrNavigate('labs'); },
+    () => { addMsg('tars', `Signed — samples are away. Results coming back live.`, 'awaiting results'); emrNavigate('labs'); },
     // 6 · LSam takes the returning result and forms the trajectory
-    () => { addMsg('lsam', `Result in: troponin <b>elevated 8.4</b> (ref &lt;0.04), lactate 2.4, HR still climbing. Formulating trajectory — logging to the note.`, 'formulating trajectory'); showTrend(b); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
+    () => { addMsg('lsam', `Troponin's back — <b>8.4</b>, sky-high. That plus the ECG… <span class="em">it's real.</span>`, 'formulating trajectory'); showTrend(b); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
     // 7 · the empty seat — iSAM pulls the ECG and runs OMI (no verdict yet)
-    () => { addMsg('isam', `Pulling the 12-lead — running the <b>OMI model</b>.`, 'reading ECG'); showEcgRead(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
+    () => { addMsg('isam', `Running the ECG through the model now.`, 'reading ECG'); showEcgRead(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
     // 8 · iSAM verdict — the risk + call land on top of the ECG it just read
-    () => { addMsg('isam', `<b>OMI-positive</b> — occlusive anterior MI. Deterioration probability <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b>. Verdict: <b style="color:var(--redD)">STEMI — CRITICAL.</b> Commit the reperfusion pathway.`, 'committing verdict'); showVerdict(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
+    () => { addMsg('isam', `Confirmed — <b>occlusive anterior STEMI</b>. About <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b> he deteriorates without reperfusion. <b style="color:var(--redD)">Open the artery — now.</b>`, 'committing verdict'); showVerdict(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
     // 9 · TARS commits the pathway — ONE bundle: auto operational + gated clinical
-    () => { addMsg('tars', `Committing STEMI pathway. Operational actions fire autonomously; the loading doses need your sign-off:`, 'activating pathway'); emrNavigate('orders'); addOrders([
-      { label: 'Cath lab — ACTIVATE', detail: 'Operational · standby → live · door-to-balloon clock started', autonomy: 'autonomous' },
-      { label: 'Page interventional cardiology', detail: 'Dr. Mensah · on call · operational', autonomy: 'autonomous' },
-      { label: 'Hold ICU bed post-PCI', detail: 'Bed management · operational', autonomy: 'autonomous' },
-      { label: 'Give ticagrelor 180 mg + heparin 5000u', items: ['Ticagrelor 180 mg', 'Heparin 5000u'], administer: true, detail: 'Antiplatelet/anticoag loading · requires sign-off', autonomy: 'gated', exec: () => { agentGiveMeds(b); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); } }]); },
+    () => { addMsg('tars', `Committing the pathway. Cath lab's live, cardiology paged, bed held for after. The loading doses are yours.`, 'activating pathway'); emrNavigate('orders'); addOrders([
+      { label: 'Cath lab — ACTIVATE', detail: 'Standby → live · door-to-balloon clock started', autonomy: 'autonomous' },
+      { label: 'Page interventional cardiology', detail: 'Dr. Mensah · on call', autonomy: 'autonomous' },
+      { label: 'Hold ICU bed post-PCI', detail: 'Bed management', autonomy: 'autonomous' },
+      { label: 'Give ticagrelor 180 mg + heparin 5000u', items: ['Ticagrelor 180 mg', 'Heparin 5000u'], administer: true, detail: 'Antiplatelet/anticoag loading · needs your sign-off', autonomy: 'gated', exec: () => { agentGiveMeds(b); emrNavigate('meds', 'emr-med-ticagrelor', 'Ticagrelor'); } }]); },
     // 10 · done
-    () => { addMsg('tars', `Documented in the EMR. Cath lab confirmed ready. <span class="em">Pathway active — clock running.</span>`, 'pathway live'); emrNavigate('summary'); },
+    () => { addMsg('tars', `Done. It's all in the record, cath lab's ready, clock's running. <span class="em">He's on his way to the artery.</span>`, 'pathway live'); emrNavigate('summary'); },
   ];
   return [
     () => { addMsg('lsam', `Scanning <b>${b.id}</b> — ${b.patient.name}. ${b.patient.dx}. Opening the chart…`); emrNavigate('summary'); },
@@ -438,10 +440,13 @@ function wireNotch(notch, cycle, toggleExpand) {
 }
 function cycleAgent() { activeAgent = AGENT_ORDER[(AGENT_ORDER.indexOf(activeAgent) + 1) % AGENT_ORDER.length]; renderAgent(); fireWash(activeAgent, true); }
 function cycleHuman() { activeHuman = HUMAN_ORDER[(HUMAN_ORDER.indexOf(activeHuman) + 1) % HUMAN_ORDER.length]; renderHuman(); fireWash(null, false); }
-function setDark(v) { dark = v; panelB.classList.toggle('dark', dark); renderHuman(); }
+function setDark(v) { dark = v; if (!panelB) return; panelB.classList.toggle('dark', dark); renderHuman(); }
+// the global top-bar toggle drives this panel's dark variant
+onThemeChange((v) => setDark(v));
 
 function buildPanel2() {
   panelB.classList.add('p2');
+  panelB.classList.toggle('dark', dark); // keep the global theme across rebuilds
   panelB.innerHTML = `
     <div class="p2-wash prev"></div>
     <div class="p2-wash cur"></div>
@@ -464,8 +469,6 @@ function buildPanel2() {
       <span class="p2-hint" id="chatHint">Step through the briefing →</span>
       <button class="p2-next" id="nextBtn">›</button>
     </div>
-
-    <button class="p2-dark" id="p2Dark" aria-label="Toggle dark mode"></button>
 
     <div class="p2-notch bottom" id="humanNotch">
       <div class="notch-inner">
@@ -500,7 +503,6 @@ function buildPanel2() {
   // clicks inside the sign-off card (select balls, Approve) must not toggle the panel
   const ha = panelB.querySelector('#humanAction');
   if (ha) { ha.addEventListener('click', (e) => e.stopPropagation()); ha.addEventListener('dblclick', (e) => e.stopPropagation()); }
-  panelB.querySelector('#p2Dark').addEventListener('click', () => setDark(!dark));
 
   renderAgent(); renderHuman(); fireWash('lsam', true);
 }

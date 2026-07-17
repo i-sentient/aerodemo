@@ -36,3 +36,14 @@ canvas {
 .pulse-dot {
   animation: dotPulse 2.6s ease-in-out infinite;
 }
+
+/* ICU boot loader tile — the pulsing "T" while the embedded TARS app initialises
+   (mirrors the TARS app's own #loading .lg pulse) */
+@keyframes icuBootPulse {
+  0% { box-shadow: 0 0 0 0 rgba(93, 202, 165, 0.55); }
+  70% { box-shadow: 0 0 0 7px rgba(93, 202, 165, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(93, 202, 165, 0); }
+}
+.icu-boot-tile {
+  animation: icuBootPulse 1.6s infinite;
+}

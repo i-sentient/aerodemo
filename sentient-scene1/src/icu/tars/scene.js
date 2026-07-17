@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 import { beds, COL, bedById } from './ontology.js';
-import { state, setMode, onModeChange } from './state.js';
+import { state, setMode, onModeChange, onThemeChange } from './state.js';
 import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial, makeVascularMaterial } from './xray.js';
 
 // Patient figure = real anatomical system layers (GLB) rendered as teal holograms.
@@ -30,8 +30,8 @@ let ringGroup = null; // the bed ring + zone + decal — slowly carousels in flo
 const camPos = HOME.pos.clone(), camLook = HOME.look.clone();
 const raycaster = new THREE.Raycaster(), ptr = new THREE.Vector2();
 let reveal = 1, driftT = 0, swapTimer = 0;
-let activeLayer = 'skeletal', layerToggleEl = null, hoverLabel = null;
-let heartBtn = null, zoomHeart = false;
+let activeLayer = 'skeletal', hoverLabel = null;
+let zoomHeart = false; // toggled by clicking the heart itself (no button)
 
 function gradientTex(top, bottom) {
   const cv = document.createElement('canvas'); cv.width = 4; cv.height = 256;
@@ -152,6 +152,30 @@ function aeroFloorTex() {
   return t;
 }
 
+// light/dark scene backgrounds — swapped by the global top-bar theme toggle.
+// Meshes/lights stay as-authored; only the backdrop + fog re-dress.
+function applySceneTheme(dark) {
+  if (!floorScene || !patientScene) return;
+  const pGround = patientScene.userData.ground;
+  const fGround = floorScene.userData.ground;
+  if (dark) {
+    floorScene.background = gradientTex('#1b2430', '#0a0e14');
+    floorScene.backgroundIntensity = 1;
+    floorScene.fog = new THREE.Fog(0x0c1118, 46, 115);
+    patientScene.background = gradientTex('#202a35', '#0d1218');
+    if (pGround) pGround.material.color.set(0x10161d); // dark stage floor
+    if (fGround) { fGround.material.map = null; fGround.material.color.set(0x0e141c); fGround.material.needsUpdate = true; }
+  } else {
+    floorScene.background = gradientTex('#ffffff', '#c6d7e2'); // ward bright aero
+    floorScene.backgroundIntensity = 1.12;
+    floorScene.fog = new THREE.Fog(0xc6d7e2, 46, 115);
+    patientScene.background = gradientTex('#f1f5f7', '#d7e3ea');
+    if (pGround) pGround.material.color.set(0xe6edf1); // light stage floor
+    if (fGround) { fGround.material.map = floorScene.userData.aeroTex || null; fGround.material.color.set(0xffffff); fGround.material.needsUpdate = true; }
+  }
+}
+onThemeChange(applySceneTheme);
+
 function buildFloor() {
   floorScene = new THREE.Scene();
   floorScene.background = gradientTex('#ffffff', '#c6d7e2'); // ward bright aero
@@ -172,6 +196,7 @@ function buildFloor() {
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(110, 110),
     new THREE.MeshStandardMaterial({ map: aeroFloorTex(), roughness: 0.5, metalness: 0.05, envMapIntensity: 0.5, toneMapped: false }));
   ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.02, RING.cz); ground.receiveShadow = true; floorScene.add(ground);
+  floorScene.userData.ground = ground; floorScene.userData.aeroTex = ground.material.map; // themed by applySceneTheme
 
   // everything ring-shaped lives in one group centred on the zone, so the whole
   // arrangement can carousel about its centre (very slowly) in floor mode
@@ -210,6 +235,7 @@ function buildPatient() {
 
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({ color: 0xe6edf1 }));
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.001; patientScene.add(ground);
+  patientScene.userData.ground = ground; // themed by applySceneTheme
   const cshadow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({ map: GLOW, color: 0x36505c, transparent: true, opacity: 0.22, depthWrite: false }));
   cshadow.rotation.x = -Math.PI / 2; cshadow.position.y = 0.004; patientScene.add(cshadow);
 
@@ -255,12 +281,13 @@ function robustPlace(root, targetH = 1.72) {
 function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = false } = {}) {
   const root = gltf.scene; robustPlace(root, 1.72);
   const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
-  const mats = [];
+  const mats = [], heartMeshes = [];
   root.traverse((o) => {
     if (o.isMesh) {
       if (vascular) {
         const isHeart = /atrium|ventricl|heart|cardi|aort/i.test(o.name);   // heart chambers → cardiac red
         o.material = makeVascularMaterial(clip, { heart: isHeart });
+        if (isHeart) { o.userData.isHeart = true; heartMeshes.push(o); } // click-to-zoom target
       } else {
         o.material = makeClinicalXrayMaterial(clip, color);
       }
@@ -272,7 +299,7 @@ function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = 
   if (heart) { hsp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0xff5a52, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); hsp.scale.set(0.34, 0.34, 1); hsp.position.set(0.02, 1.24, 0.14); group.add(hsp); }
   let cardiac = false, spin = 0;
   return {
-    group, clip,
+    group, clip, heartMeshes,
     setHeartColor(hex, isC) { cardiac = !!isC; if (hsp) hsp.material.color.set(hex); },
     setReveal(r) { clip.constant = THREE.MathUtils.lerp(-0.05, 1.92, r); },
     update(dt, { hr = 70, reveal = 1, spinSpeed = 0.32, freeze = false, focus = false } = {}) {
@@ -318,15 +345,11 @@ function applyLayer() {
   for (const f of Object.values(figs)) f.group.visible = (f === fig);
   human = fig; fig.group.visible = true; fig.setReveal(reveal);
   const b = bedById(state.focusId); if (b) configurePatient(b);
-  if (layerToggleEl) layerToggleEl.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.l === activeLayer));
-  // heart zoom is only offered on the vascular layer (that's where the heart lives)
-  if (heartBtn) heartBtn.style.display = (activeLayer === 'vascular' && displayMode === 'patient') ? 'flex' : 'none';
+  // heart zoom lives on the vascular layer only (that's where the heart is)
   if (activeLayer !== 'vascular' && zoomHeart) toggleHeartZoom(false);
 }
-function setLayer(name) { activeLayer = name; ensureLayer(name, applyLayer); applyLayer(); }
 function toggleHeartZoom(force) {
   zoomHeart = force != null ? force : !zoomHeart;
-  if (heartBtn) { heartBtn.classList.toggle('on', zoomHeart); heartBtn.innerHTML = zoomHeart ? '↩ EXIT HEART' : '♥ ZOOM HEART'; }
 }
 function configurePatient(b) { human.setHeartColor(b.cardiac ? 0xff5a52 : b.patient.acuity === 'watch' ? 0xffb24a : 0x9be8ff, b.cardiac); }
 
@@ -339,16 +362,23 @@ onModeChange((mode, focusId) => {
     if (mode === 'patient') {
       activeLayer = state.chapter === 'continued' ? 'vascular' : 'skeletal'; applyLayer(); configurePatient(bedById(focusId));
       activeScene = patientScene; reveal = 0; camPos.copy(PATIENT.pos); camLook.copy(PATIENT.look);
-      if (layerToggleEl) layerToggleEl.style.display = 'flex';
     } else {
       activeScene = floorScene; camPos.copy(HOME.pos); camLook.copy(HOME.look);
-      if (layerToggleEl) layerToggleEl.style.display = 'none';
-      toggleHeartZoom(false); if (heartBtn) heartBtn.style.display = 'none';
+      toggleHeartZoom(false);
     }
   }, 360);
 });
 
+function heartHit(e) {
+  // raycast the vascular figure's heart meshes — the heart IS the zoom control
+  if (displayMode !== 'patient' || activeLayer !== 'vascular' || !human || !human.heartMeshes || !human.heartMeshes.length) return null;
+  const r = canvas.getBoundingClientRect();
+  ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  raycaster.setFromCamera(ptr, camera);
+  return raycaster.intersectObjects(human.heartMeshes, false)[0] || null;
+}
 function onPointerDown(e) {
+  if (displayMode === 'patient') { if (heartHit(e)) toggleHeartZoom(); return; }
   if (displayMode !== 'floor') return;
   const r = canvas.getBoundingClientRect();
   ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1;
@@ -357,6 +387,7 @@ function onPointerDown(e) {
   if (hit) setMode('patient', hit.object.userData.bedId);
 }
 function onPointerMove(e) {
+  if (displayMode === 'patient') { canvas.style.cursor = heartHit(e) ? 'pointer' : 'default'; return; }
   if (displayMode !== 'floor') { canvas.style.cursor = 'default'; return; }
   const r = canvas.getBoundingClientRect();
   ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1;
@@ -429,25 +460,12 @@ export function initScene(canvasEl) {
   bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.32, 0.5, 0.82); composer.addPass(bloom);
   composer.addPass(new OutputPass());
 
-  // layer toggle (Body / Skeleton) over the scanner stage
-  layerToggleEl = document.createElement('div');
-  layerToggleEl.className = 'layer-toggle'; layerToggleEl.style.display = 'none';
-  layerToggleEl.innerHTML = '<button data-l="skeletal" class="on">SKELETAL</button><button data-l="vascular">VASCULAR</button><button data-l="nervous">NERVOUS</button>';
-  document.getElementById('stage').appendChild(layerToggleEl);
-  layerToggleEl.querySelectorAll('button').forEach((b) => (b.onclick = () => setLayer(b.dataset.l)));
-
-  // heart-zoom toggle (shown only on the vascular layer)
-  heartBtn = document.createElement('button');
-  heartBtn.className = 'heart-zoom'; heartBtn.style.display = 'none';
-  heartBtn.innerHTML = '♥ ZOOM HEART';
-  heartBtn.onclick = () => toggleHeartZoom();
-  document.getElementById('stage').appendChild(heartBtn);
-
   // dev-only test hook: snap the camera straight to its target (screenshots can't wait for the eased glide)
   if (import.meta.env && import.meta.env.DEV) window.__snapCam = () => { const t = displayMode !== 'patient' ? HOME : zoomHeart ? HEART : PATIENT; camPos.copy(t.pos); camLook.copy(t.look); if (human && zoomHeart) human.group.rotation.y = Math.round(human.group.rotation.y / (Math.PI * 2)) * Math.PI * 2; };
 
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
   addEventListener('resize', resize); resize();
+  applySceneTheme(state.dark); // dress the scenes for the current theme
   requestAnimationFrame(frame);
 }

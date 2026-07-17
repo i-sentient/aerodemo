@@ -141,9 +141,11 @@ export function RoundERLab({
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowRight') {
         e.preventDefault()
+        // (callbacks fire OUTSIDE the state updater — calling setView mid-render
+        // triggers React's setState-in-render warning)
         setStep((s) => {
           if (s >= N_BEATS - 1) {
-            onFinishRef.current?.() // past the last beat → start the ICU return
+            queueMicrotask(() => onFinishRef.current?.()) // past the last beat → start the ICU return
             return s
           }
           return s + 1
@@ -152,7 +154,7 @@ export function RoundERLab({
         e.preventDefault()
         setStep((s) => {
           if (s > ENTER_STEP) return s - 1
-          onExitRef.current?.() // at the first beat, ← goes back to the building
+          queueMicrotask(() => onExitRef.current?.()) // at the first beat, ← goes back to the building
           return s
         })
       }

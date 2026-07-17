@@ -5,15 +5,8 @@ export const TARS_HTML = `
   <div id="app">
     <!-- ===== top bar (light chrome) ===== -->
     <div id="topbar">
-      <div class="brand"><span class="mk">T</span>TARS<span class="live"><span class="d"></span>LIVE</span></div>
-      <div class="mode-chip"><span class="accent" id="modeDot"></span><span id="modeName">Command Hub</span><span class="sub" id="modeSub">· nurse bay · macro</span></div>
-      <button class="back-btn" id="backBtn">‹ Back to floor</button>
-      <span class="ward" id="wardName">ICU — North · 8 beds</span>
-      <div class="spacer"></div>
-      <div class="legend">
-        <div class="it"><span class="sw auto"></span>Autonomous · operational</div>
-        <div class="it"><span class="sw gate"></span>Gated · clinical sign-off</div>
-      </div>
+      <div id="topInfo"></div>
+      <button class="theme-btn" id="themeBtn" title="Light / dark" aria-label="Toggle theme"></button>
     </div>
 
     <!-- ===== three panels ===== -->
@@ -27,12 +20,15 @@ export const TARS_HTML = `
         </div>
       </div>
 
+      <div class="gutter" id="gutAB" title="Drag to resize"></div>
+
       <!-- PANEL B : SPLIT 2 — agent-swap surface (built by chat.js) -->
       <div class="panel" id="panelB"></div>
 
+      <div class="gutter" id="gutBC" title="Drag to resize"></div>
+
       <!-- PANEL C : apps + dock (light) -->
       <div class="panel" id="panelC">
-        <div class="panel-hd"><span class="accent" style="background:var(--ink-3)"></span><span class="t" id="appsTitle">Workspace</span></div>
         <div id="appView"></div>
         <div class="dock" id="dock"></div>
       </div>

@@ -19,14 +19,17 @@ function boot() {
   initScene(document.getElementById('c'));
   startVitals(750);
 
-  // continued chapter opens straight on the patient; workup opens on the floor
-  if (state.chapter === 'continued') setMode('patient', 'ICU-08');
-  else setMode('floor'); // fires all listeners → initial render
+  // both chapters open straight on the patient: the workup chapter's ward tour
+  // already did the floor establishing before handing off (no floor briefing).
+  setMode('patient', 'ICU-08'); // fires all listeners → initial render
   if (import.meta.env && import.meta.env.DEV) window.__tars = { setMode }; // dev-only test hook
 
   const loading = document.getElementById('loading');
   loading.classList.add('hide');
   setTimeout(() => loading.remove(), 800);
+
+  // tell the host shell we're up so it can drop its "Initialising TARS" cover
+  try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'icu:ready' }, '*'); } catch (e) { /* not framed */ }
 }
 
 // let the grid layout settle so the canvas gets real dimensions

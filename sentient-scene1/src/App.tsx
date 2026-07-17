@@ -521,21 +521,53 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
 // ---------------------------------------------------------------------------
 function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued'; onFinished?: () => void }) {
   const ref = useRef<HTMLIFrameElement>(null)
+  const [ready, setReady] = useState(false)
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.data?.type === 'icu:finished') onFinished?.()
+      if (e.data?.type === 'icu:ready') setReady(true) // drop the loader the instant the app is up
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
   }, [onFinished])
+  // safety net if the ready signal never arrives (e.g. rAF paused in a hidden tab)
+  useEffect(() => {
+    const t = window.setTimeout(() => setReady(true), 4000)
+    return () => window.clearTimeout(t)
+  }, [])
   return (
-    <iframe
-      ref={ref}
-      src={`/icu.html?chapter=${chapter}`}
-      title="ICU"
-      onLoad={() => ref.current?.contentWindow?.focus()} // so → / Space reach the TARS app
-      style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', border: 'none' }}
-    />
+    <div style={{ position: 'fixed', inset: 0, background: 'radial-gradient(1200px 900px at 50% 20%, #ffffff 0%, #eef6fb 34%, #dce9f1 64%, #c6d7e2 100%)' }}>
+      <iframe
+        ref={ref}
+        src={`/icu.html?chapter=${chapter}`}
+        title="ICU"
+        onLoad={() => ref.current?.contentWindow?.focus()} // so → / Space reach the app
+        style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', border: 'none' }}
+      />
+      {/* TARS "Initialising" loader — hides the iframe's boot/unstyled window,
+          then fades the instant the app posts 'icu:ready' */}
+      <div
+        style={{
+          position: 'fixed', inset: 0, zIndex: 3,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15,
+          background: 'radial-gradient(1200px 900px at 50% 20%, #ffffff 0%, #eef6fb 34%, #dce9f1 64%, #c6d7e2 100%)',
+          opacity: ready ? 0 : 1, transition: 'opacity 0.3s ease', pointerEvents: ready ? 'none' : 'auto',
+        }}
+      >
+        <div
+          className="icu-boot-tile"
+          style={{
+            width: 46, height: 46, borderRadius: 13,
+            background: 'linear-gradient(145deg,#5dcaa5,#15966f)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#fff', fontWeight: 900, fontSize: 20,
+          }}
+        >T</div>
+        <div style={{ fontSize: 11, letterSpacing: '0.26em', textTransform: 'uppercase', color: 'rgba(34,48,60,.45)' }}>
+          Initialising TARS
+        </div>
+      </div>
+    </div>
   )
 }
 
