@@ -1,6 +1,12 @@
 /* Global canvas + overlay styling. Kept minimal — the scene lives in WebGL. */
 * { box-sizing: border-box; }
 
+/* non-white so the gap between the intro canvas and the ER-room canvas
+   (during the view swap) doesn't flash white — matches the ER studio bg */
+html, body, #root {
+  background: #aab2bb;
+}
+
 #root {
   width: 100vw;
   height: 100vh;
@@ -20,4 +26,13 @@ canvas {
 
 .overlay > * {
   pointer-events: auto;
+}
+
+/* slow-pulsing status dot (intro panel) */
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.75); }
+}
+.pulse-dot {
+  animation: dotPulse 2.6s ease-in-out infinite;
 }

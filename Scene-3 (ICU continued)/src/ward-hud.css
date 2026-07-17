@@ -1,0 +1,40 @@
+/* ============================================================
+   WARD HUD — instrument-panel chrome over the ICU 3D view.
+   Re-skinned from tars' HUD (brackets / scanlines / vignette) for the bright
+   ward: teal-dark ink on the cool-white ground. Frame retracts left with the
+   ICU when Panel B docks (the inline `right` is set per step in WardHud.tsx).
+   Display-only — the whole layer is pointer-events:none so orbiting still works.
+   ============================================================ */
+.ward-hud{position:fixed;top:0;left:0;bottom:0;right:0;z-index:4;overflow:hidden;
+  pointer-events:none;transition:right 1s cubic-bezier(.65,0,.35,1);
+  font-family:"JetBrains Mono",ui-monospace,Consolas,"SF Mono",Menlo,monospace;color:#16494b}
+
+/* -- texture: fine scanlines + a larger faint grid + soft vignette -- */
+.wh-scan,.wh-grid,.wh-vignette{position:absolute;inset:0;pointer-events:none}
+.wh-scan{background:repeating-linear-gradient(0deg,rgba(31,95,96,.032) 0 1px,transparent 1px 4px);opacity:.5}
+.wh-grid{background:
+  repeating-linear-gradient(0deg,rgba(31,95,96,.028) 0 1px,transparent 1px 46px),
+  repeating-linear-gradient(90deg,rgba(31,95,96,.028) 0 1px,transparent 1px 46px)}
+.wh-vignette{background:radial-gradient(ellipse 76% 78% at 50% 45%,transparent 55%,rgba(18,42,46,.12) 100%)}
+
+/* -- corner brackets -- */
+.wh-bracket{position:absolute;width:26px;height:26px;opacity:.55}
+.wh-bracket.tl{top:16px;left:16px;border-top:2px solid rgba(31,95,96,.5);border-left:2px solid rgba(31,95,96,.5)}
+.wh-bracket.tr{top:16px;right:16px;border-top:2px solid rgba(31,95,96,.5);border-right:2px solid rgba(31,95,96,.5)}
+.wh-bracket.bl{bottom:16px;left:16px;border-bottom:2px solid rgba(31,95,96,.5);border-left:2px solid rgba(31,95,96,.5)}
+.wh-bracket.br{bottom:16px;right:16px;border-bottom:2px solid rgba(31,95,96,.5);border-right:2px solid rgba(31,95,96,.5)}
+
+/* -- centred title -- */
+.wh-title{position:absolute;top:20px;left:50%;transform:translateX(-50%);text-align:center;white-space:nowrap}
+.wh-title-main{font-size:14px;font-weight:800;letter-spacing:.22em;color:#16494b}
+.wh-title-sub{margin-top:4px;font-size:10.5px;font-weight:500;letter-spacing:.06em;color:rgba(91,111,118,.9)}
+
+/* -- capacity tile (bottom-right of the ICU area) -- */
+.wh-capacity{position:absolute;right:22px;bottom:24px;text-align:right}
+.wh-cap-tk{font-size:9px;font-weight:700;letter-spacing:.16em;color:rgba(31,95,96,.72)}
+.wh-cap-num{font-size:28px;font-weight:800;line-height:1;color:#16494b;margin-top:3px}
+.wh-cap-u{font-size:9px;color:#7d9298;letter-spacing:.05em;margin-top:3px}
+
+/* -- foot ref + clock (bottom-left) -- */
+.wh-foot{position:absolute;left:22px;bottom:22px;font-size:10px;letter-spacing:.12em;
+  color:rgba(90,110,116,.6);text-transform:uppercase}

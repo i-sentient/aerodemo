@@ -88,50 +88,87 @@ const SHOTS: Shot[] = [
 // 7 pulls back to the command hub — TARS talks to the ICU bed)
 const STEP_SHOT = [0, 1, 2, 2, 2, 3, 3, 2]
 
-function CinematicCamera({ step }: { step: number }) {
+// interior fly-in start when arriving from the tower dive: already INSIDE the
+// drum, low + behind, looking the SAME way as the overhead (SHOT 1) so it just
+// rises up into the hub — no 180° swing.
+const ENTER_START: Shot = { pos: [0, 1.8, -15], look: [0, 1.5, 1] }
+
+function CinematicCamera({ step, initialLook }: { step: number; initialLook?: [number, number, number] }) {
   const { camera } = useThree()
-  const look = useRef(new Vector3(...SHOTS[0].look))
+  // seed the look target so the entry can fly-in from a chosen start
+  const look = useRef<Vector3 | null>(null)
+  if (!look.current) {
+    look.current = new Vector3(...(initialLook ?? SHOTS[STEP_SHOT[Math.min(step, STEP_SHOT.length - 1)]].look))
+  }
   useFrame((_, dt) => {
     const s = SHOTS[STEP_SHOT[Math.min(step, STEP_SHOT.length - 1)]]
     const k = 1.0 // damping — lower = slower / more cinematic
     camera.position.x = MathUtils.damp(camera.position.x, s.pos[0], k, dt)
     camera.position.y = MathUtils.damp(camera.position.y, s.pos[1], k, dt)
     camera.position.z = MathUtils.damp(camera.position.z, s.pos[2], k, dt)
-    look.current.x = MathUtils.damp(look.current.x, s.look[0], k, dt)
-    look.current.y = MathUtils.damp(look.current.y, s.look[1], k, dt)
-    look.current.z = MathUtils.damp(look.current.z, s.look[2], k, dt)
-    camera.lookAt(look.current)
+    look.current!.x = MathUtils.damp(look.current!.x, s.look[0], k, dt)
+    look.current!.y = MathUtils.damp(look.current!.y, s.look[1], k, dt)
+    look.current!.z = MathUtils.damp(look.current!.z, s.look[2], k, dt)
+    camera.lookAt(look.current!)
   })
   return null
 }
 
 const N_BEATS = 8 // outside · hub · dive+alert · ghost · solidify · zoom+SAM · STEMI+admit · TARS→ICU
 
-export function RoundERLab() {
-  const [step, setStep] = useState(0)
+export function RoundERLab({
+  onExit,
+  onFinish,
+  enterInside = false,
+}: {
+  /** called when ← is pressed at the first beat — e.g. go back to the tower */
+  onExit?: () => void
+  /** called when → is pressed at the LAST beat — e.g. begin the ICU return */
+  onFinish?: () => void
+  /** arrive already INSIDE the drum (skip the outside approach fly-in) */
+  enterInside?: boolean
+} = {}) {
+  // when we land here from the tower dive, start at the first interior beat so
+  // there's no re-approach transition; ← at that beat exits to the building.
+  const ENTER_STEP = enterInside ? 1 : 0
+  const [step, setStep] = useState(ENTER_STEP)
+  const onExitRef = useRef(onExit)
+  onExitRef.current = onExit
+  const onFinishRef = useRef(onFinish)
+  onFinishRef.current = onFinish
   // presentation control: Space / → advance a beat, ← / Backspace go back
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowRight') {
         e.preventDefault()
-        setStep((s) => Math.min(s + 1, N_BEATS - 1))
+        setStep((s) => {
+          if (s >= N_BEATS - 1) {
+            onFinishRef.current?.() // past the last beat → start the ICU return
+            return s
+          }
+          return s + 1
+        })
       } else if (e.code === 'ArrowLeft' || e.code === 'Backspace') {
         e.preventDefault()
-        setStep((s) => Math.max(s - 1, 0))
+        setStep((s) => {
+          if (s > ENTER_STEP) return s - 1
+          onExitRef.current?.() // at the first beat, ← goes back to the building
+          return s
+        })
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [ENTER_STEP])
   return (
     <div style={{ position: 'fixed', inset: 0 }}>
       <Canvas
         shadows
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
-        camera={{ position: [0, 6.8, -52], fov: 55 }}
+        camera={{ position: enterInside ? ENTER_START.pos : SHOTS[0].pos, fov: 55 }}
       >
-        <CinematicCamera step={step} />
+        <CinematicCamera step={step} initialLook={enterInside ? ENTER_START.look : undefined} />
         <ERStudio />
 
         <RoundER />

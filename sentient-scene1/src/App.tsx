@@ -1,10 +1,12 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Line, OrbitControls } from '@react-three/drei'
 import { MathUtils, NoToneMapping, type Group } from 'three'
 import { SceneEnvironment } from './scene/Environment'
 import { Building } from './scene/Building'
-import { BuildingStack, ER_INFO, STACK_TOP } from './scene/BuildingStack'
+import { RoundERLab } from './lab/RoundERLab'
+import { CathLabScene } from './lab/CathLabScene'
+import { BuildingStack, ER_INFO, ICU_INFO, CATH_INFO, STACK_TOP } from './scene/BuildingStack'
 import { Postprocessing } from './scene/Postprocessing'
 import { PatientLayer } from './components/PatientLayer'
 import { RelationEdges } from './components/RelationEdges'
@@ -181,44 +183,50 @@ function Overlay() {
 //    orbit → TARGET (rotation stops, red reticle locks the ER block)
 //          → FLY (camera dives into the ER) → fade → ER floorplan scene.
 // ---------------------------------------------------------------------------
-const GREEN = '#5ece3a'
 const RETICLE_RED = '#ff3344'
 const ORBIT_TARGET: [number, number, number] = [0, STACK_TOP * 0.45, 0]
+const FRONT_VIEW_POS: [number, number, number] = [0, 18, 51] // hero elevation — same framing as the orbit view, straight-on
+const FRONT_LOOK_Y = STACK_TOP * 0.45
 const LOCK_POS: [number, number, number] = [0, ER_INFO.y + 2.8, 27]
-const DIVE_POS: [number, number, number] = [0, ER_INFO.y + 0.2, ER_INFO.frontZ - 0.6]
+const DIVE_POS: [number, number, number] = [0, ER_INFO.y + 0.2, ER_INFO.frontZ + 0.1]
+// ICU return: pull out of the ER (start close on the ER tier) → reveal building
+// → dive into the ICU drum → hand off to Scene-2
+const ICU_RETURN_START: [number, number, number] = [0, ER_INFO.y + 3, ER_INFO.frontZ + 7]
+const ICU_LOCK_POS: [number, number, number] = [0, ICU_INFO.y + 2.8, 27]
+const ICU_DIVE_POS: [number, number, number] = [0, ICU_INFO.y + 0.2, ICU_INFO.frontZ + 0.1]
+const SCENE2_URL = 'http://localhost:5250' // Scene-2 ICU story (dev; swap for deployed)
+const SCENE3_URL = 'http://localhost:5270' // Scene-3 ICU continued — after the Cath Lab
+// Cath return: after Scene-2 (ICU) ends we land back here (#cath-return). Start
+// close on the ICU tier (as if stepping out of it) → reveal the whole tower →
+// dive into the Cath Lab (the +x hex half of the imgcath level) → CathLabScene.
+const CATH_RETURN_START: [number, number, number] = [0, ICU_INFO.y + 3, ICU_INFO.frontZ + 7]
+const CATH_LOCK_POS: [number, number, number] = [CATH_INFO.x, CATH_INFO.y + 2.8, 24]
+const CATH_DIVE_POS: [number, number, number] = [CATH_INFO.x, CATH_INFO.y + 0.2, CATH_INFO.frontZ + 0.1]
 const lp = (a: number, b: number, t: number) => a + (b - a) * t
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
 
-const enterBtn: React.CSSProperties = {
-  pointerEvents: 'auto',
-  cursor: 'pointer',
-  font: '800 15px ui-sans-serif, system-ui, sans-serif',
-  letterSpacing: 0.3,
-  color: '#0d2a10',
-  background: `linear-gradient(180deg, ${GREEN}, #2f9c26)`,
-  border: '1px solid rgba(255,255,255,0.6)',
-  borderRadius: 12,
-  padding: '12px 22px',
-  boxShadow: `0 8px 26px ${GREEN}66`,
-}
-
-type Phase = 'orbit' | 'target' | 'fly'
+type Phase = 'orbit' | 'front' | 'target' | 'fly'
 
 /** Drives the camera through the target-lock + dive; calls onArrived at the end. */
 function FlyRig({
   phase,
-  onFade,
   onArrived,
 }: {
   phase: Phase
-  onFade: (v: number) => void
   onArrived: () => void
 }) {
   const prog = useRef(0)
   const done = useRef(false)
   useFrame((state, dt) => {
     const cam = state.camera as any
-    if (phase === 'target') {
+    if (phase === 'front') {
+      cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 2.4, dt)
+      cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 2.4, dt)
+      cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 2.4, dt)
+      cam.fov = MathUtils.damp(cam.fov, 34, 3, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'target') {
       cam.position.x = MathUtils.damp(cam.position.x, LOCK_POS[0], 2.2, dt)
       cam.position.y = MathUtils.damp(cam.position.y, LOCK_POS[1], 2.2, dt)
       cam.position.z = MathUtils.damp(cam.position.z, LOCK_POS[2], 2.2, dt)
@@ -233,11 +241,11 @@ function FlyRig({
         lp(LOCK_POS[1], DIVE_POS[1], p),
         lp(LOCK_POS[2], DIVE_POS[2], p),
       )
-      cam.fov = lp(34, 52, p)
+      cam.fov = lp(34, 44, p)
       cam.updateProjectionMatrix()
       cam.lookAt(0, ER_INFO.y, 0)
-      onFade(Math.max(0, (p - 0.92) / 0.08))
-      if (prog.current >= 1 && !done.current) {
+      // cut ~0.20s before the 1.9s dive completes (stop just short of the plunge)
+      if (prog.current >= 0.895 && !done.current) {
         done.current = true
         onArrived()
       }
@@ -286,15 +294,25 @@ function TargetReticle() {
 }
 
 function IntroView({ onEnter }: { onEnter: () => void }) {
-  const [phase, setPhase] = useState<Phase>(() =>
-    typeof window !== 'undefined' && window.location.hash === '#target' ? 'target' : 'orbit',
-  )
-  const [fade, setFade] = useState(0)
+  const [phase, setPhase] = useState<Phase>('orbit')
+  const phaseRef = useRef<Phase>('orbit')
+  phaseRef.current = phase
 
-  const start = () => {
-    setPhase('target')
-    window.setTimeout(() => setPhase('fly'), 1500)
-  }
+  // → / Space starts the dive into the ER
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'ArrowRight' && e.code !== 'Space') return
+      e.preventDefault()
+      const p = phaseRef.current
+      if (p === 'orbit') setPhase('front')
+      else if (p === 'front') {
+        setPhase('target')
+        window.setTimeout(() => setPhase('fly'), 1500)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <>
@@ -305,8 +323,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
         camera={{ position: [34, 18, 40], fov: 34 }}
       >
         <SceneEnvironment orb={false} dark />
-        <BuildingStack />
-        {phase !== 'orbit' && <TargetReticle />}
+        <BuildingStack showPills={phase === 'front' || phase === 'target'} />
         {phase === 'orbit' && (
           <OrbitControls
             target={ORBIT_TARGET}
@@ -319,76 +336,204 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
             maxPolarAngle={Math.PI / 2.05}
           />
         )}
-        <FlyRig
-          phase={phase}
-          onFade={setFade}
-          onArrived={() => {
-            setFade(1)
-            window.setTimeout(onEnter, 450)
-          }}
-        />
+        <FlyRig phase={phase} onArrived={onEnter} />
         <Postprocessing dark />
       </Canvas>
 
       <div className="overlay">
         <div style={{ position: 'absolute', top: 22, left: 22, ...panel }}>
           <div style={{ fontSize: 15, letterSpacing: 1.5, color: CText.teal, fontWeight: 800 }}>
-            SENTIENT
+            SENTIENT HOSPITAL
           </div>
-          <div style={{ fontSize: 11, color: AERO.inkDim, marginTop: 2 }}>
-            hospital · live clinical ontology
+          <div style={{ display: 'flex', alignItems: 'center', width: '100%', marginTop: 4, fontSize: 11, color: AERO.inkDim }}>
+            <span className="pulse-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#2EE6A6', boxShadow: '0 0 6px #2EE6A6', flex: '0 0 auto' }} />
+            <span style={{ flex: 1, textAlign: 'center', letterSpacing: 1.5 }}>Live Clinical Ontology</span>
+            <span className="pulse-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#2EE6A6', boxShadow: '0 0 6px #2EE6A6', flex: '0 0 auto' }} />
           </div>
         </div>
 
-        {phase !== 'orbit' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -150px)',
-              font: '800 13px ui-monospace, monospace',
-              letterSpacing: 2,
-              color: RETICLE_RED,
-              textShadow: `0 0 12px ${RETICLE_RED}88`,
-            }}
-          >
-            ▶ TARGET · EMERGENCY (ER)
-          </div>
-        )}
 
-        {phase === 'orbit' && (
-          <div style={{ position: 'absolute', bottom: 34, left: '50%', transform: 'translateX(-50%)' }}>
-            <button style={enterBtn} onClick={start}>
-              Enter ER →
-            </button>
-          </div>
-        )}
       </div>
-
-      {/* fade to light on arrival */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: '#cbd0d5',
-          opacity: fade,
-          pointerEvents: 'none',
-          transition: 'opacity 0.25s linear',
-          zIndex: 50,
-        }}
-      />
     </>
   )
 }
 
-export function App() {
-  const [view, setView] = useState<'intro' | 'scene'>('intro')
-  if (view === 'intro') return <IntroView onEnter={() => setView('scene')} />
+// ---------------------------------------------------------------------------
+//  ICU RETURN — after the ER story ends (TARS→ICU), pull back out of the ER to
+//  reveal the whole tower, then dive into the ICU drum and hand off to Scene-2.
+// ---------------------------------------------------------------------------
+type IcuPhase = 'reveal' | 'target' | 'fly'
+
+/** Reveal the building, then dive into the ICU; calls onArrived at the cut. */
+function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }) {
+  const prog = useRef(0)
+  const done = useRef(false)
+  useFrame((state, dt) => {
+    const cam = state.camera as any
+    if (phase === 'reveal') {
+      cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
+      cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
+      cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
+      cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'target') {
+      cam.position.x = MathUtils.damp(cam.position.x, ICU_LOCK_POS[0], 2.2, dt)
+      cam.position.y = MathUtils.damp(cam.position.y, ICU_LOCK_POS[1], 2.2, dt)
+      cam.position.z = MathUtils.damp(cam.position.z, ICU_LOCK_POS[2], 2.2, dt)
+      cam.fov = MathUtils.damp(cam.fov, 34, 3, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(0, ICU_INFO.y, 0)
+    } else if (phase === 'fly') {
+      prog.current = Math.min(1, prog.current + dt / 1.9)
+      const p = easeInOut(prog.current)
+      cam.position.set(
+        lp(ICU_LOCK_POS[0], ICU_DIVE_POS[0], p),
+        lp(ICU_LOCK_POS[1], ICU_DIVE_POS[1], p),
+        lp(ICU_LOCK_POS[2], ICU_DIVE_POS[2], p),
+      )
+      cam.fov = lp(34, 44, p)
+      cam.updateProjectionMatrix()
+      cam.lookAt(0, ICU_INFO.y, 0)
+      // cut ~0.2s before the plunge, then hand off to Scene-2
+      if (prog.current >= 0.895 && !done.current) {
+        done.current = true
+        onArrived()
+      }
+    }
+  })
+  return null
+}
+
+function IcuReturnView({ onDone }: { onDone: () => void }) {
+  const [phase, setPhase] = useState<IcuPhase>('reveal')
+  const phaseRef = useRef<IcuPhase>('reveal')
+  phaseRef.current = phase
+  // → / Space: (once the building is revealed) dive into the ICU
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'ArrowRight' && e.code !== 'Space') return
+      e.preventDefault()
+      if (phaseRef.current !== 'reveal') return
+      setPhase('target')
+      window.setTimeout(() => setPhase('fly'), 1500)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   return (
-    <>
-      <SceneRoot />
-      <Overlay />
-    </>
+    <Canvas
+      shadows
+      dpr={[1, 2]}
+      gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
+      camera={{ position: ICU_RETURN_START, fov: 40 }}
+    >
+      <SceneEnvironment orb={false} dark />
+      <BuildingStack showPills={phase === 'reveal'} />
+      <IcuRig phase={phase} onArrived={onDone} />
+      <Postprocessing dark />
+    </Canvas>
   )
+}
+
+// ---------------------------------------------------------------------------
+//  CATH RETURN — after Scene-2 (the ICU story) ends, we return here via the
+//  #cath-return hash. Step out of the ICU → reveal the whole tower → dive into
+//  the Cath Lab tier (the +x hex half) → hard-cut into the CathLabScene.
+// ---------------------------------------------------------------------------
+type CathPhase = 'reveal' | 'target' | 'fly'
+
+/** Reveal the building, then dive into the Cath Lab; calls onArrived at the cut. */
+function CathRig({ phase, onArrived }: { phase: CathPhase; onArrived: () => void }) {
+  const prog = useRef(0)
+  const done = useRef(false)
+  useFrame((state, dt) => {
+    const cam = state.camera as any
+    if (phase === 'reveal') {
+      cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
+      cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
+      cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
+      cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'target') {
+      cam.position.x = MathUtils.damp(cam.position.x, CATH_LOCK_POS[0], 2.2, dt)
+      cam.position.y = MathUtils.damp(cam.position.y, CATH_LOCK_POS[1], 2.2, dt)
+      cam.position.z = MathUtils.damp(cam.position.z, CATH_LOCK_POS[2], 2.2, dt)
+      cam.fov = MathUtils.damp(cam.fov, 34, 3, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(CATH_INFO.x, CATH_INFO.y, 0)
+    } else if (phase === 'fly') {
+      prog.current = Math.min(1, prog.current + dt / 1.9)
+      const p = easeInOut(prog.current)
+      cam.position.set(
+        lp(CATH_LOCK_POS[0], CATH_DIVE_POS[0], p),
+        lp(CATH_LOCK_POS[1], CATH_DIVE_POS[1], p),
+        lp(CATH_LOCK_POS[2], CATH_DIVE_POS[2], p),
+      )
+      cam.fov = lp(34, 44, p)
+      cam.updateProjectionMatrix()
+      cam.lookAt(CATH_INFO.x, CATH_INFO.y, 0)
+      // cut ~0.2s before the plunge, then hand off to the CathLabScene
+      if (prog.current >= 0.895 && !done.current) {
+        done.current = true
+        onArrived()
+      }
+    }
+  })
+  return null
+}
+
+function CathReturnView({ onDone }: { onDone: () => void }) {
+  const [phase, setPhase] = useState<CathPhase>('reveal')
+  const phaseRef = useRef<CathPhase>('reveal')
+  phaseRef.current = phase
+  // → / Space: (once the building is revealed) dive into the Cath Lab
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'ArrowRight' && e.code !== 'Space') return
+      e.preventDefault()
+      if (phaseRef.current !== 'reveal') return
+      setPhase('target')
+      window.setTimeout(() => setPhase('fly'), 1500)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  return (
+    <Canvas
+      shadows
+      dpr={[1, 2]}
+      gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
+      camera={{ position: CATH_RETURN_START, fov: 40 }}
+    >
+      <SceneEnvironment orb={false} dark />
+      <BuildingStack showPills={phase === 'reveal'} />
+      <CathRig phase={phase} onArrived={onDone} />
+      <Postprocessing dark />
+    </Canvas>
+  )
+}
+
+export function App({ initialView = 'intro' }: { initialView?: 'intro' | 'cath-return' } = {}) {
+  const [view, setView] = useState<'intro' | 'er' | 'icu-return' | 'cath-return' | 'cath-lab'>(
+    initialView,
+  )
+  if (view === 'intro') return <IntroView onEnter={() => setView('er')} />
+  if (view === 'er')
+    return (
+      <RoundERLab
+        enterInside
+        onExit={() => setView('intro')}
+        onFinish={() => setView('icu-return')} // → at the last ER beat
+      />
+    )
+  if (view === 'icu-return')
+    // pull out of the ER → reveal tower → dive into ICU → hand off to Scene-2
+    return <IcuReturnView onDone={() => (window.location.href = SCENE2_URL)} />
+  if (view === 'cath-return')
+    // step out of the ICU → reveal tower → dive into the Cath Lab → CathLabScene
+    return <CathReturnView onDone={() => setView('cath-lab')} />
+  // Cath Lab: → at the last preset hard-cuts to Scene 3 (the ICU story continued)
+  return <CathLabScene onFinish={() => (window.location.href = SCENE3_URL)} />
 }

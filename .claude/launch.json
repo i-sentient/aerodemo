@@ -1,0 +1,47 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tars-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "tars-app", "run", "dev"],
+      "port": 5180
+    },
+    {
+      "name": "sentient-scene1",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "sentient-scene1", "run", "dev", "--", "--port", "5210", "--strictPort"],
+      "port": 5210
+    },
+    {
+      "name": "sentient-ward",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "sentient-ward", "run", "dev", "--", "--port", "5300", "--strictPort"],
+      "port": 5300
+    },
+    {
+      "name": "sentient-scene1-view",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "sentient-scene1", "run", "dev", "--", "--port", "5211", "--strictPort"],
+      "port": 5211
+    },
+    {
+      "name": "sentient-castle",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "sentient-castle", "run", "dev", "--", "--port", "5400", "--strictPort"],
+      "port": 5400
+    },
+    {
+      "name": "scene-2-icu",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "Scene-2 (ICU story)", "run", "dev", "--", "--port", "5250", "--strictPort"],
+      "port": 5250
+    },
+    {
+      "name": "scene-3-icu",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "Scene-3 (ICU continued)", "run", "dev", "--", "--port", "5270", "--strictPort"],
+      "port": 5270
+    }
+  ]
+}

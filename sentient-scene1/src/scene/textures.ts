@@ -77,6 +77,39 @@ export function makePanelTexture(
   return tex
 }
 
+/** Etched building signage: uppercase label on a transparent canvas, with a
+ *  soft engraved drop + light fill. Canvas width tracks the text so every label
+ *  keeps the same letter height (the plane is sized from the returned aspect). */
+export function makeLabelTexture(text: string, color = '#e9f1ec', shadow = true, spacing = 0): CanvasTexture {
+  const T = text.toUpperCase()
+  const H = 220
+  const pad = 44
+  const fontPx = 150
+  const font = `800 ${fontPx}px ui-sans-serif, system-ui, -apple-system, sans-serif`
+  const meas = document.createElement('canvas').getContext('2d')!
+  meas.font = font
+  if (spacing) (meas as any).letterSpacing = `${spacing}px`
+  const w = Math.ceil(meas.measureText(T).width) + pad * 2
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = H
+  const ctx = c.getContext('2d')!
+  ctx.font = font
+  if (spacing) (ctx as any).letterSpacing = `${spacing}px`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  if (shadow) {
+    ctx.fillStyle = 'rgba(12,16,20,0.5)' // engraved shadow
+    ctx.fillText(T, w / 2 + 3, H / 2 + 4)
+  }
+  ctx.fillStyle = color
+  ctx.fillText(T, w / 2, H / 2)
+  const tex = new CanvasTexture(c)
+  tex.anisotropy = 4
+  tex.needsUpdate = true
+  return tex
+}
+
 /** Vertical gradient for the aero skydome (light top → cooler bottom). */
 export function makeVerticalGradientTexture(
   top = '#eef4fc',

@@ -67,13 +67,13 @@ function DarkStage() {
           metalness={0.5}
           roughness={0.55}
           mirror={0.4}
-          blur={[300, 110]}
-          mixStrength={3}
-          mixBlur={1}
-          resolution={512}
-          depthScale={1}
-          minDepthThreshold={0.4}
-          maxDepthThreshold={1.2}
+          blur={[220, 80]}
+          mixStrength={2.6}
+          // depth-driven blur disabled: it produced black splotches/speckles
+          // where the tower's base plinth intersects the mirror plane
+          mixBlur={0}
+          depthScale={0}
+          resolution={1024}
         />
       </mesh>
       <ContactShadows position={[0, 0.012, 0]} scale={70} resolution={1024} blur={2.6} opacity={0.42} far={14} color="#2a3138" />

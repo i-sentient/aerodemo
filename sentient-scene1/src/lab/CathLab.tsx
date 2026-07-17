@@ -14,9 +14,9 @@ import { angioTex, hemoTex, xrayOnTex } from './cathTex'
 //  Front (open, camera-facing) side = -Z; back wall = +Z.
 // ===========================================================================
 
-const W = 16          // room width  (x)
-const D = 15          // room depth  (z)
-const H = 6.6         // wall height (y)
+const W = 11          // room width  (x) — real cath-lab footprint, not a hall
+const D = 11          // room depth  (z)
+const H = 3.6         // wall height (y) — real ~3.5 m ceiling
 const HW = W / 2
 const HD = D / 2
 
@@ -30,7 +30,7 @@ export const CATH_DIMS = {
   W, D, H, HW, HD, TABLE_TOP,
   iso: ISO,
   tableCenter: [0, 0, 0.4] as [number, number, number],
-  boomScreen: [-4.0, 4.0, 3.0] as [number, number, number],
+  boomScreen: [-3.3, 2.45, 2.6] as [number, number, number], // hangs below the 3.6 m ceiling
 }
 
 const WHITE = '#eef1f4'   // equipment housing white (soft plastic)
@@ -69,7 +69,7 @@ function Screen({
 // ---------------------------------------------------------------------------
 function Room() {
   const panels: [number, number][] = []
-  for (let ix = -1; ix <= 1; ix++) for (let iz = -1; iz <= 1; iz++) panels.push([ix * 4.4, iz * 4.4])
+  for (let ix = -1; ix <= 1; ix++) for (let iz = -1; iz <= 1; iz++) panels.push([ix * 3.3, iz * 3.3])
   return (
     <group>
       {/* glossy vinyl floor */}
@@ -77,9 +77,9 @@ function Room() {
         <planeGeometry args={[W, D]} />
         <meshStandardMaterial color="#dfe4ea" metalness={0.35} roughness={0.32} envMapIntensity={1} />
       </mesh>
-      {/* blue procedure mat, slightly raised */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0.012, 0.4]} receiveShadow>
-        <planeGeometry args={[7.6, 9.2]} />
+      {/* blue procedure mat, slightly raised — small pad right under the table */}
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.012, 0.2]} receiveShadow>
+        <planeGeometry args={[2.6, 4.0]} />
         <meshStandardMaterial color="#3f79c9" metalness={0.25} roughness={0.4} envMapIntensity={0.9} />
       </mesh>
       {/* back wall (+z, faces -z) */}
@@ -118,7 +118,7 @@ function Room() {
       {/* recessed LED light panels (emissive, gently bloom-free) */}
       {panels.map(([x, z], i) => (
         <mesh key={i} rotation-x={Math.PI / 2} position={[x, H - 0.04, z]}>
-          <planeGeometry args={[2.6, 2.6]} />
+          <planeGeometry args={[2.1, 2.1]} />
           <meshBasicMaterial color="#f4f8ff" toneMapped={false} />
         </mesh>
       ))}
@@ -135,9 +135,9 @@ function Room() {
         </mesh>
       ))}
 
-      {/* small illuminated X-RAY ON plate above the door line */}
-      <mesh position={[3.6, 4.7, HD - 0.04]}>
-        <planeGeometry args={[1.7, 0.53]} />
+      {/* small illuminated X-RAY ON plate on the back wall */}
+      <mesh position={[3.2, 3.0, HD - 0.04]}>
+        <planeGeometry args={[1.5, 0.47]} />
         <meshBasicMaterial map={xrayOnTex} transparent toneMapped={false} color={hdrCss('#ffffff', 1.15)} />
       </mesh>
     </group>
@@ -150,15 +150,14 @@ function Room() {
 function AngioTable() {
   return (
     <group position={[0, 0, 0.4]}>
-      {/* floor base */}
-      <RoundedBox args={[1.5, 0.16, 1.7]} radius={0.06} smoothness={3} position={[0, 0.09, 1.1]} castShadow>
+      {/* floor base — low slim plate */}
+      <RoundedBox args={[0.84, 0.09, 0.98]} radius={0.04} smoothness={3} position={[0, 0.05, 1.1]} castShadow>
         <meshStandardMaterial color="#c3cad1" metalness={0.6} roughness={0.35} envMapIntensity={1.2} />
       </RoundedBox>
-      {/* pedestal column */}
-      <mesh position={[0, 0.5, 1.1]}>
-        <cylinderGeometry args={[0.34, 0.42, 0.85, 24]} />
-        <meshStandardMaterial color={CHROME} metalness={0.85} roughness={0.24} envMapIntensity={1.4} />
-      </mesh>
+      {/* pedestal column — sleek rounded pillar, not a fat stump */}
+      <RoundedBox args={[0.4, 0.9, 0.52]} radius={0.15} smoothness={4} position={[0, 0.5, 1.1]}>
+        <meshStandardMaterial color={CHROME} metalness={0.8} roughness={0.26} envMapIntensity={1.4} />
+      </RoundedBox>
       {/* cantilever arm carrying the top out over the mat */}
       <RoundedBox args={[0.7, 0.22, 2.2]} radius={0.06} smoothness={3} position={[0, 0.83, 0.1]}>
         <meshStandardMaterial color="#aeb7c1" metalness={0.7} roughness={0.3} envMapIntensity={1.2} />
@@ -223,14 +222,14 @@ function CArm() {
         </mesh>
       </group>
 
-      {/* X-RAY TUBE housing at the bottom tip, aimed up */}
+      {/* X-RAY TUBE housing at the bottom tip, aimed up — slimmer drum */}
       <group position={[sx, sy + 0.32, 0]}>
         <mesh>
-          <cylinderGeometry args={[0.44, 0.5, 0.6, 24]} />
+          <cylinderGeometry args={[0.3, 0.34, 0.54, 24]} />
           <meshStandardMaterial color={WHITE} metalness={0.35} roughness={0.42} envMapIntensity={1} />
         </mesh>
         {/* collimator box on top */}
-        <RoundedBox args={[0.52, 0.24, 0.52]} radius={0.04} smoothness={3} position={[0, 0.4, 0]}>
+        <RoundedBox args={[0.4, 0.2, 0.4]} radius={0.04} smoothness={3} position={[0, 0.36, 0]}>
           <meshStandardMaterial color="#2a3138" metalness={0.5} roughness={0.35} />
         </RoundedBox>
       </group>
@@ -260,12 +259,13 @@ function CArm() {
 // vertical column + base for the C-arm mount (placed in world, not iso-space)
 function CArmBase() {
   return (
-    <group position={[C_R + 3.0, 0, 3.5]}>
-      <mesh position={[0, 1.4, 0]}>
-        <cylinderGeometry args={[0.4, 0.46, 2.8, 24]} />
+    <group position={[C_R + 2.3, 0, 2.8]}>
+      {/* sleek rounded column — refined, not a fat cylinder */}
+      <RoundedBox args={[0.54, 2.8, 0.62]} radius={0.17} smoothness={4} position={[0, 1.4, 0]}>
         <meshStandardMaterial color={WHITE} metalness={0.4} roughness={0.4} envMapIntensity={1} />
-      </mesh>
-      <RoundedBox args={[1.5, 0.2, 1.5]} radius={0.06} smoothness={3} position={[0, 0.1, 0]} castShadow>
+      </RoundedBox>
+      {/* low base plate */}
+      <RoundedBox args={[1.15, 0.13, 1.15]} radius={0.05} smoothness={3} position={[0, 0.065, 0]} castShadow>
         <meshStandardMaterial color="#c3cad1" metalness={0.6} roughness={0.35} envMapIntensity={1.2} />
       </RoundedBox>
     </group>
@@ -324,8 +324,59 @@ function MonitorBoom() {
 // ---------------------------------------------------------------------------
 function WallDisplay() {
   return (
-    <group position={[HW - 0.06, 3.2, 1.2]} rotation-y={-Math.PI / 2}>
-      <Screen size={[2.6, 1.9]} tex={angioTex} glow={1.02} />
+    <group position={[HW - 0.06, 2.15, 1.2]} rotation-y={-Math.PI / 2}>
+      <Screen size={[2.3, 1.7]} tex={angioTex} glow={1.02} />
+    </group>
+  )
+}
+
+// ---------------------------------------------------------------------------
+//  CEILING BOOM — articulated white service pendant (arm + boxy console head).
+//  Reaches from a ceiling flange out over the table. Arm extends along local +x;
+//  use yaw to aim it inward. (Not a surgical light — a service/equipment boom.)
+// ---------------------------------------------------------------------------
+function CeilingBoom({ mount, yaw = 0 }: { mount: [number, number, number]; yaw?: number }) {
+  return (
+    <group position={mount} rotation-y={yaw}>
+      {/* ceiling flange */}
+      <mesh position={[0, -0.06, 0]}>
+        <cylinderGeometry args={[0.32, 0.36, 0.14, 24]} />
+        <meshStandardMaterial color={WHITE} metalness={0.4} roughness={0.4} envMapIntensity={1} />
+      </mesh>
+      {/* short chrome drop + rotation collar */}
+      <mesh position={[0, -0.34, 0]}>
+        <cylinderGeometry args={[0.11, 0.11, 0.5, 20]} />
+        <meshStandardMaterial color={CHROME} metalness={0.9} roughness={0.22} envMapIntensity={1.4} />
+      </mesh>
+      {/* boxy horizontal arm reaching out (+x local) */}
+      <RoundedBox args={[2.0, 0.3, 0.4]} radius={0.1} smoothness={3} position={[1.02, -0.62, 0]}>
+        <meshStandardMaterial color={WHITE} metalness={0.4} roughness={0.42} envMapIntensity={1} />
+      </RoundedBox>
+      {/* elbow joint */}
+      <mesh position={[2.02, -0.62, 0]} rotation-x={Math.PI / 2}>
+        <cylinderGeometry args={[0.2, 0.2, 0.44, 20]} />
+        <meshStandardMaterial color={CHROME} metalness={0.85} roughness={0.25} envMapIntensity={1.4} />
+      </mesh>
+      {/* short second arm down to the head (keeps the head high / overhead) */}
+      <RoundedBox args={[0.32, 0.44, 0.36]} radius={0.1} smoothness={3} position={[2.14, -0.83, 0]} rotation-z={deg(-8)}>
+        <meshStandardMaterial color={WHITE} metalness={0.4} roughness={0.42} envMapIntensity={1} />
+      </RoundedBox>
+      {/* pendant head — a boxy service console (spun 180° so its dark face fronts) */}
+      <group position={[2.3, -1.06, 0]} rotation-y={Math.PI}>
+        <RoundedBox args={[0.85, 0.55, 0.72]} radius={0.06} smoothness={3} castShadow>
+          <meshStandardMaterial color={WHITE} metalness={0.4} roughness={0.4} envMapIntensity={1} />
+        </RoundedBox>
+        {/* dark control face on the front (-z local) */}
+        <mesh position={[0, 0.02, -0.4]} rotation-y={Math.PI}>
+          <planeGeometry args={[0.72, 0.36]} />
+          <meshStandardMaterial color="#1a2027" metalness={0.5} roughness={0.4} />
+        </mesh>
+        {/* chrome outlet strip on the underside */}
+        <mesh position={[0, -0.32, 0]}>
+          <boxGeometry args={[0.72, 0.07, 0.5]} />
+          <meshStandardMaterial color={CHROME} metalness={0.8} roughness={0.3} envMapIntensity={1.3} />
+        </mesh>
+      </group>
     </group>
   )
 }
@@ -338,6 +389,9 @@ export function CathLab() {
       <CArm />
       <CArmBase />
       <MonitorBoom />
+      {/* one service boom reaching in over the table (the boom that crowded the
+          monitor bank was removed) */}
+      <CeilingBoom mount={[3.9, H, -0.9]} yaw={Math.PI} />
       <WallDisplay />
     </group>
   )

@@ -13,15 +13,18 @@ if (import.meta.env.DEV) {
 }
 
 // Views by hash:
-//   (default) → ER shell lab   ·   #cath-lab → Cath Lab shell   ·   #app → old full app
-// The old full app (intro dive + corridor scene) also lives in ../sentient-ward.
+//   (default) → full app (intro dive through the tower + corridor ER)
+//   #cath-return → App resumes at the ICU→Cath transition (Scene-2 hands back here)
+//   #lab → ER shell lab   ·   #cath-lab → Cath Lab shell
 const hash = typeof window !== 'undefined' ? window.location.hash : ''
-const view = hash.includes('app') ? (
-  <App />
+const view = hash.includes('cath-return') ? (
+  <App initialView="cath-return" />
 ) : hash.includes('cath') ? (
   <CathLabScene />
-) : (
+) : hash.includes('lab') ? (
   <RoundERLab />
+) : (
+  <App />
 )
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

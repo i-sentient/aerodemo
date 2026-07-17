@@ -347,7 +347,7 @@ function updateNext() {
   nextBtn.disabled = gated || done || busy;
   nextBtn.textContent = done ? '↺' : '›';
   nextBtn.title = done ? 'Replay' : 'Next';
-  hintEl.textContent = gated ? 'Awaiting clinical sign-off →' : done ? 'Replay the scripted demo' : (state.mode === 'patient' ? 'TARS is navigating the record →' : 'Step through the briefing →');
+  hintEl.textContent = gated ? 'Awaiting clinical sign-off →' : done ? (state.mode === 'patient' ? 'Continue →' : 'Replay the scripted demo') : (state.mode === 'patient' ? 'TARS is navigating the record →' : 'Step through the briefing →');
 }
 function runStep() {
   busy = true; updateNext(); thinking(true, state.mode === 'patient' ? 'reading record…' : 'thinking…');
@@ -500,13 +500,19 @@ function advance() {
   if (busy) return;
   if (pendingNurse) { const p = pendingNurse; pendingNurse = null; p(); return; } // bring up the armed nurse card
   if (gated) return;
-  if (idx >= steps.length) { load(state.mode, state.focusId); return; }
+  if (idx >= steps.length) {
+    // end of the PATIENT story → hand off to the Cath Lab transition (the React
+    // shell listens for 'tars:finished'). The floor briefing still replays.
+    if (state.mode === 'patient') { window.dispatchEvent(new CustomEvent('tars:finished')); return; }
+    load(state.mode, state.focusId); return;
+  }
   runStep();
 }
 export function initChat() {
   panelB = document.getElementById('panelB');
   buildPanel2();
-  nextBtn.onclick = advance; // button kept for the ward dock, hidden in the tars phase
+  nextBtn.onclick = advance; // kept wired, but the on-screen button is hidden — stepping is keyboard-only (→ / Space)
+  nextBtn.style.display = 'none';
   // keyboard-driven: Space / → advance the briefing (ignored while typing in the note field)
   window.addEventListener('keydown', (e) => {
     if (e.code !== 'Space' && e.code !== 'ArrowRight') return;
