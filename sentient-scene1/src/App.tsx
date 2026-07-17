@@ -194,8 +194,6 @@ const DIVE_POS: [number, number, number] = [0, ER_INFO.y + 0.2, ER_INFO.frontZ +
 const ICU_RETURN_START: [number, number, number] = [0, ER_INFO.y + 3, ER_INFO.frontZ + 7]
 const ICU_LOCK_POS: [number, number, number] = [0, ICU_INFO.y + 2.8, 27]
 const ICU_DIVE_POS: [number, number, number] = [0, ICU_INFO.y + 0.2, ICU_INFO.frontZ + 0.1]
-const SCENE2_URL = 'http://localhost:5250' // Scene-2 ICU story (dev; swap for deployed)
-const SCENE3_URL = 'http://localhost:5270' // Scene-3 ICU continued — after the Cath Lab
 // Cath return: after Scene-2 (ICU) ends we land back here (#cath-return). Start
 // close on the ICU tier (as if stepping out of it) → reveal the whole tower →
 // dive into the Cath Lab (the +x hex half of the imgcath level) → CathLabScene.
@@ -515,10 +513,39 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
   )
 }
 
-export function App({ initialView = 'intro' }: { initialView?: 'intro' | 'cath-return' } = {}) {
-  const [view, setView] = useState<'intro' | 'er' | 'icu-return' | 'cath-return' | 'cath-lab'>(
-    initialView,
+// ---------------------------------------------------------------------------
+//  ICU FRAME — the TARS ICU story, embedded as a same-origin iframe so its
+//  vanilla-JS app gets a fresh document each time (no module-singleton clashes
+//  across the two chapters). The chapter is chosen by the query param; the
+//  'workup' chapter posts 'icu:finished' when its patient story ends.
+// ---------------------------------------------------------------------------
+function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued'; onFinished?: () => void }) {
+  const ref = useRef<HTMLIFrameElement>(null)
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'icu:finished') onFinished?.()
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [onFinished])
+  return (
+    <iframe
+      ref={ref}
+      src={`/icu.html?chapter=${chapter}`}
+      title="ICU"
+      onLoad={() => ref.current?.contentWindow?.focus()} // so → / Space reach the TARS app
+      style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', border: 'none' }}
+    />
   )
+}
+
+// The whole ride, one app, one port — transitions are in-app view swaps:
+//   intro → er → icu-return(dive) → icu-story(workup) → cath-return(dive)
+//         → cath-lab → icu-continued(post-PCI, terminus)
+export function App() {
+  const [view, setView] = useState<
+    'intro' | 'er' | 'icu-return' | 'icu-story' | 'cath-return' | 'cath-lab' | 'icu-continued'
+  >('intro')
   if (view === 'intro') return <IntroView onEnter={() => setView('er')} />
   if (view === 'er')
     return (
@@ -529,11 +556,17 @@ export function App({ initialView = 'intro' }: { initialView?: 'intro' | 'cath-r
       />
     )
   if (view === 'icu-return')
-    // pull out of the ER → reveal tower → dive into ICU → hand off to Scene-2
-    return <IcuReturnView onDone={() => (window.location.href = SCENE2_URL)} />
+    // pull out of the ER → reveal tower → dive into ICU → the ICU story
+    return <IcuReturnView onDone={() => setView('icu-story')} />
+  if (view === 'icu-story')
+    // TARS ICU workup; its last beat posts 'icu:finished' → the Cath Lab dive
+    return <IcuFrame chapter="workup" onFinished={() => setView('cath-return')} />
   if (view === 'cath-return')
     // step out of the ICU → reveal tower → dive into the Cath Lab → CathLabScene
     return <CathReturnView onDone={() => setView('cath-lab')} />
-  // Cath Lab: → at the last preset hard-cuts to Scene 3 (the ICU story continued)
-  return <CathLabScene onFinish={() => (window.location.href = SCENE3_URL)} />
+  if (view === 'cath-lab')
+    // Cath Lab: → at the last preset cuts to the ICU story continued
+    return <CathLabScene onFinish={() => setView('icu-continued')} />
+  // post-CT-angio continuation — terminus of the ride
+  return <IcuFrame chapter="continued" />
 }
