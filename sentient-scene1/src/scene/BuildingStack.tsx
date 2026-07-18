@@ -211,6 +211,9 @@ const HEX_FRONT_STRETCH = 1.6 // elongate the +Z (ER-entry-facing) vertex into a
 // twin is FLOORS index 1; Cath Lab is the RIGHT (+x) half at x = +TWIN_DX. The
 // dive aims at the hex's forward point (~the stretched +Z vertex).
 export const CATH_INFO = { x: TWIN_DX, y: floorCenterY(1), frontZ: 4.6, w: 2 * HEX_R, h: BLOCK_H }
+// OR dive target (for the ICU→OR transition after the CABG decision). The
+// theatres twin is FLOORS index 2; OR-1 is the LEFT (−x) half at x = −OR_DX.
+export const OR_INFO = { x: -OR_DX, y: floorCenterY(2), frontZ: HALF_D, w: 2 * TWIN_HALF_W, h: BLOCK_H }
 function hexShape(r: number): Shape {
   const s = new Shape()
   for (let i = 0; i < 6; i++) {

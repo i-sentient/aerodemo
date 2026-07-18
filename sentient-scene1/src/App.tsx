@@ -6,7 +6,8 @@ import { SceneEnvironment } from './scene/Environment'
 import { Building } from './scene/Building'
 import { RoundERLab } from './lab/RoundERLab'
 import { CathLabScene } from './lab/CathLabScene'
-import { BuildingStack, ER_INFO, ICU_INFO, CATH_INFO, STACK_TOP } from './scene/BuildingStack'
+import { ORScene } from './lab/ORScene'
+import { BuildingStack, ER_INFO, ICU_INFO, CATH_INFO, OR_INFO, STACK_TOP } from './scene/BuildingStack'
 import { Postprocessing } from './scene/Postprocessing'
 import { PatientLayer } from './components/PatientLayer'
 import { RelationEdges } from './components/RelationEdges'
@@ -200,6 +201,11 @@ const ICU_DIVE_POS: [number, number, number] = [0, ICU_INFO.y + 0.2, ICU_INFO.fr
 const CATH_RETURN_START: [number, number, number] = [0, ICU_INFO.y + 3, ICU_INFO.frontZ + 7]
 const CATH_LOCK_POS: [number, number, number] = [CATH_INFO.x, CATH_INFO.y + 2.8, 24]
 const CATH_DIVE_POS: [number, number, number] = [CATH_INFO.x, CATH_INFO.y + 0.2, CATH_INFO.frontZ + 0.1]
+// OR transition: after the CABG decision (Scene 3 end) we step out of the ICU
+// again → reveal the tower → dive into the theatres tier (OR-1, the −x half).
+const OR_RETURN_START: [number, number, number] = [0, ICU_INFO.y + 3, ICU_INFO.frontZ + 7]
+const OR_LOCK_POS: [number, number, number] = [OR_INFO.x, OR_INFO.y + 2.8, 24]
+const OR_DIVE_POS: [number, number, number] = [OR_INFO.x, OR_INFO.y + 0.2, OR_INFO.frontZ + 0.1]
 const lp = (a: number, b: number, t: number) => a + (b - a) * t
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
 
@@ -514,12 +520,89 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
+//  OR RETURN — after the CABG decision (Scene 3), step out of the ICU, reveal
+//  the tower, dive into the theatres tier (OR-1) → the operating theatre.
+// ---------------------------------------------------------------------------
+type OrPhase = 'reveal' | 'target' | 'fly'
+
+function ORRig({ phase, onArrived }: { phase: OrPhase; onArrived: () => void }) {
+  const prog = useRef(0)
+  const done = useRef(false)
+  useFrame((state, dt) => {
+    const cam = state.camera as any
+    if (phase === 'reveal') {
+      cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
+      cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
+      cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
+      cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'target') {
+      cam.position.x = MathUtils.damp(cam.position.x, OR_LOCK_POS[0], 2.2, dt)
+      cam.position.y = MathUtils.damp(cam.position.y, OR_LOCK_POS[1], 2.2, dt)
+      cam.position.z = MathUtils.damp(cam.position.z, OR_LOCK_POS[2], 2.2, dt)
+      cam.fov = MathUtils.damp(cam.fov, 34, 3, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(OR_INFO.x, OR_INFO.y, 0)
+    } else if (phase === 'fly') {
+      prog.current = Math.min(1, prog.current + dt / 1.9)
+      const p = easeInOut(prog.current)
+      cam.position.set(
+        lp(OR_LOCK_POS[0], OR_DIVE_POS[0], p),
+        lp(OR_LOCK_POS[1], OR_DIVE_POS[1], p),
+        lp(OR_LOCK_POS[2], OR_DIVE_POS[2], p),
+      )
+      cam.fov = lp(34, 44, p)
+      cam.updateProjectionMatrix()
+      cam.lookAt(OR_INFO.x, OR_INFO.y, 0)
+      // cut ~0.2s before the plunge, then hard-cut into the theatre
+      if (prog.current >= 0.895 && !done.current) {
+        done.current = true
+        onArrived()
+      }
+    }
+  })
+  return null
+}
+
+function ORReturnView({ onDone }: { onDone: () => void }) {
+  const [phase, setPhase] = useState<OrPhase>('reveal')
+  const phaseRef = useRef<OrPhase>('reveal')
+  phaseRef.current = phase
+  // → / Space: (once the building is revealed) dive into the OR
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'ArrowRight' && e.code !== 'Space') return
+      e.preventDefault()
+      if (phaseRef.current !== 'reveal') return
+      setPhase('target')
+      window.setTimeout(() => setPhase('fly'), 1500)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  return (
+    <Canvas
+      shadows
+      dpr={[1, 2]}
+      gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
+      camera={{ position: OR_RETURN_START, fov: 40 }}
+    >
+      <SceneEnvironment orb={false} dark />
+      <BuildingStack showPills={phase === 'reveal'} />
+      <ORRig phase={phase} onArrived={onDone} />
+      <Postprocessing dark />
+    </Canvas>
+  )
+}
+
+// ---------------------------------------------------------------------------
 //  ICU FRAME — the TARS ICU story, embedded as a same-origin iframe so its
 //  vanilla-JS app gets a fresh document each time (no module-singleton clashes
 //  across the two chapters). The chapter is chosen by the query param; the
 //  'workup' chapter posts 'icu:finished' when its patient story ends.
 // ---------------------------------------------------------------------------
-function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued'; onFinished?: () => void }) {
+function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued' | 'postop'; onFinished?: () => void }) {
   const ref = useRef<HTMLIFrameElement>(null)
   const [ready, setReady] = useState(false)
   useEffect(() => {
@@ -573,11 +656,17 @@ function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued'; on
 
 // The whole ride, one app, one port — transitions are in-app view swaps:
 //   intro → er → icu-return(dive) → icu-story(workup) → cath-return(dive)
-//         → cath-lab → icu-continued(post-PCI, terminus)
+//         → cath-lab → icu-continued(decision) → or-return(dive) → or-room
+//         → icu-postop(Scene 4 stub, terminus)
+type View =
+  | 'intro' | 'er' | 'icu-return' | 'icu-story' | 'cath-return' | 'cath-lab'
+  | 'icu-continued' | 'or-return' | 'or-room' | 'icu-postop'
+// DEV-only deep link for scene work: localhost:5210/?start=or-return etc.
+const DEV_START = import.meta.env.DEV
+  ? (new URLSearchParams(window.location.search).get('start') as View | null)
+  : null
 export function App() {
-  const [view, setView] = useState<
-    'intro' | 'er' | 'icu-return' | 'icu-story' | 'cath-return' | 'cath-lab' | 'icu-continued'
-  >('intro')
+  const [view, setView] = useState<View>(DEV_START ?? 'intro')
   if (view === 'intro') return <IntroView onEnter={() => setView('er')} />
   if (view === 'er')
     return (
@@ -599,6 +688,15 @@ export function App() {
   if (view === 'cath-lab')
     // Cath Lab: → at the last preset cuts to the ICU story continued
     return <CathLabScene onFinish={() => setView('icu-continued')} />
-  // post-CT-angio continuation — terminus of the ride
-  return <IcuFrame chapter="continued" />
+  if (view === 'icu-continued')
+    // Scene 3: the PTCA/CABG decision; its last beat → the OR transition
+    return <IcuFrame chapter="continued" onFinished={() => setView('or-return')} />
+  if (view === 'or-return')
+    // step out of the ICU → reveal tower → dive into the theatres tier (OR-1)
+    return <ORReturnView onDone={() => setView('or-room')} />
+  if (view === 'or-room')
+    // the operating theatre: → at the last preset cuts to Scene 4 (post-op)
+    return <ORScene onFinish={() => setView('icu-postop')} />
+  // Scene 4 (post-op) — stub terminus for now
+  return <IcuFrame chapter="postop" />
 }

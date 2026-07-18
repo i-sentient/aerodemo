@@ -297,6 +297,15 @@ body.theme-dark #stage.floor-mode{background:radial-gradient(1200px 900px at 50%
 .ord.signoff .ball{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.7);background:transparent;flex:0 0 auto;transition:all .15s}
 .ord.signoff .sel input:checked + .ball{background:#fff;border-color:#fff}
 .ord.signoff .sel:has(input:not(:checked)){opacity:.5}
+/* DECISION card — two real courses of action; the doctor picks (iSAM's lean is ringed) */
+.ord.decide{display:flex;flex-direction:column;gap:8px;align-items:stretch;border-radius:8px}
+.ord.decide .opt{display:grid;grid-template-columns:1fr auto;grid-template-areas:"l c" "s c";gap:1px 10px;align-items:center;text-align:left;padding:10px 12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);cursor:pointer;transition:background .15s,border-color .15s,transform .12s}
+.ord.decide .opt:hover{background:rgba(255,255,255,.16);transform:translateY(-1px)}
+.ord.decide .opt .ol{grid-area:l;font-size:14px;font-weight:800;color:#fff;letter-spacing:.04em}
+.ord.decide .opt .os{grid-area:s;font-size:9.5px;color:rgba(255,255,255,.72)}
+.ord.decide .opt .oc{grid-area:c;font-size:8.5px;font-weight:800;letter-spacing:.08em;color:#fff;background:rgba(255,255,255,.14);padding:3px 7px;border-radius:12px;white-space:nowrap}
+.ord.decide .opt.lean{border-color:#fff;background:rgba(255,255,255,.18);box-shadow:0 0 14px rgba(255,255,255,.25)}
+.ord.decide .opt.lean .oc{background:#fff;color:#7c2a24}
 .chin-input{display:none;margin-top:auto;margin-bottom:14px;align-items:center;gap:8px;padding-top:12px}
 .p2-notch.bottom.exp .chin-input{display:flex;animation:fadeUp .45s ease both}
 .chin-field{flex:1;min-width:0;background:rgba(127,127,127,.12);border:1px solid rgba(127,127,127,.28);border-radius:8px;padding:10px 14px;color:var(--p2-hink);font-size:12.5px;outline:none}

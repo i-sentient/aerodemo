@@ -218,6 +218,25 @@ function humanPrompt(order, onAccept) {
     if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); onAccept(); });
   }
 }
+// ---- DECISION card: two real courses of action, the human picks ----------
+// (not an approve gate — iSAM recommends with confidence, the doctor decides)
+function decisionPrompt(options, onChoose) {
+  activeHuman = 'clinician';
+  humanNotch.classList.add('awaiting');
+  expBottom = true;
+  renderHuman();
+  const st = humanNotch.querySelector('#humanStatus'); if (st) st.textContent = 'decision required';
+  const slot = humanNotch.querySelector('#humanAction');
+  if (!slot) return;
+  slot.innerHTML = `<div class="ord gated decide">${options.map((o) => `
+    <button class="opt${o.lean ? ' lean' : ''}" data-k="${o.key}">
+      <span class="ol">${o.label}</span>
+      <span class="os">${o.sub}</span>
+      <span class="oc">${o.conf}</span>
+    </button>`).join('')}</div>`;
+  slot.querySelectorAll('.opt').forEach((btn) => btn.addEventListener('click', (e) => { e.stopPropagation(); onChoose(btn.dataset.k); }));
+}
+
 function humanResolve(text) {
   humanNotch.classList.remove('awaiting');
   const slot = humanNotch.querySelector('#humanAction'); if (slot) slot.innerHTML = '';
@@ -382,14 +401,49 @@ function floorScript() {
 }
 function patientScript(b) {
   if (b.patient.acuity === 'critical') return state.chapter === 'continued' ? [
-    // ── continued chapter (post-CT-angio) · opens on vascular + PACS ──
-    // 1 · LSam pulls the completed study — right split holds on PACS (CT angio)
-    () => { addMsg('lsam', `CT Angiogram <b>completed</b> — pulling the coronary study for <b>${b.id}</b>, ${b.patient.name}.`, 'imaging complete'); openApp('pacs'); },
-    // 2 · iSAM reads the angiogram — the culprit lesion + the result
-    () => { addMsg('isam', `Coronary CTA: <b>proximal LAD occlusion</b> — the culprit lesion, stented in the cath lab. <b style="color:var(--redD)">TIMI 3 flow restored.</b>`, 'reading study'); },
-    // 3 · TARS brings the patient back under ICU watch, post-PCI
-    () => { addMsg('tars', `Culprit vessel reperfused. ${b.patient.name} is back under ICU watch — post-PCI. I'll walk the record with you.`, 'post-pci watch'); emrNavigate('summary'); },
-    // ── continuation beats go here ──
+    // ── SCENE 3 (post-angio) · hero = PACS + the surgery DECISION ──────────
+    // 1 · LSam pulls the completed study — right split holds on PACS
+    () => { addMsg('lsam', `Angiogram's in — pulling the coronary study for <b>${b.id}</b>, ${b.patient.name}.`, 'imaging complete'); openApp('pacs'); },
+    // 2 · iSAM reads the angio — NOT one culprit: triple-vessel disease
+    () => { addMsg('isam', `Reading it now. Three vessels narrowed — <b style="color:var(--redD)">LAD 90% proximal</b> · circumflex 75% · right coronary 60%. This isn't one culprit lesion — <span class="em">it's triple-vessel disease.</span>`, 'reading study'); },
+    // 3 · the radiologist's report lands — concordant
+    () => { addMsg('isam', `Radiologist's report just landed — <b>concordant</b> with my read. Severe triple-vessel disease, <b>SYNTAX 34</b> — surgical territory.`, 'cross-checking report'); },
+    // 4 · iSAM verdict WITH CONFIDENCE + two courses — the DOCTOR decides
+    () => {
+      addMsg('isam', `He needs revascularisation — two ways to do it. <b>PTCA</b>: stent the LAD now, stage the rest. <b>CABG</b>: bypass all three. With this anatomy and his diabetes, my call is <b style="color:var(--tealD)">CABG · 78% confidence</b>. Your decision, doctor.`, 'awaiting decision');
+      gated = true; updateNext();
+      const offer = () => decisionPrompt([
+        { key: 'ptca', label: 'PTCA', sub: 'Stent LAD now · stage LCx/RCA', conf: 'iSAM 22%' },
+        { key: 'cabg', label: 'CABG', sub: 'Bypass all three · durable', conf: 'iSAM 78%', lean: true },
+      ], (k) => {
+        if (k === 'cabg') {
+          humanResolve('CABG selected ✓');
+          addMsg('clinician', `Bypass. Three vessels and diabetes — surgery serves him better long-term.`);
+          gated = false; updateNext();
+        } else {
+          humanResolve('PTCA selected');
+          addMsg('clinician', `Could we stent the LAD and stage the rest?`);
+          setTimeout(() => {
+            addMsg('isam', `You could — but at SYNTAX 34 with diabetes, staged PTCA carries a materially higher repeat-revascularisation risk. <span class="em">I'd still advise CABG.</span> Your call stands, doctor.`, 'advising');
+            gated = true; updateNext(); offer(); // re-offer — the doctor still owns the call
+          }, 1400);
+        }
+      });
+      offer();
+    },
+    // 5 · TARS books the OR — operational fires, the pre-op needs a signature
+    () => { addMsg('tars', `CABG it is. Booking cardiothoracic — the pre-op set needs your name:`, 'booking theatre'); emrNavigate('orders'); addOrders([
+      { label: 'Book OR-1 — cardiothoracic', detail: 'Theatre scheduling · first on the morning list', autonomy: 'autonomous' },
+      { label: 'Page surgical + perfusion + anaesthesia', detail: 'CT surgery on-call · operational', autonomy: 'autonomous' },
+      { label: 'Hold ICU bed — post-op return', detail: 'Bed management · operational', autonomy: 'autonomous' },
+      { label: 'Pre-op workup — consent · cross-match 4u · CXR · bloods', items: ['Surgical consent', 'Cross-match 4 units', 'Chest X-ray', 'Pre-op bloods'], detail: 'Pre-operative set · requires sign-off', autonomy: 'gated', exec: () => emrNavigate('orders') }]); },
+    // 6 · pre-op underway
+    () => { addMsg('tars', `Signed — pre-op running. Heparin holds from midnight; he's first on the list.`, 'pre-op running'); emrNavigate('meds'); },
+    // 7 · to theatre — the last beat; → past it leaves for the OR
+    () => { addMsg('tars', `Theatre's ready — team's scrubbed. <span class="em">Taking him through to the OR.</span>`, 'to theatre'); emrNavigate('summary'); },
+  ] : state.chapter === 'postop' ? [
+    // ── SCENE 4 stub (post-op) — story lands here next session ──
+    () => { addMsg('tars', `Back from theatre — CABG ×3, off bypass, chest closed. <span class="em">Post-op day 0, hour 1.</span> Scene 4 begins here.`, 'post-op day 0'); emrNavigate('summary'); },
   ] : [
     // 1 · we're already in — the chart's up (continues straight from the ward dive)
     () => { addMsg('lsam', `${b.patient.name}, ${b.patient.age}. His chart's up.`, 'opening record'); emrNavigate('summary'); },
@@ -512,10 +566,11 @@ function advance() {
   if (pendingNurse) { const p = pendingNurse; pendingNurse = null; p(); return; } // bring up the armed nurse card
   if (gated) return;
   if (idx >= steps.length) {
-    // end of the WORKUP patient story → hand off to the Cath Lab transition (the
-    // React shell listens for 'tars:finished'). The floor briefing AND the
-    // continued chapter (the terminus) just replay.
-    if (state.mode === 'patient' && state.chapter === 'workup') { window.dispatchEvent(new CustomEvent('tars:finished')); return; }
+    // end of a patient story → hand off to the next transition (the React shell
+    // listens for 'tars:finished' and the host routes by chapter: workup → Cath
+    // Lab dive · continued → OR dive). The floor briefing and the postop stub
+    // (current terminus) just replay.
+    if (state.mode === 'patient' && (state.chapter === 'workup' || state.chapter === 'continued')) { window.dispatchEvent(new CustomEvent('tars:finished')); return; }
     load(state.mode, state.focusId); return;
   }
   runStep();
