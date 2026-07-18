@@ -49,3 +49,19 @@
 @keyframes wrHint{0%,100%{opacity:.65}50%{opacity:1}}
 .ward-roster.armed .wr-row{cursor:pointer;transition:background .15s,border-color .15s,transform .12s}
 .ward-roster.armed .wr-row:hover{background:rgba(255,255,255,.95);border-color:rgba(31,142,143,.55);transform:translateX(2px)}
+
+/* ============================================================
+   DARK THEME — dark-glass rows, pale ink (mirrors the TARS floor roster)
+   ============================================================ */
+body.theme-dark .ward-roster{color:#c8dde4}
+body.theme-dark .ward-roster .wr-tk{color:rgba(150,205,225,.6)}
+body.theme-dark .ward-roster .wr-row{border-color:rgba(120,180,200,.2);background:rgba(16,24,32,.55)}
+body.theme-dark .ward-roster .wr-id{color:#dff2f8}
+body.theme-dark .ward-roster .wr-nm{color:#c8dde4}
+body.theme-dark .ward-roster .wr-dx{color:#7f99a2}
+body.theme-dark .ward-roster .wr-news{background:rgba(93,202,165,.14);color:#6fe3b8}
+body.theme-dark .ward-roster .wr-news.watch{background:rgba(245,166,35,.16);color:#ffc34a}
+body.theme-dark .ward-roster .wr-news.critical{background:rgba(226,75,74,.18);color:#ff8f8b}
+body.theme-dark .ward-roster .wr-news.empty{background:rgba(154,166,179,.16);color:#9aa9b8}
+body.theme-dark .ward-roster .wr-row.alarm{border-color:rgba(226,75,74,.45);background:rgba(52,18,18,.55)}
+body.theme-dark .ward-roster.armed .wr-row:hover{background:rgba(22,32,42,.85);border-color:rgba(120,180,200,.45)}

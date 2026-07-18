@@ -8,7 +8,8 @@ import { Postprocessing } from './scene/Postprocessing'
 import { WardAgentPanel } from './WardAgentPanel'
 import { WardRoster } from './WardRoster'
 import { WardHud } from './WardHud'
-import { WardWorkspacePanel } from './WardWorkspacePanel'
+// @ts-ignore — plain-JS tars module, no type declarations
+import { state as tarsState, onThemeChange } from './tars/state.js'
 
 // ---------------------------------------------------------------------------
 //  ICU — floorplan view. Free orbit to inspect the room; Space / → snaps the
@@ -28,9 +29,6 @@ const SHOTS: Shot[] = [
 //   0 working (low) · 1 establish (high) · 2 bird's-eye · 3-8 lifecycle → hero · 9 workspace → ring overview
 const STEP_SHOT = [1, 0, 2, 3, 3, 3, 3, 3, 3, 4]
 const N_BEATS = STEP_SHOT.length
-// the final step slides Panel C (eMAR) in — the ICU shrinks again to a 3-column
-// layout (ICU | Panel B | Panel C) and only then does the ENTER button appear.
-const PANEL_C_STEP = N_BEATS - 1
 
 // camera rig: OrbitControls for free look, but a Space/→ beat tweens to a shot
 // and only then releases control back to the user.
@@ -149,6 +147,14 @@ function ViewFraming({ cover }: { cover: number }) {
 export function WardApp({ onEnterICU }: { onEnterICU: () => void }) {
   const [step, setStep] = useState(0)
   const [leaving, setLeaving] = useState(false)
+  const [chatFrac, setChatFrac] = useState(0.3) // chat width ↔ camera lens-shift, drag-adjustable
+  // global light/dark — shared with the TARS phase via tars/state.js, so a
+  // toggle here carries straight through the dive into the patient hub
+  const [isDark, setIsDark] = useState<boolean>(!!(tarsState as { dark?: boolean }).dark)
+  useEffect(() => {
+    document.body.classList.toggle('theme-dark', !!(tarsState as { dark?: boolean }).dark)
+    return onThemeChange((v: boolean) => { setIsDark(v); document.body.classList.toggle('theme-dark', v) })
+  }, [])
   const [interfaceReady, setInterfaceReady] = useState(false)
   const LAST = N_BEATS - 1 // final ward beat ("Taking us in") — → past it dives into the Patient Hub
   const stepRef = useRef(0)
@@ -217,24 +223,21 @@ export function WardApp({ onEnterICU }: { onEnterICU: () => void }) {
           camera={{ position: SHOTS[0].pos, fov: 49 }}
         >
           <CameraRig step={shotStep} />
-          <ViewFraming cover={step >= PANEL_C_STEP ? 0.6 : step >= 2 ? 0.3 : 0} />
-          <SceneEnvironment orb={false} />
+          <ViewFraming cover={step >= 2 ? chatFrac : 0} />
+          <SceneEnvironment orb={false} dark={isDark} />
           <Building step={shotStep} />
           <Postprocessing />
         </Canvas>
       </div>
 
       {/* instrument-panel chrome framing the ICU (brackets, texture, title, capacity) */}
-      <WardHud step={step} />
+      <WardHud step={step} rightFrac={chatFrac} />
 
       {/* bed roster — top-left; at the final step it arms: click a patient to enter the interface */}
       <WardRoster step={step} armed={interfaceReady && !leaving} onSelect={() => setLeaving(true)} />
 
       {/* Panel B docks at state 2; shifts to the middle column when Panel C arrives */}
-      <WardAgentPanel step={step} dockRight={step >= PANEL_C_STEP ? '30vw' : 0} />
-
-      {/* Panel C (eMAR workspace) slides into the far-right column on the final step */}
-      <WardWorkspacePanel inView={step >= PANEL_C_STEP} />
+      <WardAgentPanel step={step} width={chatFrac} onResize={setChatFrac} />
 
       {/* fade to the dark ICU scanner as tars boots */}
       <div

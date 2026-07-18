@@ -13,7 +13,10 @@ export function setMode(mode, focusId = null) {
 // global light/dark theme — ONE toggle flips all three splits (light default).
 state.dark = false;
 const tsubs = [];
-export function onThemeChange(fn) { tsubs.push(fn); }
+export function onThemeChange(fn) {
+  tsubs.push(fn);
+  return () => { const i = tsubs.indexOf(fn); if (i >= 0) tsubs.splice(i, 1); }; // unsubscribe
+}
 export function setTheme(dark) {
   state.dark = dark;
   for (const fn of tsubs) fn(dark);

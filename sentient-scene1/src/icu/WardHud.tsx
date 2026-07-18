@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import './ward-hud.css'
 import { capacityForStep } from './wardFloor'
+// @ts-ignore — plain-JS tars module, no type declarations
+import { state as tarsState, setTheme, onThemeChange } from './tars/state.js'
 
 // ---------------------------------------------------------------------------
 //  WARD HUD — the instrument-panel chrome framing the ICU 3D view: corner
@@ -15,16 +17,18 @@ function nowStr() {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
-export function WardHud({ step }: { step: number }) {
+export function WardHud({ step, rightFrac = 0.3 }: { step: number; rightFrac?: number }) {
   const cap = capacityForStep(step)
   const [clock, setClock] = useState(nowStr)
+  const [dark, setDark] = useState<boolean>(!!(tarsState as { dark?: boolean }).dark)
   useEffect(() => {
     const id = window.setInterval(() => setClock(nowStr()), 1000)
     return () => window.clearInterval(id)
   }, [])
+  useEffect(() => onThemeChange((v: boolean) => setDark(v)), [])
 
   return (
-    <div className="ward-hud" style={{ right: step >= 2 ? '30vw' : 0 }}>
+    <div className="ward-hud" style={{ right: step >= 2 ? `${rightFrac * 100}vw` : 0 }}>
       {/* texture layers */}
       <div className="wh-grid" />
       <div className="wh-scan" />
@@ -53,6 +57,15 @@ export function WardHud({ step }: { step: number }) {
 
       {/* foot ref + live clock — bottom-left */}
       <div className="wh-foot">REF 0xN-ICU · GRID 8x · {clock}</div>
+
+      {/* light/dark toggle — same global theme the TARS phase uses */}
+      <button className="wh-theme" title="Light / dark" aria-label="Toggle theme" onClick={() => setTheme(!dark)}>
+        {dark ? (
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M19.1 4.9l-1.7 1.7M6.6 17.4l-1.7 1.7" /></svg>
+        ) : (
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.4 14.2A8.4 8.4 0 0 1 9.8 3.6a8.4 8.4 0 1 0 10.6 10.6z" /></svg>
+        )}
+      </button>
     </div>
   )
 }

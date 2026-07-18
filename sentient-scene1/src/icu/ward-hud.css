@@ -38,3 +38,29 @@
 /* -- foot ref + clock (bottom-left) -- */
 .wh-foot{position:absolute;left:22px;bottom:22px;font-size:10px;letter-spacing:.12em;
   color:rgba(90,110,116,.6);text-transform:uppercase}
+
+/* -- light/dark toggle (interactive: overrides the HUD's pointer-events:none) -- */
+.wh-theme{position:absolute;top:14px;right:54px;width:32px;height:32px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;pointer-events:auto;cursor:pointer;
+  background:rgba(255,255,255,.6);border:1px solid rgba(31,95,96,.25);color:rgba(31,95,96,.8);
+  transition:color .15s,border-color .15s,background .15s}
+.wh-theme:hover{color:#16494b;border-color:rgba(31,95,96,.5)}
+
+/* ============================================================
+   DARK THEME — pale-ink counterparts (mirrors the TARS scanner HUD's dark set)
+   ============================================================ */
+body.theme-dark .ward-hud{color:#cfe2ea}
+body.theme-dark .wh-scan{background:repeating-linear-gradient(0deg,rgba(150,210,230,.03) 0 1px,transparent 1px 4px)}
+body.theme-dark .wh-grid{background:
+  repeating-linear-gradient(0deg,rgba(150,210,230,.024) 0 1px,transparent 1px 46px),
+  repeating-linear-gradient(90deg,rgba(150,210,230,.024) 0 1px,transparent 1px 46px)}
+body.theme-dark .wh-vignette{background:radial-gradient(ellipse 76% 78% at 50% 45%,transparent 55%,rgba(0,3,7,.4) 100%)}
+body.theme-dark .wh-bracket.tl,body.theme-dark .wh-bracket.tr,body.theme-dark .wh-bracket.bl,body.theme-dark .wh-bracket.br{border-color:rgba(120,180,200,.4)}
+body.theme-dark .wh-title-main{color:#e3f4fb}
+body.theme-dark .wh-title-sub{color:#9db8c2}
+body.theme-dark .wh-cap-tk{color:rgba(150,205,225,.6)}
+body.theme-dark .wh-cap-num{color:#e3f4fb}
+body.theme-dark .wh-cap-u{color:#7f99a2}
+body.theme-dark .wh-foot{color:rgba(150,180,195,.5)}
+body.theme-dark .wh-theme{background:rgba(16,24,32,.6);border-color:rgba(120,180,200,.25);color:#9fc2cc}
+body.theme-dark .wh-theme:hover{color:#e3f4fb;border-color:rgba(120,180,200,.5)}

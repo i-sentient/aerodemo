@@ -1,3 +1,4 @@
+import './panelb.css'; // Panel B's own styles — single copy, loads in BOTH the ward dock and the 3-split
 import { bedById } from './ontology.js';
 import { state, onModeChange, onThemeChange } from './state.js';
 import { agentUpdateEMAR, agentStopPressor, agentOrderTroponin, agentGiveMeds, agentOrderRoutine, emrNavigate, openApp } from './apps.js';
