@@ -173,6 +173,15 @@ function applySceneTheme(dark) {
     if (pGround) pGround.material.color.set(0xe6edf1); // light stage floor
     if (fGround) { fGround.material.map = floorScene.userData.aeroTex || null; fGround.material.color.set(0xffffff); fGround.material.needsUpdate = true; }
   }
+  // body hologram legibility: the translucent blue vanishes on the light stage —
+  // raise the see-through-face floor + deepen the diffuse so it still reads
+  const bodyFig = figs.body;
+  if (bodyFig) bodyFig.group.traverse((o) => {
+    if (o.isMesh && o.material && o.material.userData && o.material.userData.uAlphaMin) {
+      o.material.userData.uAlphaMin.value = dark ? 0.10 : 0.38;
+      o.material.color.set(dark ? 0x3f8fe0 : 0x175a9e);
+    }
+  });
 }
 onThemeChange(applySceneTheme);
 
@@ -285,7 +294,7 @@ function robustPlace(root, targetH = 1.72) {
 }
 
 function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = false, style = null } = {}) {
-  const root = gltf.scene; robustPlace(root, 1.72);
+  const root = gltf.scene; robustPlace(root, style === 'body' || style === 'grid' ? 1.88 : 1.72); // body reads a touch bigger on stage
   const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
   const mats = [], heartMeshes = [];
   root.traverse((o) => {
@@ -340,7 +349,9 @@ function ensureLayer(name, cb) {
   loadingNames.add(name);
   getLoader().load(SYSTEM_URLS[name], (g) => {
     figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name], vascular: name === 'vascular', style: name });
-    patientScene.add(figs[name].group); loadingNames.delete(name); cb && cb();
+    patientScene.add(figs[name].group); loadingNames.delete(name);
+    applySceneTheme(state.dark); // dress the fresh figure for the current theme (body legibility)
+    cb && cb();
   }, undefined, (e) => { loadingNames.delete(name); console.warn('[TARS] layer load failed', name, e); });
 }
 function buildPatientFigure() {

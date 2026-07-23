@@ -163,17 +163,19 @@ export function makeBodyHologramMaterial(clip, color = 0x3f8fe0) {
     side: THREE.DoubleSide, clippingPlanes: clip ? [clip] : null,
   });
   m.userData.uTime = { value: 0 };
+  m.userData.uAlphaMin = { value: 0.10 }; // see-through-face floor — raised in light theme so the body reads on a bright stage
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = m.userData.uTime;
+    sh.uniforms.uAlphaMin = m.userData.uAlphaMin;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying vec3 vWP;')
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uAlphaMin;\nvarying vec3 vWP;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         float fr = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.2);
         float scan = 0.5 + 0.5 * sin(vWP.y * 16.0 - uTime * 2.0);
-        diffuseColor.a = mix(0.10, 0.96, pow(fr, 1.1)) + scan * 0.03;   // see-through faces, dense glowing rim
+        diffuseColor.a = mix(uAlphaMin, 0.96, pow(fr, 1.1)) + scan * 0.03;   // see-through faces, dense glowing rim
         totalEmissiveRadiance += vec3(0.30, 0.62, 1.0) * (fr * 1.7 + scan * 0.05);  // bright blue outline glow`);
   };
   return m;
