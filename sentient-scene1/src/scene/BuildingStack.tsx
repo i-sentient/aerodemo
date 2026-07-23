@@ -631,7 +631,7 @@ function TwinBridge({ floorId }: { floorId: string }) {
   )
 }
 
-export function BuildingStack({ showPills = false }: { showPills?: boolean } = {}) {
+export function BuildingStack({ showPills = false, keepPill }: { showPills?: boolean; keepPill?: 'cath' | 'or' } = {}) {
   return (
     <group>
       <RoundedBox args={[W + 0.4, 0.5, D + 0.4]} radius={0.1} smoothness={4} material={shellMat} position={[0, -0.25, 0]} receiveShadow />
@@ -674,9 +674,10 @@ export function BuildingStack({ showPills = false }: { showPills?: boolean } = {
             />
           )
         }
-        // --- side pills: only after "next" (showPills) ---
-        if (!showPills) return null
+        // --- side pills: ALL when showPills; during a dive, keep only the pill
+        //     for the room we're plunging into (keepPill) so it stays labelled ---
         if (f.shape === 'disc') {
+          if (!showPills) return null
           // TARS / SAM pills flanking the command deck
           return (
             <group key={'l' + f.id}>
@@ -685,8 +686,16 @@ export function BuildingStack({ showPills = false }: { showPills?: boolean } = {
             </group>
           )
         }
-        if (f.id === 'hdu') return <DirectoryChip key={'d' + f.id} floor={f} index={i} />
-        if (f.twin) return <DirectoryChip key={'d' + f.id} floor={f} index={i} />
+        if (f.id === 'hdu' || f.twin) {
+          if (showPills) return <DirectoryChip key={'d' + f.id} floor={f} index={i} />
+          // Cath Lab = the RIGHT (twin) pill of the imaging tier
+          if (keepPill === 'cath' && f.id === 'imgcath' && f.twin)
+            return <Chip key={'k' + f.id} x={HALF_W + 1.3} y={y} label={f.twin.label} sub={f.twin.sub} />
+          // OR-1 = the LEFT (main) pill of the theatres tier
+          if (keepPill === 'or' && f.id === 'theatres')
+            return <Chip key={'k' + f.id} x={-(HALF_W + 1.3)} y={y} label={f.label} sub={f.sub} right />
+          return null
+        }
         return null
       })}
       <ERMouth />

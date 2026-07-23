@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { useEffect, useRef, useState, type RefObject, type MutableRefObject } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { Environment, Lightformer, ContactShadows, OrbitControls } from '@react-three/drei'
-import { NoToneMapping } from 'three'
+import { NoToneMapping, MathUtils } from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { Postprocessing } from '../scene/Postprocessing'
 import { CathLab } from './CathLab'
+import { useShotCapture } from './useShotCapture'
 
 // ---------------------------------------------------------------------------
 //  CATH LAB — LAB. Isolated preview of just the cath-lab architecture shell,
@@ -14,17 +15,18 @@ import { CathLab } from './CathLab'
 //  (see main.tsx). Architecture only — no patients, no story yet.
 // ---------------------------------------------------------------------------
 
-/** Bright, clean clinical light. Cool key + soft fill so the white equipment
- *  stays crisp and the recessed ceiling panels read as the light source. */
+/** Dimmed-for-the-run clinical light — a real cath lab drops the room lights
+ *  during fluoro so the screens read. Half a notch toward the OR's mood, but
+ *  cool/steel where the OR is warm: the room stays white, the glow stays blue. */
 function CathStudio() {
   return (
     <>
-      <color attach="background" args={['#c2c8ce']} />
-      <ambientLight intensity={0.62} color={0xeef3f8} />
+      <color attach="background" args={['#454f59']} />
+      <ambientLight intensity={0.35} color={0xdfe8f0} />
       <directionalLight
         castShadow
-        intensity={1.15}
-        color={0xffffff}
+        intensity={0.72}
+        color={0xf2f6fb}
         position={[6, 22, -10]}
         shadow-mapSize={[2048, 2048]}
         shadow-camera-near={1}
@@ -36,65 +38,101 @@ function CathStudio() {
         shadow-bias={-0.0004}
         shadow-normalBias={0.02}
       />
-      {/* soft interior fills approximating the ceiling panel wash (below the 3.6 m ceiling) */}
-      <pointLight position={[-3, 3.3, -2]} intensity={16} distance={16} decay={2} color={0xf3f8ff} />
-      <pointLight position={[3, 3.3, 2]} intensity={16} distance={16} decay={2} color={0xf3f8ff} />
-      <pointLight position={[0, 3.3, -3]} intensity={11} distance={14} decay={2} color={0xeaf2ff} />
+      {/* soft interior fills approximating the (dimmed) ceiling panel wash */}
+      <pointLight position={[-3, 3.3, -2]} intensity={9} distance={16} decay={2} color={0xe8f0fa} />
+      <pointLight position={[3, 3.3, 2]} intensity={9} distance={16} decay={2} color={0xe8f0fa} />
+      <pointLight position={[0, 3.3, -3]} intensity={6} distance={14} decay={2} color={0xdfeafc} />
 
-      {/* crisp studio env → glints on the chrome + glass */}
+      {/* studio env → glints on the chrome + glass (dimmed with the room) */}
       <Environment resolution={256} frames={1}>
-        <color attach="background" args={['#5c646e']} />
-        <Lightformer form="rect" intensity={4} color="#ffffff" position={[0, 12, -14]} scale={[16, 9, 1]} />
-        <Lightformer form="rect" intensity={3.2} color="#eef6ff" position={[-14, 8, 6]} scale={[2, 16, 1]} rotation-y={Math.PI / 2} />
-        <Lightformer form="rect" intensity={3.2} color="#eef6ff" position={[14, 8, 6]} scale={[2, 16, 1]} rotation-y={-Math.PI / 2} />
-        <Lightformer form="ring" intensity={1.5} color="#ffffff" position={[0, 18, 2]} scale={[12, 12, 1]} rotation-x={Math.PI / 2} />
+        <color attach="background" args={['#3d454e']} />
+        <Lightformer form="rect" intensity={2.6} color="#f2f6fb" position={[0, 12, -14]} scale={[16, 9, 1]} />
+        <Lightformer form="rect" intensity={2.2} color="#e4eefc" position={[-14, 8, 6]} scale={[2, 16, 1]} rotation-y={Math.PI / 2} />
+        <Lightformer form="rect" intensity={2.2} color="#e4eefc" position={[14, 8, 6]} scale={[2, 16, 1]} rotation-y={-Math.PI / 2} />
+        <Lightformer form="ring" intensity={1.1} color="#ffffff" position={[0, 18, 2]} scale={[12, 12, 1]} rotation-x={Math.PI / 2} />
       </Environment>
 
-      <ContactShadows position={[0, 0.02, 0]} scale={22} resolution={1024} blur={2.4} opacity={0.42} far={10} color="#2a3138" />
+      <ContactShadows position={[0, 0.02, 0]} scale={22} resolution={1024} blur={2.4} opacity={0.5} far={10} color="#232930" />
     </>
   )
 }
 
 // --- preset camera angles (pos → camera, look → orbit target) ----------------
+// The sign bookends the room: red outside → through the wall → the long shot
+// through the console glass → back to the sign (green) → the console shot.
 type Shot = { pos: [number, number, number]; look: [number, number, number] }
 const SHOTS: Shot[] = [
-  { pos: [0, 1.95, -6.2], look: [0, 1.35, 0.5] },      // 0 · establishing from the doorway, eye-level
-  { pos: [-2.5, 1.7, -3.6], look: [0.2, 1.3, 0.6] },   // 1 · in on the table + C-arm
-  { pos: [-2.4, 2.3, -1.3], look: [-3.3, 2.4, 2.6] },  // 2 · the boom monitor bank
-  { pos: [-1.9, 1.25, -3.7], look: [0.1, 1.65, 0.5] }, // 3 · low hero of the C-arm over the table
+  { pos: [0.04, 2.23, 8.65], look: [0, 2.32, 5.49] },   // 0 · corridor — the red CATH-1 · IN USE off the back wall
+  { pos: [0, 2.12, 2.55], look: [0, 2.3, 5.53] },       // 1 · pushes through the wall — inside, on the sign
+  { pos: [0.11, 1.68, -6.22], look: [0.39, 1.36, 0.59] }, // 2 · the long shot — through the open window (no glass yet); reads as a clean opening
+  { pos: [-0.03, 2.36, 2.45], look: [-0.03, 2.3, 5.5] }, // 3 · back to the sign → green COMPLETED (slow fade)
+  { pos: [0.07, 1.61, -9.44], look: [-0.03, 2.3, 5.5] }, // 4 · the console shot — across the whole lab to the green sign
 ]
 const N_BEATS = SHOTS.length
+const LAST = N_BEATS - 1
+const DONE_AT = 3 // arriving at the "complete" beat turns the sign green
+
+// smooth glide between presets — same rig as the OR (position + target damped,
+// arrival re-enables orbit and reports in so the sign can flip).
+function GlideRig({ controls, goal, onArrive }: {
+  controls: RefObject<OrbitControlsImpl | null>
+  goal: MutableRefObject<Shot | null>
+  onArrive: () => void
+}) {
+  useFrame((_, dt) => {
+    const g = goal.current
+    const c = controls.current
+    if (!g || !c) return
+    const cam = c.object
+    const k = 2.2
+    cam.position.x = MathUtils.damp(cam.position.x, g.pos[0], k, dt)
+    cam.position.y = MathUtils.damp(cam.position.y, g.pos[1], k, dt)
+    cam.position.z = MathUtils.damp(cam.position.z, g.pos[2], k, dt)
+    c.target.x = MathUtils.damp(c.target.x, g.look[0], k, dt)
+    c.target.y = MathUtils.damp(c.target.y, g.look[1], k, dt)
+    c.target.z = MathUtils.damp(c.target.z, g.look[2], k, dt)
+    c.update()
+    const d = Math.hypot(cam.position.x - g.pos[0], cam.position.y - g.pos[1], cam.position.z - g.pos[2])
+    if (d < 0.06) {
+      goal.current = null
+      c.enabled = true
+      onArrive()
+    }
+  })
+  return null
+}
 
 export function CathLabScene({ onFinish }: { onFinish?: () => void } = {}) {
-  // Free orbit (drag / scroll). Space / → snap through the preset angles;
-  // ← / Backspace step back. After a snap you can keep orbiting from there.
+  // Free orbit (drag / scroll) between beats; Space / → glides to the next
+  // preset (← / Backspace back). Past the last beat → Post Cath Manager.
   const controls = useRef<OrbitControlsImpl>(null)
   const step = useRef(0)
+  const glideGoal = useRef<Shot | null>(null)
+  const [done, setDone] = useState(false)  // the sign green + angio: settles on ARRIVAL at the complete beat
+  const [glass, setGlass] = useState(false) // the observation glass: appears the INSTANT you click past the long shot
   const onFinishRef = useRef(onFinish)
   onFinishRef.current = onFinish
+  useShotCapture(controls) // DEV: P = copy current camera as a SHOT line
   useEffect(() => {
-    const snap = (i: number) => {
-      const c = controls.current
-      if (!c) return
-      const s = SHOTS[i]
-      c.object.position.set(s.pos[0], s.pos[1], s.pos[2])
-      c.target.set(s.look[0], s.look[1], s.look[2])
-      c.update()
+    const go = (i: number) => {
+      glideGoal.current = SHOTS[i]
+      if (controls.current) controls.current.enabled = false
+      if (i < DONE_AT) setDone(false) // stepping back re-arms the red sign
+      setGlass(i >= DONE_AT)          // glass appears/hides the instant you click past the long shot
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowRight') {
         e.preventDefault()
-        // at the last preset, → hard-cuts onward (e.g. to Scene 3) if wired
-        if (step.current >= N_BEATS - 1) {
+        if (step.current >= LAST) {
           onFinishRef.current?.()
           return
         }
-        step.current = Math.min(step.current + 1, N_BEATS - 1)
-        snap(step.current)
+        step.current += 1
+        go(step.current)
       } else if (e.code === 'ArrowLeft' || e.code === 'Backspace') {
         e.preventDefault()
         step.current = Math.max(step.current - 1, 0)
-        snap(step.current)
+        go(step.current)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -106,18 +144,19 @@ export function CathLabScene({ onFinish }: { onFinish?: () => void } = {}) {
         shadows
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
-        camera={{ position: [0, 1.95, -6.2], fov: 46 }}
+        camera={{ position: SHOTS[0].pos, fov: 46 }}
       >
         <CathStudio />
-        <CathLab />
+        <CathLab done={done} glass={glass} />
+        <GlideRig controls={controls} goal={glideGoal} onArrive={() => { if (step.current >= DONE_AT) setDone(true) }} />
         <OrbitControls
           ref={controls}
-          target={[0, 1.2, 0.4]}
+          target={SHOTS[0].look}
           enableDamping
           dampingFactor={0.08}
           minDistance={2.5}
           maxDistance={22}
-          maxPolarAngle={Math.PI / 2.05}
+          maxPolarAngle={Math.PI / 1.75}
         />
         <Postprocessing dark />
       </Canvas>

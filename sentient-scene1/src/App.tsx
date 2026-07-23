@@ -512,7 +512,7 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
       camera={{ position: CATH_RETURN_START, fov: 40 }}
     >
       <SceneEnvironment orb={false} dark />
-      <BuildingStack showPills={phase === 'reveal'} />
+      <BuildingStack showPills={phase === 'reveal'} keepPill="cath" />
       <CathRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
@@ -589,7 +589,7 @@ function ORReturnView({ onDone }: { onDone: () => void }) {
       camera={{ position: OR_RETURN_START, fov: 40 }}
     >
       <SceneEnvironment orb={false} dark />
-      <BuildingStack showPills={phase === 'reveal'} />
+      <BuildingStack showPills={phase === 'reveal'} keepPill="or" />
       <ORRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>

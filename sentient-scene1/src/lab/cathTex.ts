@@ -100,21 +100,18 @@ export const angioTex = make(720, 720, (c) => {
   c.quadraticCurveTo(w * 0.6, h * 0.12, w * 0.5, h * 0.24)
   c.stroke()
 
-  // a focused stenosis marker (the lesion iSAM/SAM would flag)
-  c.strokeStyle = '#ff5a5a'
-  c.lineWidth = 3
-  c.beginPath()
-  c.arc(w * 0.44, h * 0.5, 26, 0, Math.PI * 2)
-  c.stroke()
-  c.fillStyle = 'rgba(255,90,90,0.9)'
-  c.font = 'bold 20px system-ui, sans-serif'
-  c.fillText('LAD 90%', w * 0.44 + 34, h * 0.5 + 6)
+  // (no lesion markings yet — the anomalies get flagged later in the story,
+  //  by iSAM in the Post Cath Manager, not on the raw run)
 
-  // corner HUD
+  // corner HUD — the case
   c.fillStyle = '#9fb0bd'
   c.font = '17px ui-monospace, monospace'
   c.fillText('FLUORO · 15 fps', 22, 34)
   c.fillText('RAO 30  CAU 20', 22, 58)
+  c.fillStyle = '#c8d4de'
+  c.fillText('CHANDRABABU · ICU-08', 22, h - 46)
+  c.fillStyle = '#9fb0bd'
+  c.fillText('ANT STEMI · DIAGNOSTIC', 22, h - 22)
   c.textAlign = 'right'
   c.fillText('DAP 42 Gy·cm²', w - 22, 34)
   c.fillText('CINE', w - 22, 58)
@@ -181,29 +178,84 @@ export const hemoTex = make(640, 400, (c) => {
   }
   c.stroke()
 
-  // numeric column
+  // patient line — whose strip this is
+  c.fillStyle = '#94a4b0'
+  c.font = '15px ui-monospace, monospace'
+  c.fillText('CHANDRABABU · ICU-08 · ANT STEMI', 16, 24)
+
+  // numeric column — his numbers on the table (stabilised, still stressed)
   const nx = traceW + 20
   c.textBaseline = 'alphabetic'
   c.fillStyle = '#39e05a'
   c.font = 'bold 44px ui-monospace, monospace'
-  c.fillText('78', nx, 92)
+  c.fillText('96', nx, 92)
   c.fillStyle = '#7f8b97'
   c.font = '14px system-ui, sans-serif'
   c.fillText('HR bpm', nx, 112)
 
   c.fillStyle = '#ff8080'
   c.font = 'bold 34px ui-monospace, monospace'
-  c.fillText('126/72', nx, 216)
+  c.fillText('108/70', nx, 216)
   c.fillStyle = '#7f8b97'
   c.font = '14px system-ui, sans-serif'
-  c.fillText('ABP  (89)', nx, 236)
+  c.fillText('ABP  (83)', nx, 236)
 
   c.fillStyle = '#8fe0ff'
   c.font = 'bold 40px ui-monospace, monospace'
-  c.fillText('98', nx, 336)
+  c.fillText('97', nx, 336)
   c.fillStyle = '#7f8b97'
   c.font = '14px system-ui, sans-serif'
   c.fillText('SpO2 %', nx, 356)
+})
+
+// --- illuminated "CATH-1 · IN USE" plate — same signage stack as the OR -----
+export const cathInUseTex = make(512, 128, (c) => {
+  c.fillStyle = '#1c0806'
+  c.fillRect(0, 0, 512, 128)
+  c.strokeStyle = 'rgba(255,110,90,0.55)'
+  c.lineWidth = 6
+  c.strokeRect(10, 10, 492, 108)
+  c.font = 'bold 52px ui-sans-serif, system-ui, sans-serif'
+  c.textAlign = 'center'
+  c.textBaseline = 'middle'
+  c.fillStyle = '#ff6a55'
+  c.shadowColor = '#ff5a40'
+  c.shadowBlur = 18
+  c.fillText('CATH-1 · IN USE', 256, 68)
+})
+
+// --- green partner plate: the run is done ------------------------------------
+export const cathCompletedTex = make(512, 128, (c) => {
+  c.fillStyle = '#06180c'
+  c.fillRect(0, 0, 512, 128)
+  c.strokeStyle = 'rgba(90,255,150,.5)'
+  c.lineWidth = 6
+  c.strokeRect(10, 10, 492, 108)
+  c.font = 'bold 44px ui-sans-serif, system-ui, sans-serif'
+  c.textAlign = 'center'
+  c.textBaseline = 'middle'
+  c.fillStyle = '#4ade80'
+  c.shadowColor = '#34d058'
+  c.shadowBlur = 18
+  c.fillText('CATH-1 · COMPLETED', 256, 68)
+})
+
+// --- quiet idle screen for the in-room displays (the angio lives elsewhere) --
+export const standbyTex = make(640, 640, (c) => {
+  const w = 640, h = 640
+  c.fillStyle = '#0a0f14'
+  c.fillRect(0, 0, w, h)
+  c.strokeStyle = 'rgba(90,110,130,0.10)'
+  c.lineWidth = 1
+  for (let x = 0; x <= w; x += 40) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke() }
+  for (let y = 0; y <= h; y += 40) { c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke() }
+  c.textAlign = 'center'
+  c.fillStyle = '#3d5666'
+  c.font = 'bold 34px ui-monospace, monospace'
+  c.fillText('FLUORO · STANDBY', w / 2, h / 2 - 10)
+  c.fillStyle = '#2c3f4c'
+  c.font = '20px ui-monospace, monospace'
+  c.fillText('SENTIENT IMAGING', w / 2, h / 2 + 30)
 })
 
 // --- small illuminated "X-RAY ON" warning plate (door-side) -----------------
