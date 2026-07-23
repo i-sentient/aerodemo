@@ -143,6 +143,34 @@ body{font-family:var(--font);color:var(--ink);background:radial-gradient(1200px 
 #hud.patient .reticle .r-faint2{stroke:rgba(31,110,114,.2)}
 #hud.patient .reticle .r-ring{stroke:rgba(31,110,114,.34)}
 #hud.patient .reticle .r-tick{stroke:rgba(31,110,114,.5)}
+
+/* ---- Panel A DARK MODE toggle button ---- */
+.dark-toggle{position:absolute;top:11px;right:12px;z-index:6;cursor:pointer;pointer-events:auto;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;font-weight:700;padding:6px 12px;border-radius:9px;
+  color:#3a5560;background:rgba(255,255,255,.5);border:1px solid rgba(120,160,175,.4);
+  backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);box-shadow:var(--shadow-sm)}
+.dark-toggle:hover{color:#12333a}
+.dark-toggle.on{background:rgba(74,159,255,.2);color:#cfe4ff;border-color:rgba(110,170,255,.55);box-shadow:0 0 14px rgba(74,159,255,.45)}
+
+/* ---- Panel A dark mode: revert the patient HUD to its light-on-dark palette + dark vignette ---- */
+#hud.patient.dark .hud-bracket{border-color:rgba(150,200,220,.2)}
+#hud.patient.dark .hud-vignette{background:radial-gradient(ellipse 120% 95% at 50% 45%,transparent 58%,rgba(0,3,7,.55) 100%)}
+#hud.patient.dark .hud-scan{background:repeating-linear-gradient(to bottom,rgba(150,210,230,.016) 0 1px,transparent 1px 4px)}
+#hud.patient.dark .tele{color:#bfe2ee}
+#hud.patient.dark .tele.br,#hud.patient.dark .tele.small{color:rgba(160,205,222,.5)}
+#hud.patient.dark .tele .tk{color:rgba(150,205,225,.55)}
+#hud.patient.dark .tele .tk b{color:#bfe2ee}
+#hud.patient.dark .tele .big{color:#e3f4fb}
+#hud.patient.dark .tele .kv span{color:rgba(140,190,212,.55)}
+#hud.patient.dark .tele .kv b{color:#dcf2fa}
+#hud.patient.dark .tele .vit span,#hud.patient.dark .tele .vit i{color:rgba(140,190,212,.6)}
+#hud.patient.dark .tele .vit b{color:#eafaff}
+#hud.patient.dark .tele.lsam .lrow span{color:rgba(140,190,212,.6)}
+#hud.patient.dark .tele.lsam .lrow b{color:#eafaff}
+#hud.patient.dark .reticle .r-faint{stroke:rgba(150,205,225,.12)}
+#hud.patient.dark .reticle .r-faint2{stroke:rgba(150,205,225,.16)}
+#hud.patient.dark .reticle .r-ring{stroke:rgba(150,205,225,.3)}
+#hud.patient.dark .reticle .r-tick{stroke:rgba(150,205,225,.45)}
 #hud.patient .reticle .r-cross{stroke:rgba(31,110,114,.55)}
 #hud.patient .reticle .r-axis{stroke:rgba(31,110,114,.16)}
 #stage:not(.floor-mode) .layer-toggle{background:rgba(255,255,255,.5);border-color:rgba(31,120,124,.25)}

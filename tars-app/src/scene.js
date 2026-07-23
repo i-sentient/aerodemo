@@ -10,7 +10,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 import { beds, COL, bedById } from './ontology.js';
 import { state, setMode, onModeChange } from './state.js';
-import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial, makeVascularMaterial } from './xray.js';
+import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial, makeVascularMaterial, makeGridMaterial, makeBodyHologramMaterial } from './xray.js';
 
 // Patient figure = real anatomical system layers (GLB) rendered as teal holograms.
 import { buildHuman } from './human.js';
@@ -34,6 +34,7 @@ const raycaster = new THREE.Raycaster(), ptr = new THREE.Vector2();
 let reveal = 1, driftT = 0, swapTimer = 0;
 let activeLayer = 'skeletal', layerToggleEl = null, floorBody = null;
 let heartBtn = null, zoomHeart = false;
+let darkMode = false, darkBtn = null, patGround = null, patLightBg = null, patDarkBg = null;
 
 function gradientTex(top, bottom) {
   const cv = document.createElement('canvas'); cv.width = 4; cv.height = 256;
@@ -139,7 +140,9 @@ function buildCommandCenter() {
 // ---------- patient scanner stage (lit) ----------
 function buildPatient() {
   patientScene = new THREE.Scene();
-  patientScene.background = gradientTex('#f1f5f7', '#d7e3ea');
+  patLightBg = gradientTex('#f1f5f7', '#d7e3ea');
+  patDarkBg = gradientTex('#0c131b', '#04070b');
+  patientScene.background = darkMode ? patDarkBg : patLightBg;
 
   patientScene.add(new THREE.HemisphereLight(0xffffff, 0xc4d0d8, 0.95));
   const key = new THREE.DirectionalLight(0xffffff, 1.05);
@@ -151,8 +154,9 @@ function buildPatient() {
 
   buildPatientFigure();
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({ color: 0xe6edf1 }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({ color: darkMode ? 0x090e14 : 0xe6edf1 }));
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.001; patientScene.add(ground);
+  patGround = ground;
   const cshadow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({ map: GLOW, color: 0x36505c, transparent: true, opacity: 0.22, depthWrite: false }));
   cshadow.rotation.x = -Math.PI / 2; cshadow.position.y = 0.004; patientScene.add(cshadow);
 
@@ -162,18 +166,23 @@ function buildPatient() {
   patientScene.userData.ring = ring;
 }
 
-// ---- patient figure = switchable anatomical system layers (skeletal / vascular / nervous) ----
+// ---- patient figure = switchable anatomical system layers (skeletal / vascular / nervous / body / grid) ----
 // Skeleton: AnatomyTOOL.org overview skeleton (CC BY-SA 4.0). Vascular & nervous: derived from
 // Z-Anatomy (CC BY-SA), curve-tessellated, decimated and Draco-compressed for the web.
+// Body + Grid (whole-body flesh surface): BodyParts3D skin FMA7163, (c) The Database Center for
+// Life Science, licensed under CC BY-SA 2.1 Japan — genitalia removed, smoothed, decimated and
+// Draco-compressed. `grid` is a coarse wireframe of the same body (the simulation-mesh look).
 const SYSTEM_URLS = {
   skeletal: new URL('./assets/skeleton/overview-skeleton.glb', import.meta.url).href,
   vascular: new URL('./assets/systems/vascular.glb', import.meta.url).href,
   nervous: new URL('./assets/systems/nervous.glb', import.meta.url).href,
+  body: new URL('./assets/systems/body.glb', import.meta.url).href,
+  grid: new URL('./assets/systems/grid.glb', import.meta.url).href,
 };
-const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f72 };
+const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f72, body: 0x3f8fe0, grid: 0x4a9fff };
 const SKELETON_URL = SYSTEM_URLS.skeletal; // floor twin reuses the skeleton
 
-function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = false } = {}) {
+function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = false, grid = false, holo = false } = {}) {
   const root = gltf.scene; root.updateMatrixWorld(true);
   let box = new THREE.Box3().setFromObject(root), size = new THREE.Vector3(); box.getSize(size);
   root.scale.setScalar(1.72 / (size.y || 1.72)); root.updateMatrixWorld(true);
@@ -186,6 +195,10 @@ function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = 
       if (vascular) {
         const isHeart = /atrium|ventricl|heart|cardi|aort/i.test(o.name);   // heart chambers → cardiac red
         o.material = makeVascularMaterial(clip, { heart: isHeart });
+      } else if (grid) {
+        o.material = makeGridMaterial(clip, color);
+      } else if (holo) {
+        o.material = makeBodyHologramMaterial(clip, color);
       } else {
         o.material = makeClinicalXrayMaterial(clip, color);
       }
@@ -225,7 +238,7 @@ function ensureLayer(name, cb) {
   if (loadingNames.has(name)) return;
   loadingNames.add(name);
   getLoader().load(SYSTEM_URLS[name], (g) => {
-    figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name], vascular: name === 'vascular' });
+    figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name], vascular: name === 'vascular', grid: name === 'grid', holo: name === 'body' });
     patientScene.add(figs[name].group); loadingNames.delete(name); cb && cb();
   }, undefined, (e) => { loadingNames.delete(name); console.warn('[TARS] layer load failed', name, e); });
 }
@@ -253,6 +266,17 @@ function toggleHeartZoom(force) {
 }
 function configurePatient(b) { human.setHeartColor(b.cardiac ? 0xff5a52 : b.patient.acuity === 'watch' ? 0xffb24a : 0x9be8ff, b.cardiac); }
 
+// Panel A dark mode: swaps the scanner background/ground to dark (so the hologram body
+// + grid glow like a scan) and flips the HUD text back to its light-on-dark palette.
+function setDark(on) {
+  darkMode = on;
+  if (patientScene) patientScene.background = on ? patDarkBg : patLightBg;
+  if (patGround) patGround.material.color.set(on ? 0x090e14 : 0xe6edf1);
+  const hud = document.getElementById('hud'); if (hud) hud.classList.toggle('dark', on);
+  const stg = document.getElementById('stage'); if (stg) stg.classList.toggle('dark', on);
+  if (darkBtn) { darkBtn.classList.toggle('on', on); darkBtn.innerHTML = on ? '☀ LIGHT' : '☾ DARK'; }
+}
+
 onModeChange((mode, focusId) => {
   playTransition();
   clearTimeout(swapTimer);
@@ -262,9 +286,11 @@ onModeChange((mode, focusId) => {
       activeLayer = 'skeletal'; applyLayer(); configurePatient(bedById(focusId));
       activeScene = patientScene; reveal = 0; camPos.copy(PATIENT.pos); camLook.copy(PATIENT.look);
       if (layerToggleEl) layerToggleEl.style.display = 'flex';
+      if (darkBtn) darkBtn.style.display = 'flex';
     } else {
       activeScene = floorScene; camPos.copy(HOME.pos); camLook.copy(HOME.look);
       if (layerToggleEl) layerToggleEl.style.display = 'none';
+      if (darkBtn) darkBtn.style.display = 'none';
       toggleHeartZoom(false); if (heartBtn) heartBtn.style.display = 'none';
     }
   }, 360);
@@ -341,7 +367,7 @@ export function initScene(canvasEl) {
   // layer toggle (Body / Skeleton) over the scanner stage
   layerToggleEl = document.createElement('div');
   layerToggleEl.className = 'layer-toggle'; layerToggleEl.style.display = 'none';
-  layerToggleEl.innerHTML = '<button data-l="skeletal" class="on">SKELETAL</button><button data-l="vascular">VASCULAR</button><button data-l="nervous">NERVOUS</button>';
+  layerToggleEl.innerHTML = '<button data-l="skeletal" class="on">SKELETAL</button><button data-l="vascular">VASCULAR</button><button data-l="nervous">NERVOUS</button><button data-l="body">BODY</button><button data-l="grid">GRID</button>';
   document.getElementById('stage').appendChild(layerToggleEl);
   layerToggleEl.querySelectorAll('button').forEach((b) => (b.onclick = () => setLayer(b.dataset.l)));
 
@@ -351,6 +377,13 @@ export function initScene(canvasEl) {
   heartBtn.innerHTML = '♥ ZOOM HEART';
   heartBtn.onclick = () => toggleHeartZoom();
   document.getElementById('stage').appendChild(heartBtn);
+
+  // dark-mode toggle for Panel A (shown on the patient scanner)
+  darkBtn = document.createElement('button');
+  darkBtn.className = 'dark-toggle'; darkBtn.style.display = 'none';
+  darkBtn.innerHTML = '☾ DARK';
+  darkBtn.onclick = () => setDark(!darkMode);
+  document.getElementById('stage').appendChild(darkBtn);
 
   // dev-only test hook: snap the camera straight to its target (screenshots can't wait for the eased glide)
   if (import.meta.env && import.meta.env.DEV) window.__snapCam = () => { const t = displayMode !== 'patient' ? HOME : zoomHeart ? HEART : PATIENT; camPos.copy(t.pos); camLook.copy(t.look); if (human && zoomHeart) human.group.rotation.y = Math.round(human.group.rotation.y / (Math.PI * 2)) * Math.PI * 2; };

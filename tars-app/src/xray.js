@@ -102,6 +102,46 @@ export function makeClinicalXrayMaterial(clip, color = 0x2f8d8e) {
   return m;
 }
 
+// "Grid" material: the body's GLB is a baked quad-wire lattice (clean uniform quads),
+// so this is a crisp unlit cyan applied to that geometry — reads as a glowing scan grid
+// on the light stage. Carries a dummy uTime so the figure update loop is happy.
+export function makeGridMaterial(clip, color = 0x2fd0e0) {
+  const m = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.95, depthWrite: false,
+    side: THREE.DoubleSide, clippingPlanes: clip ? [clip] : null,
+  });
+  m.userData.uTime = { value: 0 };
+  return m;
+}
+
+// Body "hologram" material for a LIGHT background: a translucent figure whose faces
+// are see-through and whose silhouette/edges glow bright blue (fresnel rim) — the
+// hologram-with-outline look. Faint travelling scanline for life. Supports the clip plane.
+// The body GLB is a clean single-shell voxel remesh (no inner surfaces), so DoubleSide
+// gives clean see-through hologram depth without fake internal anatomy.
+export function makeBodyHologramMaterial(clip, color = 0x3f8fe0) {
+  const m = new THREE.MeshStandardMaterial({
+    color, roughness: 0.5, metalness: 0.0,
+    transparent: true, opacity: 1.0, depthWrite: false,
+    side: THREE.DoubleSide, clippingPlanes: clip ? [clip] : null,
+  });
+  m.userData.uTime = { value: 0 };
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = m.userData.uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nvarying vec3 vWP;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        float fr = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.2);
+        float scan = 0.5 + 0.5 * sin(vWP.y * 16.0 - uTime * 2.0);
+        diffuseColor.a = mix(0.10, 0.96, pow(fr, 1.1)) + scan * 0.03;   // see-through faces, dense glowing rim
+        totalEmissiveRadiance += vec3(0.30, 0.62, 1.0) * (fr * 1.7 + scan * 0.05);  // bright blue outline glow`);
+  };
+  return m;
+}
+
 // Arteriovenous vascular material: the circulatory GLB is a single merged tree
 // (arteries + veins are NOT separate meshes), so we split colour in-shader — a smooth
 // spatial mask interweaves oxygenated ARTERIAL red with deoxygenated VENOUS blue,
