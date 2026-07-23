@@ -46,7 +46,6 @@ const TPL = `
       </g>
       <line x1="100" y1="6" x2="100" y2="26" class="r-cross"/><line x1="100" y1="174" x2="100" y2="194" class="r-cross"/>
       <line x1="6" y1="100" x2="26" y2="100" class="r-cross"/><line x1="174" y1="100" x2="194" y2="100" class="r-cross"/>
-      <line x1="100" y1="40" x2="100" y2="160" class="r-axis"/>
     </svg>
     <div class="tele tl">
       <div class="tk">BODY SCAN · <span id="p_id">ICU-04</span></div>

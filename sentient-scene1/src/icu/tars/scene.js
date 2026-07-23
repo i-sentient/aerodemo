@@ -178,7 +178,7 @@ function applySceneTheme(dark) {
   const bodyFig = figs.body;
   if (bodyFig) bodyFig.group.traverse((o) => {
     if (o.isMesh && o.material && o.material.userData && o.material.userData.uAlphaMin) {
-      o.material.userData.uAlphaMin.value = dark ? 0.10 : 0.38;
+      o.material.userData.uAlphaMin.value = dark ? 0.10 : 0.30;
       o.material.color.set(dark ? 0x3f8fe0 : 0x175a9e);
     }
   });
@@ -252,6 +252,13 @@ function buildPatient() {
   const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.006, 8, 96), new THREE.MeshBasicMaterial({ color: 0x2f8d8e, transparent: true, opacity: 0.55 }));
   ring.rotation.x = Math.PI / 2; ring.position.y = 0.01; patientScene.add(ring);
   patientScene.userData.ring = ring;
+
+  // longitudinal scan axis — a REAL 3D dashed line (was an SVG overlay in the
+  // HUD, which floated in front of everything). In-scene it depth-tests, so the
+  // body's depth mask hides it behind the figure; it peeks out above the head.
+  const axisGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.02, 0), new THREE.Vector3(0, 2.05, 0)]);
+  const axis = new THREE.Line(axisGeo, new THREE.LineDashedMaterial({ color: 0x96cde1, transparent: true, opacity: 0.25, dashSize: 0.045, gapSize: 0.06 }));
+  axis.computeLineDistances(); patientScene.add(axis);
 }
 
 // ---- patient figure = switchable anatomical system layers (skeletal / vascular / nervous) ----
@@ -294,25 +301,37 @@ function robustPlace(root, targetH = 1.72) {
 }
 
 function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = false, style = null } = {}) {
-  const root = gltf.scene; robustPlace(root, style === 'body' || style === 'grid' ? 1.88 : 1.72); // body reads a touch bigger on stage
+  const root = gltf.scene; robustPlace(root, style === 'body' || style === 'grid' ? 1.81 : 1.72); // body reads a touch (+5%) bigger on stage
   const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
   const mats = [], heartMeshes = [];
-  root.traverse((o) => {
-    if (o.isMesh) {
+  // collect first, then process — the body/grid branch ADDS mask children, and
+  // mutating the tree mid-traverse would make traverse visit (and re-skin) them
+  const meshes = []; root.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  for (const o of meshes) {
+    {
       if (vascular) {
         const isHeart = /atrium|ventricl|heart|cardi|aort/i.test(o.name);   // heart chambers → cardiac red
         o.material = makeVascularMaterial(clip, { heart: isHeart });
         if (isHeart) { o.userData.isHeart = true; heartMeshes.push(o); } // click-to-zoom target
       } else if (style === 'body') {
-        o.material = makeBodyHologramMaterial(clip, color);   // dormant until the body layer is requested
+        o.material = makeBodyHologramMaterial(clip, color);
       } else if (style === 'grid') {
-        o.material = makeGridMaterial(clip, color);           // dormant until the grid layer is requested
+        o.material = makeGridMaterial(clip, color);
       } else {
         o.material = makeClinicalXrayMaterial(clip, color);
       }
+      if (style === 'body' || style === 'grid') {
+        // depth prepass: an invisible depth-only twin renders in the opaque pass,
+        // so the transparent hologram depth-tests against the body's own nearest
+        // skin — far limbs/backfaces can't bleed through in profile views
+        o.material.side = THREE.FrontSide;
+        const mask = new THREE.Mesh(o.geometry, new THREE.MeshBasicMaterial({ colorWrite: false, clippingPlanes: clip ? [clip] : null }));
+        mask.frustumCulled = false;
+        o.add(mask);
+      }
       o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; mats.push(o.material);
     }
-  });
+  }
   const group = new THREE.Group(); group.add(root); group.visible = false;
   let hsp = null;
   if (heart) { hsp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0xff5a52, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); hsp.scale.set(0.34, 0.34, 1); hsp.position.set(0.02, 1.24, 0.14); group.add(hsp); }
