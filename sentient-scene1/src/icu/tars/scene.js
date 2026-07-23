@@ -9,7 +9,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 import { beds, COL, bedById } from './ontology.js';
 import { state, setMode, onModeChange, onThemeChange } from './state.js';
-import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial, makeVascularMaterial } from './xray.js';
+import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial, makeVascularMaterial, makeGridMaterial, makeBodyHologramMaterial } from './xray.js';
 
 // Patient figure = real anatomical system layers (GLB) rendered as teal holograms.
 import { buildHuman } from './human.js';
@@ -252,8 +252,14 @@ const SYSTEM_URLS = {
   skeletal: new URL('./assets/skeleton/overview-skeleton.glb', import.meta.url).href,
   vascular: new URL('./assets/systems/vascular.glb', import.meta.url).href,
   nervous: new URL('./assets/systems/nervous.glb', import.meta.url).href,
+  // ported from tars-app (:5180) — REGISTERED BUT DORMANT until a beat asks for
+  // them. `body` = solid hologram body; `grid` = the SAME body.glb painted with
+  // the procedural wireframe-lattice shader (grid.glb is retired — its wires
+  // were baked tubes with fixed cell count).
+  body: new URL('./assets/systems/body.glb', import.meta.url).href,
+  grid: new URL('./assets/systems/body.glb', import.meta.url).href,
 };
-const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f72 };
+const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f72, body: 0x3f8fe0, grid: 0x2fd0e0 };
 
 // Robust placement onto the stage. The raw AABB midpoint is thrown off by
 // asymmetric limbs (a raised arm) and stray/among-scene geometry, so models from
@@ -278,7 +284,7 @@ function robustPlace(root, targetH = 1.72) {
   root.scale.setScalar(s); root.position.set(-cx * s, -yLo * s, -cz * s); root.updateMatrixWorld(true);
 }
 
-function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = false } = {}) {
+function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = false, style = null } = {}) {
   const root = gltf.scene; robustPlace(root, 1.72);
   const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
   const mats = [], heartMeshes = [];
@@ -288,6 +294,10 @@ function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = 
         const isHeart = /atrium|ventricl|heart|cardi|aort/i.test(o.name);   // heart chambers → cardiac red
         o.material = makeVascularMaterial(clip, { heart: isHeart });
         if (isHeart) { o.userData.isHeart = true; heartMeshes.push(o); } // click-to-zoom target
+      } else if (style === 'body') {
+        o.material = makeBodyHologramMaterial(clip, color);   // dormant until the body layer is requested
+      } else if (style === 'grid') {
+        o.material = makeGridMaterial(clip, color);           // dormant until the grid layer is requested
       } else {
         o.material = makeClinicalXrayMaterial(clip, color);
       }
@@ -329,7 +339,7 @@ function ensureLayer(name, cb) {
   if (loadingNames.has(name)) return;
   loadingNames.add(name);
   getLoader().load(SYSTEM_URLS[name], (g) => {
-    figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name], vascular: name === 'vascular' });
+    figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name], vascular: name === 'vascular', style: name });
     patientScene.add(figs[name].group); loadingNames.delete(name); cb && cb();
   }, undefined, (e) => { loadingNames.delete(name); console.warn('[TARS] layer load failed', name, e); });
 }
