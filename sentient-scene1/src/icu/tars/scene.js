@@ -30,7 +30,7 @@ let ringGroup = null; // the bed ring + zone + decal — slowly carousels in flo
 const camPos = HOME.pos.clone(), camLook = HOME.look.clone();
 const raycaster = new THREE.Raycaster(), ptr = new THREE.Vector2();
 let reveal = 1, driftT = 0, swapTimer = 0;
-let activeLayer = 'skeletal', hoverLabel = null;
+let activeLayer = 'body', hoverLabel = null;
 let zoomHeart = false; // toggled by clicking the heart itself (no button)
 
 function gradientTex(top, bottom) {
@@ -345,7 +345,7 @@ function ensureLayer(name, cb) {
 }
 function buildPatientFigure() {
   human = buildHuman(); human.group.visible = false; patientScene.add(human.group); // invisible placeholder
-  { const dl = state.chapter === 'continued' ? 'vascular' : 'skeletal'; ensureLayer(dl, () => { if (activeLayer === dl) applyLayer(); }); }  // default layer streams in (chapter-aware)
+  { const dl = state.chapter === 'continued' ? 'vascular' : 'body'; ensureLayer(dl, () => { if (activeLayer === dl) applyLayer(); }); }  // default layer streams in (chapter-aware)
 }
 
 function applyLayer() {
@@ -370,7 +370,7 @@ onModeChange((mode, focusId) => {
     displayMode = mode;
     if (hoverLabel) { hoverLabel.visible = false; hoverLabel = null; } // don't strand a hover label on re-entry
     if (mode === 'patient') {
-      activeLayer = state.chapter === 'continued' ? 'vascular' : 'skeletal'; applyLayer(); configurePatient(bedById(focusId));
+      activeLayer = state.chapter === 'continued' ? 'vascular' : 'body'; applyLayer(); configurePatient(bedById(focusId));
       activeScene = patientScene; reveal = 0; camPos.copy(PATIENT.pos); camLook.copy(PATIENT.look);
     } else {
       activeScene = floorScene; camPos.copy(HOME.pos); camLook.copy(HOME.look);
