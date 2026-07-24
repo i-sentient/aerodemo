@@ -372,6 +372,9 @@ function updateNext() {
   hintEl.textContent = gated ? 'Awaiting clinical sign-off →' : done ? (state.mode === 'patient' ? 'Continue →' : 'Replay the scripted demo') : (state.mode === 'patient' ? 'TARS is navigating the record →' : 'Step through the briefing →');
 }
 function runStep() {
+  // instant steps (the hookup connects) fire without the typing rhythm — a
+  // device clicking on shouldn't pretend to think
+  if (steps[idx] && steps[idx].instant) { steps[idx](); idx++; updateNext(); return; }
   busy = true; updateNext(); thinking(true, state.mode === 'patient' ? 'reading record…' : 'thinking…');
   const typing = addTyping();
   setTimeout(() => { typing.remove(); thinking(false); steps[idx](); idx++; busy = false; updateNext(); }, 480);
@@ -443,8 +446,20 @@ function patientScript(b) {
     // 7 · to theatre — the last beat; → past it leaves for the OR
     () => { addMsg('tars', `Theatre's ready — team's scrubbed. <span class="em">Taking him through to the OR.</span>`, 'to theatre'); emrNavigate('summary'); },
   ] : state.chapter === 'postop' ? [
-    // ── SCENE 4 stub (post-op) — story lands here next session ──
-    () => { addMsg('tars', `Back from theatre — CABG ×3, off bypass, chest closed. <span class="em">Post-op day 0, hour 1.</span> Scene 4 begins here.`, 'post-op day 0'); emrNavigate('summary'); },
+    // ── SCENE 4 · beat 0: the bedside hookup ──────────────────────────────
+    // Panel A wakes UNHOOKED (vitals '--', ECG flat, rail empty). Each → then
+    // connects ONE device: rail row + its feed goes live + marker on the twin.
+    () => { addMsg('tars', `Back from theatre — <b>CABG ×3</b>: LIMA→LAD, SVG→OM, SVG→PDA. Off bypass, chest closed. <span class="em">Establishing bedside — connecting him up.</span>`, 'establishing bedside'); emrNavigate('summary'); window.dispatchEvent(new CustomEvent('hud:hookup', { detail: { n: 0 } })); },
+    ...Array.from({ length: 12 }, (_, i) => {
+      const fn = () => {
+        window.dispatchEvent(new CustomEvent('hud:hookup', { detail: { n: i + 1 } }));
+        if (i + 1 === 5) addMsg('tars', `Airway and breathing — secured.`, 'hookup · 5 of 12');
+        if (i + 1 === 9) addMsg('tars', `Support lines running.`, 'hookup · 9 of 12');
+      };
+      fn.instant = true; // devices click on without the typing rhythm
+      return fn;
+    }),
+    () => { addMsg('tars', `Bedside established — twelve systems live, all feeds on the console. <span class="em">Post-op day 0, hour 1.</span>`, 'bedside established'); emrNavigate('summary'); },
   ] : [
     // 1 · we're already in — the chart's up (continues straight from the ward dive)
     () => { addMsg('lsam', `${b.patient.name}, ${b.patient.age}. His chart's up.`, 'opening record'); emrNavigate('summary'); },

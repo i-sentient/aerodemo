@@ -67,10 +67,56 @@ const TPL = `
       <canvas id="hudEcg"></canvas>
     </div>
     <div class="tele br small mono vision"><span class="vd"></span>VISION · LIVE</div>
+
+    <div class="pa-tabs mono" id="paTabs">
+      <button data-w="twin" class="on">TWIN</button><button data-w="scope">SCOPE</button><button data-w="watch">WATCH</button>
+    </div>
+    <div class="pa-win pa-scope">
+      <div class="pw-tk">SCOPE · TELEMETRY + RECOVERY ANALYTICS</div>
+      <div class="pw-empty">waveform bank · scores · trajectory — building</div>
+    </div>
+    <div class="pa-win pa-watch">
+      <div class="pw-tk">WATCH · ACTIVITY MONITOR</div>
+      <div class="pw-empty">pose reconstruction · mobility ledger · pain read — building</div>
+    </div>
   </div>
 
   <div class="hud-wipe"></div>
 `;
+
+// ---- Scene 4 · beat 0: the bedside hookup (postop only) --------------------
+// Twelve devices connect one →-press at a time. Each connect lights a rail
+// row, wakes its FEED (vitals stay '--' and the ECG stays flat until their
+// source device is on), and pings a glow marker on the body twin.
+const HOOKUP = [
+  { key: 'monitor', label: 'PATIENT MONITOR', val: 'pads + sat probe · LIVE', site: '5-lead · L index finger', feeds: ['hr', 'spo2', 'temp', 'ecg'], marker: 'chest' },
+  { key: 'art', label: 'ARTERIAL LINE', val: 'ART 96/54 (68)', site: 'L radial · transduced', feeds: ['bp'], marker: 'lwrist' },
+  { key: 'cvc', label: 'CENTRAL LINE', val: 'CVP 9', site: 'R internal jugular · 4-lumen', marker: 'neck' },
+  { key: 'ett', label: 'ET TUBE', val: '7.5 · 22 cm at lips', site: 'secured · cuff 25 cmH₂O', marker: 'mouth' },
+  { key: 'vent', label: 'VENTILATOR', val: 'SIMV · FiO₂ 50% · PEEP 5', site: 'TV 480 mL · rate 14', feeds: ['rr'], marker: 'mouth' },
+  { key: 'iabp', label: 'IABP', val: '1:1 AUGMENTING', site: 'R femoral · timing auto', marker: 'groin' },
+  { key: 'pumps', label: 'PUMPS', val: 'norad 0.08 · dobutamine 5', site: 'via central line', marker: 'neck' },
+  { key: 'drains', label: 'CHEST DRAINS ×2', val: '40 mL/hr · swinging', site: 'mediastinal + L pleural · −20 cmH₂O', marker: 'drain' },
+  { key: 'ucath', label: 'URINARY CATHETER', val: '45 mL/hr', site: 'hourly volumes', marker: 'pelvis' },
+  { key: 'warm', label: 'WARM AIR', val: 'target 37.0 °C', site: 'rewarming post-bypass' },
+  { key: 'flowtron', label: 'FLOWTRON', val: 'DVT cuffs · cycling', site: 'both calves', marker: 'calf' },
+  { key: 'suction', label: 'SUCTION', val: 'STANDBY', site: 'bedhead · −200 mmHg set' },
+];
+let hookupN = -1; // -1 = not in hookup mode · 0..12 = devices connected
+const feedOn = new Set();
+function hookupSet(n) {
+  if (state.chapter !== 'postop' || !root) return;
+  hookupN = Math.max(0, Math.min(HOOKUP.length, n | 0));
+  feedOn.clear();
+  const marks = [];
+  for (let i = 0; i < hookupN; i++) { (HOOKUP[i].feeds || []).forEach((f) => feedOn.add(f)); if (HOOKUP[i].marker) marks.push(HOOKUP[i].marker); }
+  const rail = root.querySelector('#devRail'); if (!rail) return;
+  const done = hookupN >= HOOKUP.length;
+  rail.innerHTML = `
+      <div class="tk">${done ? 'BEDSIDE ESTABLISHED ✓' : 'ESTABLISHING BEDSIDE · POD 0'}<span class="hk-count">${hookupN} / ${HOOKUP.length}</span></div>
+      ${HOOKUP.slice(0, hookupN).map((d, i) => `<div class="kv hk-row${i === hookupN - 1 ? ' hk-new' : ''}" data-dev="${d.key}"><span><i class="hk-led"></i>${d.label}</span><b>${d.val}</b></div>`).join('')}`;
+  window.dispatchEvent(new CustomEvent('hud:markers', { detail: { keys: marks, ping: hookupN ? HOOKUP[hookupN - 1].marker : null } }));
+}
 
 // ---- connected-devices rail (top-right): every machine wired to this patient.
 // Chapter-aware: pre-cath is a quiet room; post-cath the pumps + site checks
@@ -80,6 +126,10 @@ const mmss = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padSta
 const hm = (t) => Math.floor(t / 3600) + 'h ' + String(Math.floor((t % 3600) / 60)).padStart(2, '0') + 'm';
 function devRailHTML() {
   dev.nibpEvery = dev.nibp = state.chapter === 'continued' ? 900 : 300; // q15m post-cath · q5m acute
+  if (state.chapter === 'postop') {
+    hookupN = 0; // boot unhooked — beat 0 connects devices one → at a time
+    return `<div class="tk">ESTABLISHING BEDSIDE · POD 0<span class="hk-count">0 / ${HOOKUP.length}</span></div>`;
+  }
   if (state.chapter === 'continued') return `
       <div class="tk">CONNECTED DEVICES · LIVE</div>
       <div class="kv"><span>O₂ · NASAL</span><b>2 L/min · weaning</b></div>
@@ -101,6 +151,7 @@ function devRailHTML() {
 }
 let devAcc = 0;
 function devTick(dt) {
+  if (state.chapter === 'postop') return; // postop rail is the hookup checklist — no q-timers
   devAcc += dt; if (devAcc < 1) return; const step = Math.floor(devAcc); devAcc -= step;
   const q = (s2) => root.querySelector(s2);
   dev.nibp -= step; if (dev.nibp <= 0) dev.nibp = dev.nibpEvery; // cuff cycles, timer restarts
@@ -133,12 +184,14 @@ function fitCanvas(cv, ctx) {
 function drawEcg(dt) {
   const b = bedById(state.focusId); if (!b || !ecgCv) return;
   const dim = fitCanvas(ecgCv, ecgX); if (!dim) return;
+  // hookup gate: before the monitor connects, the strip is just noisy flatline
+  const flat = state.chapter === 'postop' && hookupN >= 0 && !feedOn.has('ecg');
   const type = b.patient.acuity, hr = b.vitals.hr;
   const n = Math.max(1, Math.round(dt * ECG_SPEED));
-  for (let i = 0; i < n; i++) { beatPhase = (beatPhase + (hr / 60) / ECG_SPEED) % 1; ecgBuf.push(ecgSample(beatPhase, type)); }
+  for (let i = 0; i < n; i++) { beatPhase = (beatPhase + (hr / 60) / ECG_SPEED) % 1; ecgBuf.push(flat ? (Math.random() - 0.5) * 0.03 : ecgSample(beatPhase, type)); }
   const maxN = Math.ceil(dim.w / ECG_GAP) + 2; while (ecgBuf.length > maxN) ecgBuf.shift();
   ecgX.clearRect(0, 0, dim.w, dim.h); const mid = dim.h * 0.55, amp = dim.h * 0.4;
-  ecgX.strokeStyle = type === 'critical' ? '#ff6a64' : type === 'watch' ? '#ffc14a' : '#5fe6c4';
+  ecgX.strokeStyle = flat ? 'rgba(130,160,170,0.55)' : type === 'critical' ? '#ff6a64' : type === 'watch' ? '#ffc14a' : '#5fe6c4';
   ecgX.shadowColor = ecgX.strokeStyle; ecgX.shadowBlur = 6; ecgX.lineWidth = 1.5; ecgX.lineJoin = 'round'; ecgX.beginPath();
   for (let i = 0; i < ecgBuf.length; i++) { const x = i * ECG_GAP, y = mid - ecgBuf[i] * amp; i ? ecgX.lineTo(x, y) : ecgX.moveTo(x, y); }
   ecgX.stroke(); ecgX.shadowBlur = 0;
@@ -151,8 +204,15 @@ export function updateHud(dt) {
   }
   const b = bedById(state.focusId); if (!b) return;
   const q = (s) => root.querySelector(s);
-  q('#p_id').textContent = b.id; q('#p_hr').textContent = b.vitals.hr; q('#p_bp').textContent = b.vitals.sys + '/' + b.vitals.dia;
-  q('#p_spo2').textContent = b.vitals.spo2; q('#p_rr').textContent = b.vitals.rr; q('#p_temp').textContent = b.vitals.temp.toFixed(1);
+  // hookup gate (postop): a vital only goes live once its source device connects
+  const gated = state.chapter === 'postop' && hookupN >= 0;
+  const on = (k) => !gated || feedOn.has(k);
+  q('#p_id').textContent = b.id;
+  q('#p_hr').textContent = on('hr') ? b.vitals.hr : '--';
+  q('#p_bp').textContent = on('bp') ? b.vitals.sys + '/' + b.vitals.dia : '--';
+  q('#p_spo2').textContent = on('spo2') ? b.vitals.spo2 : '--';
+  q('#p_rr').textContent = on('rr') ? b.vitals.rr : '--';
+  q('#p_temp').textContent = on('temp') ? b.vitals.temp.toFixed(1) : '--';
   devTick(dt);
   const reveal = performance.now() >= lsamRevealAt, st = q('#p_lstatus'), t = b.traj, flagged = t.lsam === 'flagged';
   st.textContent = !reveal ? 'ANALYZING…' : flagged ? 'FLAGGED' : 'STABLE';
@@ -177,6 +237,47 @@ export function initHud(hostSel) {
 
   root.querySelectorAll('.rrow').forEach((el) => (el.onclick = () => setMode('patient', el.dataset.bed)));
   const rail = root.querySelector('#devRail'); if (rail) rail.innerHTML = devRailHTML();
+
+  // Scene 4 · hookup wiring: chat beats drive connects (hud:hookup); hovering
+  // a rail row or a glowing body marker surfaces the compact device card.
+  window.addEventListener('hud:hookup', (e) => hookupSet(e.detail ? e.detail.n : 0));
+  const card = document.createElement('div'); card.className = 'hk-card'; patientLayer.appendChild(card);
+  const placeCard = (cx, cy) => {
+    const pr = patientLayer.getBoundingClientRect();
+    card.style.left = Math.max(8, Math.min(pr.width - 250, cx - pr.left + 14)) + 'px';
+    card.style.top = Math.max(8, Math.min(pr.height - 110, cy - pr.top + 12)) + 'px';
+    card.classList.add('on');
+  };
+  const showDevices = (list, cx, cy) => {
+    if (!list.length) return;
+    card.innerHTML = list.map((d) => `<div class="hkc-t"><i class="hk-led"></i>${d.label}</div><div class="hkc-v">${d.val}</div><div class="hkc-s">${d.site}</div>`).join('<div class="hkc-hr"></div>');
+    placeCard(cx, cy);
+  };
+  const hideCard = () => card.classList.remove('on');
+  const railEl = root.querySelector('#devRail');
+  railEl.addEventListener('mousemove', (e) => {
+    const row = e.target.closest('.hk-row');
+    if (!row) { hideCard(); return; }
+    showDevices(HOOKUP.filter((d) => d.key === row.dataset.dev), e.clientX, e.clientY);
+  });
+  railEl.addEventListener('mouseleave', hideCard);
+  window.addEventListener('hud:marker:hover', (e) => {
+    const d = e.detail || {};
+    if (!d.key) { hideCard(); return; }
+    showDevices(HOOKUP.slice(0, Math.max(0, hookupN)).filter((v) => v.marker === d.key), d.x, d.y);
+  });
+
+  // Scene 4: the Panel A window toggle (TWIN · SCOPE · WATCH) — postop only;
+  // earlier chapters never see the tabs and always render the twin.
+  const tabs = root.querySelector('#paTabs');
+  if (tabs) {
+    if (state.chapter !== 'postop') tabs.style.display = 'none';
+    tabs.querySelectorAll('button').forEach((b) => (b.onclick = () => {
+      tabs.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      root.classList.remove('win-scope', 'win-watch');
+      if (b.dataset.w !== 'twin') root.classList.add('win-' + b.dataset.w);
+    }));
+  }
 
   // the LSam trajectory block only appears when the story summons it
   window.addEventListener('hud:trajectory', () => patientLayer.querySelector('.lsam')?.classList.add('on'));

@@ -370,9 +370,61 @@ function ensureLayer(name, cb) {
     figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name], vascular: name === 'vascular', style: name });
     patientScene.add(figs[name].group); loadingNames.delete(name);
     applySceneTheme(state.dark); // dress the fresh figure for the current theme (body legibility)
+    if (name === 'body' && pendingMarkers) { const d = pendingMarkers; pendingMarkers = null; applyMarkers(d); } // markers queued before the mesh landed
     cb && cb();
   }, undefined, (e) => { loadingNames.delete(name); console.warn('[TARS] layer load failed', name, e); });
 }
+// ---- Scene 4 · body connection markers (postop hookup) ---------------------
+// Where each device docks on the 1.81 m body figure — LOCAL coords on the
+// figure group (x right, y up, z front). TUNE HERE if a glow sits off-anatomy.
+const BODY_MARKER_POS = {
+  chest: [0.05, 1.32, 0.11],   // monitor pads
+  lwrist: [-0.24, 0.90, 0.10], // arterial line
+  neck: [0.06, 1.50, 0.07],    // central line (R IJ) — pumps share it
+  mouth: [0.00, 1.60, 0.10],   // ET tube + ventilator
+  groin: [0.08, 0.96, 0.07],   // IABP (R femoral)
+  drain: [-0.10, 1.10, 0.10],  // chest drains
+  pelvis: [0.00, 0.94, 0.09],  // urinary catheter
+  calf: [0.06, 0.42, 0.06],    // Flowtron cuffs
+};
+const bodyMarkers = {};
+let pendingMarkers = null;
+function applyMarkers(detail) {
+  const fig = figs.body;
+  if (!fig) { pendingMarkers = detail; return; } // body still streaming in — apply on load
+  const { keys = [], ping = null } = detail || {};
+  for (const k of Object.keys(BODY_MARKER_POS)) {
+    let s = bodyMarkers[k];
+    const on = keys.includes(k);
+    if (on && !s) {
+      s = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0x57d7ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
+      s.scale.set(0.09, 0.09, 1); s.position.set(...BODY_MARKER_POS[k]);
+      s.userData.deviceKey = k; s.userData.ping = 0;
+      fig.group.add(s); bodyMarkers[k] = s;
+    }
+    if (s) { s.userData.on = on; if (on && k === ping) s.userData.ping = 1; }
+  }
+}
+window.addEventListener('hud:markers', (e) => applyMarkers(e.detail));
+function updateMarkers(dt) {
+  for (const k of Object.keys(bodyMarkers)) {
+    const s = bodyMarkers[k], u = s.userData;
+    u.ping = Math.max(0, u.ping - dt * 1.6);
+    const base = u.on ? 0.5 : 0;
+    s.material.opacity += ((base + u.ping * 0.5) - s.material.opacity) * Math.min(1, dt * 8);
+    const sc = 0.09 * (1 + u.ping * 1.7); s.scale.set(sc, sc, 1);
+  }
+}
+function markerHit(e) {
+  if (displayMode !== 'patient' || state.chapter !== 'postop' || !figs.body) return null;
+  const live = Object.values(bodyMarkers).filter((s) => s.userData.on);
+  if (!live.length) return null;
+  const r = canvas.getBoundingClientRect();
+  ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  raycaster.setFromCamera(ptr, camera);
+  return raycaster.intersectObjects(live, false)[0] || null;
+}
+
 function buildPatientFigure() {
   human = buildHuman(); human.group.visible = false; patientScene.add(human.group); // invisible placeholder
   { const dl = state.chapter === 'continued' ? 'vascular' : 'body'; ensureLayer(dl, () => { if (activeLayer === dl) applyLayer(); }); }  // default layer streams in (chapter-aware)
@@ -427,7 +479,12 @@ function onPointerDown(e) {
   if (hit) setMode('patient', hit.object.userData.bedId);
 }
 function onPointerMove(e) {
-  if (displayMode === 'patient') { canvas.style.cursor = heartHit(e) ? 'pointer' : 'default'; return; }
+  if (displayMode === 'patient') {
+    // postop: hovering a body marker surfaces its compact device card (hud.js)
+    const mh = markerHit(e);
+    window.dispatchEvent(new CustomEvent('hud:marker:hover', { detail: mh ? { key: mh.object.userData.deviceKey, x: e.clientX, y: e.clientY } : { key: null } }));
+    canvas.style.cursor = (mh || heartHit(e)) ? 'pointer' : 'default'; return;
+  }
   if (displayMode !== 'floor') { canvas.style.cursor = 'default'; return; }
   const r = canvas.getBoundingClientRect();
   ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1;
@@ -475,7 +532,11 @@ function updateFloor(dt) {
 function updatePatient(dt) {
   if (reveal < 1) reveal = Math.min(1, reveal + dt / 1.3);
   const b = bedById(state.focusId) || beds[3];
-  human.update(dt, { hr: b.vitals.hr, reveal, spinSpeed: zoomHeart ? 0 : 0.38, freeze: zoomHeart, focus: zoomHeart });
+  // postop: the twin stands still, facing front — devices are being connected
+  // to a patient, not to a turntable (freeze eases to the anterior view)
+  const still = state.chapter === 'postop';
+  human.update(dt, { hr: b.vitals.hr, reveal, spinSpeed: (zoomHeart || still) ? 0 : 0.38, freeze: zoomHeart || still, focus: zoomHeart });
+  updateMarkers(dt);
   const ring = patientScene.userData.ring; if (ring) ring.rotation.z += dt * 0.2;
 }
 
