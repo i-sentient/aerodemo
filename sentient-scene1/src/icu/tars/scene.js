@@ -378,12 +378,14 @@ function ensureLayer(name, cb) {
 // Where each device docks on the 1.81 m body figure — LOCAL coords on the
 // figure group (x right, y up, z front). TUNE HERE if a glow sits off-anatomy.
 const BODY_MARKER_POS = {
-  chest: [0.05, 1.32, 0.11],   // monitor pads
+  chestR: [0.16, 1.31, 0.10],  // monitor — ECG/SpO₂ pads, right chest
+  chestL: [-0.16, 1.31, 0.10], // ventilator — left chest
+  neckR: [0.13, 1.48, 0.06],   // central line — R internal jugular
+  neckL: [-0.13, 1.48, 0.06],  // inotrope pumps — left of neck
+  mouth: [0.00, 1.60, 0.10],   // ET tube — airway
   lwrist: [-0.24, 0.90, 0.10], // arterial line
-  neck: [0.06, 1.50, 0.07],    // central line (R IJ) — pumps share it
-  mouth: [0.00, 1.60, 0.10],   // ET tube + ventilator
   groin: [0.08, 0.96, 0.07],   // IABP (R femoral)
-  drain: [-0.10, 1.10, 0.10],  // chest drains
+  drain: [-0.10, 1.12, 0.10],  // chest drains (lower left)
   pelvis: [0.00, 0.94, 0.09],  // urinary catheter
   calf: [0.06, 0.42, 0.06],    // Flowtron cuffs
 };

@@ -1,5 +1,6 @@
 import { beds, bedById, inventory, clinicians } from './ontology.js';
 import { state, onModeChange, setMode } from './state.js';
+import { POD0, POD0_ORDERS } from './postop.js';
 
 const APPMETA = {
   emr: { nm: 'EMR', icon: '🗂️', tint: '#6aa6ff', sub: 'Electronic record' },
@@ -54,6 +55,7 @@ export function initApps() {
       el.textContent = k === 'bp' ? b.vitals.sys + '/' + b.vitals.dia : k === 'temp' ? b.vitals.temp.toFixed(1) : b.vitals[k];
     });
   }, 1000);
+
 }
 
 function buildDock() {
@@ -126,7 +128,33 @@ function patientHeaderHTML(b) {
 // e-MAR, Imaging in PACS, Orders split into Referrals, History into Case.
 function renderSummary() { const b = emrBed(); return b ? shell('summary', `<div class="emr-body">${emrSectionBody('summary', b)}</div>`) : ''; }
 function renderVitals()  { const b = emrBed(); return b ? shell('vitals',  `<div class="emr-body">${emrSectionBody('vitals', b)}</div>`)  : ''; }
-function renderNotes()   { const b = emrBed(); return b ? shell('notes',   `<div class="emr-body">${emrSectionBody('notes', b)}</div>`)   : ''; }
+function renderNotes()   { const b = emrBed(); if (!b) return ''; return state.chapter === 'postop' ? shell('notes', `<div class="emr-body">${postopNoteHTML(b)}</div>`) : shell('notes', `<div class="emr-body">${emrSectionBody('notes', b)}</div>`); }
+
+// Scene 4 · the CABG post-operative note (Panel C) — the pure RECORD. The live
+// device hookup happens in Panel B now; the note just documents the operation,
+// findings and plan. Settings quoted from POD0 → same numbers as the checklist.
+function postopNoteHTML(b) {
+  const p = b.patient, v = POD0;
+  return `<div class="pnote">
+    <div class="pn-hd"><b>POST-OPERATIVE NOTE · Cardiac Surgery</b><span>POD 0</span></div>
+    <div class="pn-id">${p.name} · ${b.id} · ${p.age} ${p.sex || 'M'} &nbsp;·&nbsp; POD 0, hour 1 &nbsp;·&nbsp; documented by <b>TARS · Clinical Information System</b></div>
+
+    <div class="pn-sh">PROCEDURE</div>
+    <div class="pn-p"><b>CABG ×3 (on-pump)</b>, median sternotomy — LIMA → LAD · SVG → OM · SVG → PDA. CPB 88 min · cross-clamp 62 min · cold blood cardioplegia. Weaned off bypass on noradrenaline + dobutamine. Epicardial pacing wires (atrial + ventricular). Mediastinal + left pleural drains. Sternum wired, chest closed. Surgeon S. Iyer · Anaesthetist A. Menon · EBL ~450 mL.</div>
+
+    <div class="pn-sh">INTRA-OP FINDINGS</div>
+    <div class="pn-p">All three grafts patent, good flows. TOE: preserved biventricular function, LVEF ~40%, no new RWMA, trivial MR, well de-aired.</div>
+
+    <div class="pn-sh">ON ARRIVAL · ICU</div>
+    <div class="pn-p">Ventilated (${v.vent.mode}), sedated. Sinus rhythm, paced backup. MAP ${v.map} on inotropes. Rewarming from bypass. Lines &amp; devices being established per orders — see bedside checklist.</div>
+
+    <div class="pn-sh">POST-OP ORDERS &amp; PLAN</div>
+    <div class="pn-orders">${POD0_ORDERS.map(([k, val]) => `<div class="pn-o"><span class="pn-ok">${k}</span><span class="pn-ov">${val}</span></div>`).join('')}</div>
+
+    <div class="pn-sh">ANTICIPATED COURSE</div>
+    <div class="pn-p">Extubate POD 1 · drains out POD 2 · step-down POD 3 · discharge POD 4.</div>
+  </div>`;
+}
 // Orders split by system: Referrals keeps the referral/OR/cath-lab items only
 // (the troponin order lives in LIS, the drugs in e-MAR).
 function renderReferrals() {

@@ -1,6 +1,7 @@
 import './panelb.css'; // Panel B's own styles — single copy, loads in BOTH the ward dock and the 3-split
 import { bedById } from './ontology.js';
 import { state, onModeChange, onThemeChange } from './state.js';
+import { HOOKUP } from './postop.js';
 import { agentUpdateEMAR, agentStopPressor, agentOrderTroponin, agentGiveMeds, agentOrderRoutine, emrNavigate, openApp } from './apps.js';
 
 /* ============================================================
@@ -179,6 +180,7 @@ function showVerdict(b) {
 let chatEl, nextBtn, hintEl, panelB, statusEl;
 let washPrev, washCur, agentNotch, humanNotch;
 let steps = [], idx = 0, gated = false, ordSeq = 0, busy = false, pendingNurse = null;
+let hkCardEl = null, hkBusyIdx = -1, hkRowTimer = 0, hkLinkTimer = 0; // Scene 4 bedside-setup card
 let activeAgent = 'lsam', activeHuman = 'clinician', dark = false, expTop = false, expBottom = false;
 
 function scroll() { chatEl.scrollTop = chatEl.scrollHeight; }
@@ -314,7 +316,7 @@ function trimFeed() {
   // keep the feed light: fade older, cap DOM
   const msgs = [...chatEl.querySelectorAll('.msg')];
   msgs.forEach((m, i) => m.classList.toggle('old', i < msgs.length - 3));
-  const all = [...chatEl.children];
+  const all = [...chatEl.children].filter((c) => !c.classList.contains('hk-pin')); // the bedside card stays put
   while (all.length > 10) { chatEl.removeChild(all.shift()); }
 }
 
@@ -362,6 +364,58 @@ function addOrders(list) {
     }
   });
   chatEl.appendChild(wrap); trimFeed(); scroll();
+}
+
+// ---- Scene 4 · the BEDSIDE SETUP checklist card (Panel B) ------------------
+// One pinned order-set card listing all 12 devices. Each → connects the next:
+// pending ○ → spinner → ✓ with its feed line. On the ✓ we fire the twin marker
+// + wake the vital (hud:hookup:connected). Two rows are RECON — no sensor sees
+// them, so TARS asks the nurse and the row waits for a bedside confirm.
+function addBedsideCard() {
+  activeAgent = 'tars'; state.speaker = 'tars'; renderAgent(); fireWash('tars', true);
+  const wrap = document.createElement('div'); wrap.className = 'hkset hk-pin';
+  wrap.innerHTML = `<div class="hkset-hd">BEDSIDE SETUP · POST-OP ORDERS<span id="hksetCt">0 / ${HOOKUP.length}</span></div>`
+    + `<div class="hkgrid">${HOOKUP.map((d, i) => `<div class="hkt wait" data-i="${i}" data-dev="${d.key}"><div class="hkt-top"><i class="hkt-mark"></i><span class="hkt-nm">${d.label}</span>${d.recon ? '<span class="hkt-recon">recon</span>' : ''}</div><div class="hkt-read"></div></div>`).join('')}</div>`;
+  chatEl.appendChild(wrap); hkCardEl = wrap; hkBusyIdx = -1; trimFeed(); scroll();
+}
+function hkTile(i) { return hkCardEl && hkCardEl.querySelector(`.hkt[data-i="${i}"]`); }
+function hkFinishRow(i) {
+  const d = HOOKUP[i], tile = hkTile(i); if (!tile) return;
+  clearTimeout(hkLinkTimer);
+  tile.classList.remove('wait', 'busy', 'link', 'reconwait'); tile.classList.add('ok'); // step 3 · tick
+  const rd = tile.querySelector('.hkt-read'); if (rd) rd.textContent = d.short;
+  const ct = hkCardEl.querySelector('#hksetCt'); if (ct) ct.textContent = `${i + 1} / ${HOOKUP.length}`;
+  window.dispatchEvent(new CustomEvent('hud:hookup:connected', { detail: { n: i + 1 } })); // rail row + feed + twin marker
+  scroll();
+}
+function bedsideConnect(i) {
+  if (hkBusyIdx >= 0) { clearTimeout(hkRowTimer); clearTimeout(hkLinkTimer); const b = hkBusyIdx; hkBusyIdx = -1; hkFinishRow(b); } // fast-press resolves the prior
+  const d = HOOKUP[i], tile = hkTile(i); if (!tile) return;
+  if (d.recon) {
+    // no sensor — hand it to the nurse: the tile waits, the chin asks, confirm ticks it
+    tile.classList.remove('wait'); tile.classList.add('busy', 'reconwait');
+    addMsg('tars', d.ask, 'nurse check'); gated = true; updateNext();
+    reconPrompt(d.reconAsk, d.short, () => {
+      hkFinishRow(i); gated = false; updateNext(); humanResolve('logged ✓');
+      if (d.reconAfter) addMsg('tars', d.reconAfter, 'reminder set');
+    });
+  } else {
+    // two-step: step 1 · connecting (spinner) → step 2 · reading acquired → step 3 · ✓
+    tile.classList.remove('wait'); tile.classList.add('busy'); hkBusyIdx = i;
+    hkLinkTimer = window.setTimeout(() => { if (hkBusyIdx === i) { tile.classList.add('link'); const rd = tile.querySelector('.hkt-read'); if (rd) rd.textContent = d.short; } }, 400);
+    hkRowTimer = window.setTimeout(() => { if (hkBusyIdx === i) { hkBusyIdx = -1; hkFinishRow(i); } }, 860);
+  }
+}
+function hkFinishBusy() { if (hkBusyIdx >= 0) { clearTimeout(hkRowTimer); clearTimeout(hkLinkTimer); const b = hkBusyIdx; hkBusyIdx = -1; hkFinishRow(b); } }
+
+// RECON gate: the nurse-side confirm card (a bedside check the system can't sense)
+function reconPrompt(ask, reading, onDone) {
+  activeHuman = 'nurse'; humanNotch.classList.add('awaiting'); expBottom = true; renderHuman();
+  const st = humanNotch.querySelector('#humanStatus'); if (st) st.textContent = 'bedside check';
+  const slot = humanNotch.querySelector('#humanAction'); if (!slot) return;
+  slot.innerHTML = `<div class="recon"><div class="adm"><span class="adm-lb">${ask}</span><button class="adm-btn">Confirm · ${reading}</button></div></div>`;
+  const btn = slot.querySelector('.adm-btn');
+  if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); btn.textContent = '✓ ' + reading; btn.disabled = true; onDone(); });
 }
 
 function updateNext() {
@@ -447,19 +501,22 @@ function patientScript(b) {
     () => { addMsg('tars', `Theatre's ready — team's scrubbed. <span class="em">Taking him through to the OR.</span>`, 'to theatre'); emrNavigate('summary'); },
   ] : state.chapter === 'postop' ? [
     // ── SCENE 4 · beat 0: the bedside hookup ──────────────────────────────
-    // Panel A wakes UNHOOKED (vitals '--', ECG flat, rail empty). Each → then
-    // connects ONE device: rail row + its feed goes live + marker on the twin.
-    () => { addMsg('tars', `Back from theatre — <b>CABG ×3</b>: LIMA→LAD, SVG→OM, SVG→PDA. Off bypass, chest closed. <span class="em">Establishing bedside — connecting him up.</span>`, 'establishing bedside'); emrNavigate('summary'); window.dispatchEvent(new CustomEvent('hud:hookup', { detail: { n: 0 } })); },
+    // The BEDSIDE SETUP checklist lives in Panel B (this feed). Each → connects
+    // one device: the row spins → ✓ with its feed line, its Panel-A vital wakes,
+    // its glow marker pings on the twin, and a CONNECTED row lands in the rail.
+    // Two rows are RECON — urine + drains have no sensor, so TARS asks the nurse
+    // and the row waits for a bedside confirm. Panel C shows the post-op record.
+    () => { addMsg('tars', `Back from theatre — <b>CABG ×3</b>: LIMA→LAD, SVG→OM, SVG→PDA. Off bypass, chest closed. <span class="em">Working the post-op orders — connecting him up.</span>`, 'establishing bedside'); emrNavigate('notes'); window.dispatchEvent(new CustomEvent('hud:hookup:reset')); addBedsideCard(); },
     ...Array.from({ length: 12 }, (_, i) => {
       const fn = () => {
-        window.dispatchEvent(new CustomEvent('hud:hookup', { detail: { n: i + 1 } }));
+        bedsideConnect(i);
         if (i + 1 === 5) addMsg('tars', `Airway and breathing — secured.`, 'hookup · 5 of 12');
-        if (i + 1 === 9) addMsg('tars', `Support lines running.`, 'hookup · 9 of 12');
+        if (i + 1 === 7) addMsg('tars', `Support lines running.`, 'hookup · 7 of 12');
       };
-      fn.instant = true; // devices click on without the typing rhythm
+      fn.instant = !HOOKUP[i].recon; // auto devices click on; recon devices go through TARS asking the nurse
       return fn;
     }),
-    () => { addMsg('tars', `Bedside established — twelve systems live, all feeds on the console. <span class="em">Post-op day 0, hour 1.</span>`, 'bedside established'); emrNavigate('summary'); },
+    () => { hkFinishBusy(); addMsg('tars', `Bedside established — twelve systems live, all set to order, all feeds on the console. <span class="em">Post-op day 0, hour 1.</span>`, 'bedside established'); },
   ] : [
     // 1 · we're already in — the chart's up (continues straight from the ward dive)
     () => { addMsg('lsam', `${b.patient.name}, ${b.patient.age}. His chart's up.`, 'opening record'); emrNavigate('summary'); },
