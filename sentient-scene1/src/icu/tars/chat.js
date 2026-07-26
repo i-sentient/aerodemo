@@ -1,7 +1,7 @@
 import './panelb.css'; // Panel B's own styles — single copy, loads in BOTH the ward dock and the 3-split
 import { bedById } from './ontology.js';
 import { state, onModeChange, onThemeChange } from './state.js';
-import { HOOKUP } from './postop.js';
+import { HOOKUP, PODS } from './postop.js';
 import { agentUpdateEMAR, agentStopPressor, agentOrderTroponin, agentGiveMeds, agentOrderRoutine, emrNavigate, openApp } from './apps.js';
 
 /* ============================================================
@@ -517,6 +517,20 @@ function patientScript(b) {
       return fn;
     }),
     () => { hkFinishBusy(); addMsg('tars', `Bedside established — twelve systems live, all set to order, all feeds on the console. <span class="em">Post-op day 0, hour 1.</span>`, 'bedside established'); },
+
+    // ── POD 1 · wake up and come off ──────────────────────────────────────
+    // The day-break card hides the switch: five devices leave behind it, so
+    // when it lifts the missing tube reads as a reveal. Everything TARS says
+    // here is quoted by the POD 1 progress note in Panel C.
+    () => { window.dispatchEvent(new CustomEvent('hud:daybreak', { detail: { day: 1 } })); addMsg('tars', `Overnight — he rewarmed, stayed in sinus, and the drains settled. <span class="em">Post-op day 1: time to wake him up and start taking things away.</span>`, 'post-op day 1'); },
+    () => { addMsg('tars', `Sedation off at 07:30. He's opened his eyes, he's obeying commands — grip and toe wiggle both there. <b>Neurologically intact.</b>`, 'waking up'); emrNavigate('vitals'); },
+    () => { addMsg('tars', `Weaned <b>SIMV → PSV</b> and ran a spontaneous breathing trial at 10:40. Tidal volumes holding, rate 18, gases fine. <span class="em">He's passed — he doesn't need the ventilator.</span>`, 'breathing trial'); },
+    () => { addMsg('tars', `<b>Extubated 11:20.</b> Facemask at 28%, sats 96, chest clear, good cough. Tube and ventilator are off him.`, 'extubated'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['ett', 'vent'] } })); },
+    () => { addMsg('tars', `Balloon pump weaned 1:1 → 1:2 overnight and <b>out at 13:10</b> — groin's stable, distal pulses intact. Noradrenaline off at 15:40; he's holding a MAP of 82 on his own. Warming blanket off, he's at 37.0.`, 'support withdrawn'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['iabp', 'pumps', 'warm'] } })); },
+    () => { addMsg('lsam', `Camera's logged the rest: <b>first sit at 14:05</b>, unaided, then forty-five minutes out in the chair. Guarding the sternotomy on transfers — CPOT peaks at 4, settles to 1 at rest.`, 'movement logged'); openApp && openApp('notes'); },
+    () => { addMsg('tars', `I've written the day up — the mobility section is straight off the camera log. <span class="em">Seven devices left on him, down from twelve.</span> Plan for tomorrow needs your name:`, 'drafting note'); window.dispatchEvent(new CustomEvent('hud:note:publish', { detail: { day: 1 } })); addOrders([
+      { label: PODS[1].orders.label, items: PODS[1].orders.items, detail: 'Daily plan · requires sign-off', autonomy: 'gated', exec: () => emrNavigate('notes') }]); },
+    () => { addMsg('tars', `Signed. Beta-blocker started for rhythm prophylaxis. <span class="em">He's had a good day — off the ventilator, off support, sitting out.</span>`, 'pod 1 closed'); },
   ] : [
     // 1 · we're already in — the chart's up (continues straight from the ward dive)
     () => { addMsg('lsam', `${b.patient.name}, ${b.patient.age}. His chart's up.`, 'opening record'); emrNavigate('summary'); },

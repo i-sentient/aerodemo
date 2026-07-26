@@ -1,6 +1,6 @@
 import { beds, bedById, inventory, clinicians } from './ontology.js';
 import { state, onModeChange, setMode } from './state.js';
-import { POD0, POD0_ORDERS } from './postop.js';
+import { POD0, POD0_ORDERS, PODS, WATCH } from './postop.js';
 
 const APPMETA = {
   emr: { nm: 'EMR', icon: '🗂️', tint: '#6aa6ff', sub: 'Electronic record' },
@@ -119,16 +119,69 @@ function patientHeaderHTML(b) {
     </div>
     <button class="wardbtn" id="wardBack" title="Back to the ICU floor">${chevron}<span>ICU — North</span></button>
     <div class="idbar-spring"></div>
+    ${state.chapter === 'postop' ? podSpineHTML(currentNotedDay) : ''}
+    <div class="idbar-spring"></div>
     <div class="idcare">${care}</div>
   </div>`;
 }
+
+// The case spine. Recovery is a four-day arc and every panel shows only a
+// slice of it, so the top bar carries the whole thing: which day we're on,
+// which are behind us, and what today is about. Without it you can't tell
+// where in the story you are.
+let currentNotedDay = 0;
+function podSpineHTML(day) {
+  const p = PODS[day] || PODS[0];
+  return `<div class="podspine" id="podSpine">
+    <span class="ps-k">POST-OP</span>
+    <div class="ps-dots">${PODS.map((x, i) => `<i class="${i < day ? 'past' : i === day ? 'now' : ''}">${x.pod}</i>`).join('')}</div>
+    <span class="ps-t">${p.title}</span>
+  </div>`;
+}
+window.addEventListener('hud:pod:changed', (e) => {
+  currentNotedDay = (e.detail || {}).day | 0;
+  const el = document.getElementById('podSpine');
+  if (el) el.outerHTML = podSpineHTML(currentNotedDay);
+});
 // each clinical system is now its own dock app (no EMR container). Summary /
 // Vitals / Notes reuse the section bodies so the story's agent-focus field ids
 // (emr-vit-*, emr-lab-*, emr-med-*, …) are preserved. Labs live in LIS, Meds in
 // e-MAR, Imaging in PACS, Orders split into Referrals, History into Case.
 function renderSummary() { const b = emrBed(); return b ? shell('summary', `<div class="emr-body">${emrSectionBody('summary', b)}</div>`) : ''; }
 function renderVitals()  { const b = emrBed(); return b ? shell('vitals',  `<div class="emr-body">${emrSectionBody('vitals', b)}</div>`)  : ''; }
-function renderNotes()   { const b = emrBed(); if (!b) return ''; return state.chapter === 'postop' ? shell('notes', `<div class="emr-body">${postopNoteHTML(b)}</div>`) : shell('notes', `<div class="emr-body">${emrSectionBody('notes', b)}</div>`); }
+function renderNotes()   {
+  const b = emrBed(); if (!b) return '';
+  if (state.chapter !== 'postop') return shell('notes', `<div class="emr-body">${emrSectionBody('notes', b)}</div>`);
+  // newest day on top — the record grows downward into the operation
+  let out = '';
+  for (let d = notedDay; d >= 1; d--) out += progressNoteHTML(b, d);
+  return shell('notes', `<div class="emr-body">${out}${postopNoteHTML(b)}</div>`);
+}
+
+// Scene 4 · the daily PROGRESS NOTE. Its mobility paragraph is quoted straight
+// out of WATCH — the camera's movement log becomes the written record, which is
+// then what the clinician assesses and turns into the next day's orders.
+// A day's note is published when TARS DRAFTS it — at the end of that day, not
+// when the day starts. Otherwise the day-break card lands and Panel C instantly
+// spoils everything that hasn't happened yet ("extubated 11:20").
+let notedDay = 0;
+window.addEventListener('hud:note:publish', (e) => {
+  notedDay = Math.max(notedDay, (e.detail || {}).day | 0);
+  if (state.chapter === 'postop') emrNavigate('notes');
+});
+window.addEventListener('hud:hookup:reset', () => { notedDay = 0; });
+function progressNoteHTML(b, day) {
+  const p = PODS[day]; if (!p || !p.note) return '';
+  const w = WATCH.days[day];
+  const rows = p.note.map(([h, t]) => `<div class="pn-r"><span>${h}</span><div>${t}</div></div>`).join('');
+  const mob = w ? `<div class="pn-r"><span>Mobility</span><div>${w.note} <i class="pn-src">— from WATCH · ${w.log.length} camera-logged events</i></div></div>` : '';
+  const plan = p.orders ? `<div class="pn-sh">PLAN</div><ul class="pn-ul">${p.orders.items.map((x) => `<li>${x}</li>`).join('')}</ul>` : '';
+  return `<div class="pnote">
+    <div class="pn-hd"><b>PROGRESS NOTE · ${p.title}</b><span>POD ${p.pod}</span></div>
+    <div class="pn-id">${b.patient.name} · ${b.id} &nbsp;·&nbsp; post-op day ${p.pod} &nbsp;·&nbsp; drafted by <b>TARS</b> from bedside + WATCH</div>
+    <div class="pn-sh">PROGRESS</div>${rows}${mob}${plan}
+  </div>`;
+}
 
 // Scene 4 · the CABG post-operative note (Panel C) — the pure RECORD. The live
 // device hookup happens in Panel B now; the note just documents the operation,

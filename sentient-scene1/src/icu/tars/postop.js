@@ -218,6 +218,35 @@ export const CONTROLS = {
   },
 };
 
+// --- the POD timeline — what the bedside looks like on each recovery day ------
+// `off` = devices that come off THAT day (beat 0 in reverse: the twin's markers
+// go dark one by one and SCOPE's wall empties). `vitals` is where the numbers
+// land once the day's weaning is done. Recovery you can see, not narrate.
+export const PODS = [
+  { pod: 0, title: 'Arrival', sub: 'ventilated · sedated · full support', off: [],
+    vitals: { hr: POD0.hr, spo2: POD0.spo2, sys: 96, dia: 54, rr: POD0.vent.rate, temp: 36.4 } },
+  { pod: 1, title: 'Wake up and come off', sub: 'sedation off · extubated · lines coming out',
+    off: ['ett', 'vent', 'iabp', 'pumps', 'warm'],
+    vitals: { hr: 88, spo2: 96, sys: 118, dia: 70, rr: 18, temp: 37.0 },
+    note: [
+      ['Respiratory', 'Weaned SIMV → PSV overnight; spontaneous breathing trial passed 10:40. <b>Extubated 11:20</b> to facemask FiO₂ 28% — sats 96%, no stridor, chest clear with a good cough.'],
+      ['Cardiovascular', 'IABP weaned 1:1 → 1:2 and <b>removed 13:10</b>; groin site stable, distal pulses intact. Noradrenaline weaned off 15:40. Sinus 88, MAP 82 unsupported. Rewarmed to 37.0 — warming blanket off.'],
+      ['Renal &amp; fluids', 'Urine 0.8 mL/kg/hr. Balance +0.9 L. Creatinine stable at 96.'],
+      ['Drains', 'Mediastinal + left pleural 180 mL/24h, serous, no clots. Remain in.'],
+      ['Pain', 'CPOT peaks at 4 on transfers, 1 at rest. Regular paracetamol; opioid PCA started after extubation.'],
+    ],
+    // beta-blocker prophylaxis is the real POD 1 order — it REDUCES post-op AF
+    // without preventing it, which is what makes POD 2 honest rather than cheap
+    orders: { label: 'POD 1 → POD 2 plan', items: ['Chest physio + mobilise twice daily', 'Remove drains if < 50 mL/8h', 'Start oral beta-blocker — AF prophylaxis', 'Step down to telemetry monitoring'] } },
+  { pod: 2, title: 'Mobilising', sub: 'drains out · up and standing', off: ['drains', 'suction'],
+    vitals: { hr: 84, spo2: 96, sys: 122, dia: 72, rr: 17, temp: 36.9 } },
+  { pod: 3, title: 'Lines out', sub: 'invasive monitoring off · walking the corridor',
+    off: ['art', 'cvc', 'ucath'],
+    vitals: { hr: 78, spo2: 97, sys: 126, dia: 74, rr: 16, temp: 36.8 } },
+  { pod: 4, title: 'Step-down', sub: 'telemetry only · ready for the ward', off: ['flowtron'],
+    vitals: { hr: 74, spo2: 98, sys: 128, dia: 76, rr: 15, temp: 36.7 } },
+];
+
 // --- WATCH · the surveillance record (Panel A) --------------------------------
 // The bed camera watches continuously; pose estimation turns what it sees into
 // a timestamped movement log. That log IS the panel — the stick figure in the

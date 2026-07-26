@@ -1,7 +1,7 @@
 import { beds, bedById } from './ontology.js';
 import { state, onModeChange, setMode } from './state.js';
 import { lerp } from './utils.js';
-import { HOOKUP, POD0, TRENDS, SCOPE_DETAIL, CONTROLS, MEASURED, WAVE_NUM, WATCH } from './postop.js';
+import { HOOKUP, POD0, TRENDS, SCOPE_DETAIL, CONTROLS, MEASURED, WAVE_NUM, WATCH, PODS } from './postop.js';
 import { makeMiniScope, makeTrend, WAVES } from './waveforms.js';
 import { makeWatchCam } from './watchcam.js';
 import { emrNavigate } from './apps.js';
@@ -94,21 +94,85 @@ const TPL = `
 // device connects (event from chat.js), wakes that device's FEED (vitals '--'
 // → live, ECG flat → drawing), and fires its glow marker on the twin. Readings
 // quoted from POD0 (postop.js) — same numbers as the checklist + orders.
+// Beat 0 connects a PREFIX of the list, but recovery removes devices from the
+// middle (extubated on POD 1, drains out on POD 2…), so what's live is a SET,
+// not a count. The rail, the twin's markers and SCOPE all read from it.
 const feedOn = new Set();
-let hkConnected = 0;   // devices connected so far
-let hkActive = false;  // postop hookup mode on
-function hookupRail(n) {
+const live = new Set();     // device keys currently attached to the patient
+let hkActive = false;       // postop hookup mode on
+let podDay = 0;             // which post-op day the bedside is showing
+function railRender(ping) {
   if (state.chapter !== 'postop' || !root) return;
-  hkActive = true; hkConnected = Math.max(0, Math.min(HOOKUP.length, n | 0));
   feedOn.clear(); const marks = [];
-  for (let i = 0; i < hkConnected; i++) { (HOOKUP[i].feeds || []).forEach((f) => feedOn.add(f)); if (HOOKUP[i].marker) marks.push(HOOKUP[i].marker); }
+  const on = HOOKUP.filter((d) => live.has(d.key));
+  for (const d of on) { (d.feeds || []).forEach((f) => feedOn.add(f)); if (d.marker) marks.push(d.marker); }
   const rail = root.querySelector('#devRail'); if (!rail) return;
-  const done = hkConnected >= HOOKUP.length;
-  rail.innerHTML = `<div class="tk">${done ? 'CONNECTED · BEDSIDE ESTABLISHED' : 'CONNECTED DEVICES · POD 0'}<span class="hk-count">${hkConnected} / ${HOOKUP.length}</span></div>`
-    + (hkConnected ? HOOKUP.slice(0, hkConnected).map((d, i) => `<div class="kv hk-row${i === hkConnected - 1 ? ' hk-new' : ''}" data-dev="${d.key}"><span><i class="hk-led"></i>${d.label}</span><b>${d.short}</b></div>`).join('') : '<div class="kv hk-empty">establishing…</div>');
-  window.dispatchEvent(new CustomEvent('hud:markers', { detail: { keys: marks, ping: hkConnected ? HOOKUP[hkConnected - 1].marker : null } }));
+  const settingUp = podDay === 0 && live.size < HOOKUP.length;
+  const established = podDay === 0 && live.size === HOOKUP.length;
+  const head = settingUp ? 'CONNECTED DEVICES · POD 0' : established ? 'CONNECTED · BEDSIDE ESTABLISHED' : `BEDSIDE · POD ${podDay}`;
+  const count = podDay === 0 ? `${live.size} / ${HOOKUP.length}` : `${live.size} live`;
+  rail.innerHTML = `<div class="tk">${head}<span class="hk-count">${count}</span></div>`
+    + (on.length ? on.map((d) => `<div class="kv hk-row${d.marker === ping ? ' hk-new' : ''}" data-dev="${d.key}"><span><i class="hk-led"></i>${d.label}</span><b>${d.short}</b></div>`).join('') : '<div class="kv hk-empty">establishing…</div>');
+  window.dispatchEvent(new CustomEvent('hud:markers', { detail: { keys: marks, ping: ping || null } }));
 }
-function hookupReset() { hkActive = true; hkConnected = 0; feedOn.clear(); hookupRail(0); }
+function hookupRail(n) {  // beat 0 path: the first n devices are on
+  const k = Math.max(0, Math.min(HOOKUP.length, n | 0));
+  hkActive = true; live.clear();
+  for (let i = 0; i < k; i++) live.add(HOOKUP[i].key);
+  railRender(k ? HOOKUP[k - 1].marker : null);
+}
+function hookupReset() { hkActive = true; podDay = 0; live.clear(); railRender(null); }
+// recovery: a device comes OFF — its rail row leaves, its marker goes dark,
+// its SCOPE tile disappears, and any vital it fed goes back to '--'
+function hookupRemove(keys) {
+  (keys || []).forEach((k) => live.delete(k));
+  railRender(null);
+  if (root && root.classList.contains('win-scope') && scopeView === 'overview') renderScope();
+}
+// Advance the bedside to a post-op day: everything that was still attached on
+// the previous day stays, that day's devices come off, the vitals land where
+// the weaning left them, and WATCH switches to that day's record.
+function setPod(day) {
+  podDay = Math.max(0, Math.min(PODS.length - 1, day | 0));
+  live.clear();
+  const gone = new Set();
+  for (let i = 0; i <= podDay; i++) (PODS[i].off || []).forEach((k) => gone.add(k));
+  HOOKUP.forEach((d) => { if (!gone.has(d.key)) live.add(d.key); });
+  // move the BASELINE too, not just the reading — ontology's random walk clamps
+  // to b.base (the admission STEMI numbers), so assigning vitals alone gets
+  // dragged straight back to HR 118.
+  const v = PODS[podDay].vitals;
+  const b = bedById(state.focusId);
+  if (b && v) { Object.assign(b.vitals, v); Object.assign(b.base, v); }
+  railRender(null);
+  watchDay = podDay;
+  if (root && root.classList.contains('win-watch')) renderWatch();
+  if (root && root.classList.contains('win-scope')) { scopeView = 'overview'; scopeDev = null; renderScope(); }
+  window.dispatchEvent(new CustomEvent('hud:pod:changed', { detail: { day: podDay } })); // Panel C notes
+}
+export function currentPod() { return podDay; }
+
+// The day-break card. It isn't decoration: the POD switch happens while the
+// cover is opaque, so five devices leaving is a REVEAL when it lifts rather
+// than things popping out of existence in front of you.
+let dbEl = null, dbTimers = [];
+function dayBreak(day) {
+  const p = PODS[Math.max(0, Math.min(PODS.length - 1, day | 0))];
+  dbTimers.forEach(clearTimeout); dbTimers = [];
+  if (!dbEl) {
+    dbEl = document.createElement('div'); dbEl.className = 'daybreak';
+    dbEl.innerHTML = '<div class="db-lg">T</div><div class="db-d"></div><div class="db-t"></div><div class="db-s"></div>';
+    (document.getElementById('app') || document.body).appendChild(dbEl);
+  }
+  dbEl.querySelector('.db-d').textContent = `POST-OP DAY ${p.pod}`;
+  dbEl.querySelector('.db-t').textContent = p.title;
+  dbEl.querySelector('.db-s').textContent = p.sub;
+  void dbEl.offsetHeight;                 // reflow, not rAF — rAF stalls in a backgrounded tab
+  dbEl.classList.add('on');
+  dbTimers.push(setTimeout(() => setPod(p.pod), 480));          // mutate behind the cover
+  dbTimers.push(setTimeout(() => dbEl.classList.remove('on'), 1750));
+}
+window.addEventListener('hud:daybreak', (e) => dayBreak((e.detail || {}).day));
 
 // ---- Scene 4 · SCOPE — the monitor wall (Panel A window) -------------------
 // Two levels. OVERVIEW: every bedside machine as a live tile — waveform units
@@ -197,7 +261,7 @@ function renderWatch() {
   el.querySelector('#wtNote').onclick = () => emrNavigate('notes'); // the record it writes into
 }
 window.addEventListener('hud:watch:day', (e) => { const n = e.detail && e.detail.day; if (n == null) return; watchDay = Math.max(0, Math.min(WATCH.days.length - 1, n)); if (root && root.classList.contains('win-watch')) renderWatch(); });
-const scOn = (k) => HOOKUP.findIndex((d) => d.key === k) < hkConnected; // connected yet?
+const scOn = (k) => live.has(k); // still attached to the patient?
 
 // A LANE is the monitor grammar: the trace runs the full width with its own
 // primary number docked right, both in the trace's colour. Far denser than a
@@ -448,7 +512,7 @@ function devRailHTML() {
   dev.nibpEvery = dev.nibp = state.chapter === 'continued' ? 900 : 300; // q15m post-cath · q5m acute
   if (state.chapter === 'postop') {
     // boot empty — the rail fills as Panel B connects each device
-    hkConnected = 0; hkActive = true; feedOn.clear();
+    podDay = 0; live.clear(); hkActive = true; feedOn.clear();
     return `<div class="tk">CONNECTED DEVICES · POD 0<span class="hk-count">0 / ${HOOKUP.length}</span></div><div class="kv hk-empty">establishing…</div>`;
   }
   if (state.chapter === 'continued') return `
@@ -562,9 +626,11 @@ export function initHud(hostSel) {
   // Scene 4 · hookup wiring: chat beats drive connects (hud:hookup); hovering
   // a rail row or a glowing body marker surfaces the compact device card.
   window.addEventListener('hud:hookup:connected', (e) => {
-    hookupRail(e.detail ? e.detail.n : hkConnected + 1);
+    hookupRail(e.detail ? e.detail.n : live.size + 1);
     if (root.classList.contains('win-scope') && scopeView === 'overview') renderScope(); // undim the new tile
   });
+  window.addEventListener('hud:hookup:remove', (e) => hookupRemove((e.detail || {}).keys));
+  window.addEventListener('hud:pod', (e) => setPod((e.detail || {}).day));
   window.addEventListener('hud:hookup:reset', () => {
     hookupReset();
     if (root.classList.contains('win-scope')) { scopeView = 'overview'; scopeDev = null; renderScope(); }
@@ -572,7 +638,7 @@ export function initHud(hostSel) {
   // clicking a glow marker (scene.js raycast) opens that machine's feed in SCOPE
   window.addEventListener('hud:scope:open', (e) => {
     const mk = e.detail && e.detail.marker;
-    const dev = HOOKUP.slice(0, hkConnected).find((d) => d.marker === mk);
+    const dev = HOOKUP.find((d) => live.has(d.key) && d.marker === mk);
     if (dev) { scopeView = 'detail'; scopeDev = dev.key; setWindow('scope'); }
   });
   // card lives on #hud (root) — a positioned, full-size layer — so it sits
@@ -613,7 +679,7 @@ export function initHud(hostSel) {
   window.addEventListener('hud:marker:hover', (e) => {
     const d = e.detail || {};
     if (!d.key) { hideCard(); return; }
-    showDevices(HOOKUP.slice(0, hkConnected).filter((v) => v.marker === d.key), d.x, d.y);
+    showDevices(HOOKUP.filter((v) => live.has(v.key) && v.marker === d.key), d.x, d.y);
   });
 
   // Scene 4: the Panel A window toggle (TWIN · SCOPE · WATCH) — postop only;
