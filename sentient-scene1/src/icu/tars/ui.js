@@ -34,6 +34,7 @@ function initSplits() {
     const g = document.getElementById(id);
     if (!g) return;
     g.addEventListener('pointerdown', (e) => {
+      if (id === 'gutBC' && document.body.classList.contains('pc-collapsed')) return; // nothing to drag
       e.preventDefault();
       g.classList.add('dragging');
       document.body.classList.add('resizing');
@@ -62,6 +63,34 @@ function initSplits() {
   };
   wire('gutAB', 'A', 'B');
   wire('gutBC', 'B', 'C');
+
+  // Panel C folds away behind the chevron on the B|C gutter. The freed width
+  // goes to A and B in whatever proportion the user has already dragged them
+  // to, and comes back exactly as it was on re-open.
+  const pcBtn = document.getElementById('pcToggle');
+  let savedFr = null;                                   // non-null ⇒ collapsed
+  const setCollapsed = (on) => {
+    if (on === !!savedFr) return;
+    panels.classList.add('anim');
+    if (on) {
+      savedFr = { ...fr };
+      const tot = fr.A + fr.B;
+      fr.A += fr.C * (fr.A / tot); fr.B += fr.C * (fr.B / tot); fr.C = 0;
+    } else { Object.assign(fr, savedFr); savedFr = null; }
+    document.body.classList.toggle('pc-collapsed', on);
+    if (pcBtn) {
+      pcBtn.setAttribute('aria-expanded', String(!on));
+      const lbl = on ? 'Show clinical apps' : 'Hide clinical apps';
+      pcBtn.setAttribute('aria-label', lbl); pcBtn.title = lbl;
+    }
+    apply();
+    // one settle after the fold, same as the drag-release path
+    setTimeout(() => { panels.classList.remove('anim'); window.dispatchEvent(new Event('resize')); }, 320);
+  };
+  if (pcBtn) {
+    pcBtn.addEventListener('pointerdown', (e) => e.stopPropagation()); // don't start a gutter drag
+    pcBtn.addEventListener('click', (e) => { e.stopPropagation(); setCollapsed(!savedFr); });
+  }
 }
 
 // the top-bar identity + ward-back live in apps.js now; this just drives the

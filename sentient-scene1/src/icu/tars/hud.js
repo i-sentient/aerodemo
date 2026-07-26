@@ -1,8 +1,8 @@
 import { beds, bedById } from './ontology.js';
 import { state, onModeChange, setMode } from './state.js';
 import { lerp } from './utils.js';
-import { HOOKUP } from './postop.js';
-import { makeMiniScope } from './waveforms.js';
+import { HOOKUP, POD0, TRENDS, SCOPE_DETAIL, CONTROLS, MEASURED, WAVE_NUM } from './postop.js';
+import { makeMiniScope, makeTrend, WAVES } from './waveforms.js';
 
 let root, floorLayer, patientLayer, wipe, ecgCv, ecgX;
 let lsamRevealAt = 0, lsamShown = 0;
@@ -107,6 +107,264 @@ function hookupRail(n) {
   window.dispatchEvent(new CustomEvent('hud:markers', { detail: { keys: marks, ping: hkConnected ? HOOKUP[hkConnected - 1].marker : null } }));
 }
 function hookupReset() { hkActive = true; hkConnected = 0; feedOn.clear(); hookupRail(0); }
+
+// ---- Scene 4 · SCOPE — the monitor wall (Panel A window) -------------------
+// Two levels. OVERVIEW: every bedside machine as a live tile — waveform units
+// (telemetry / ventilator / IABP) via the shared engine, numeric machines as
+// trend cells. DETAIL: one machine in full (big waves or 6-h trend + all its
+// info). Entry: the SCOPE tab (→ overview) or clicking a glow marker on the
+// twin (→ that device's detail). Everything quotes POD0 — the same numbers as
+// the checklist, the rail and the note.
+let scopeView = 'overview', scopeDev = null, scopeScopes = [], scopeTimer = 0;
+function stopScope() { scopeScopes.forEach((s) => s.stop()); scopeScopes = []; if (scopeTimer) { clearInterval(scopeTimer); scopeTimer = 0; } }
+function setWindow(w) {
+  if (!root) return;
+  root.classList.remove('win-scope', 'win-watch');
+  if (w !== 'twin') root.classList.add('win-' + w);
+  const tabs = root.querySelector('#paTabs');
+  if (tabs) tabs.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.w === w));
+  if (w === 'scope') renderScope(); else stopScope();
+}
+const scOn = (k) => HOOKUP.findIndex((d) => d.key === k) < hkConnected; // connected yet?
+
+// A LANE is the monitor grammar: the trace runs the full width with its own
+// primary number docked right, both in the trace's colour. Far denser than a
+// labelled card — and it's what a real bedside monitor actually looks like.
+function scLane(k, h) {
+  const n = WAVE_NUM[k] || { l: WAVES[k].label, v: '', u: '' };
+  const live = n.live ? ` data-scv="${n.live}"` : '';
+  return `<div class="sc-lane" style="--wc:var(--w-${k})">
+    <canvas class="sc-wave" data-wave="${k}" style="height:${h}px"></canvas>
+    <div class="sc-lv${n.wide ? ' wide' : ''}"><span>${n.l}</span><b${live}>${n.v}</b><i>${n.u}</i></div>
+  </div>`;
+}
+// a dense stat grid — the machine's measured block (3-up)
+const scStats = (rows) => `<div class="sc-stats">${rows.map((r) => `<div class="sc-stat"${r.w ? ` style="--wc:var(--w-${r.w})"` : ''}><span>${r.l}</span><b${r.live ? ` data-scv="${r.live}"` : ''}${r.w ? ' class="tint"' : ''}>${r.v}</b>${r.u ? `<i>${r.u}</i>` : ''}</div>`).join('')}</div>`;
+// small setting chips (what the device is SET to, beside what it measures)
+const scChips = (pairs) => `<div class="sc-setchips">${pairs.map(([l, v]) => `<span class="sc-sch"><i>${l}</i>${v}</span>`).join('')}</div>`;
+
+// live, mutable device settings — seeded from the orders (POD0 via CONTROLS),
+// then written by the on-device control panels. Kept separate from POD0 so the
+// note/orders stay the record of what was ORDERED while these track what's SET.
+const deviceSettings = {};
+Object.keys(CONTROLS).forEach((k) => (deviceSettings[k] = { ...CONTROLS[k].seed }));
+const dset = (k) => deviceSettings[k];
+const fmt = (v, dp = 0) => (typeof v === 'number' ? v.toFixed(dp) : v);
+const ventLine = () => { const v = dset('vent'); return `${v.mode} · FiO₂ ${v.fio2} · PEEP ${v.peep} · f ${v.rate}`; };
+const pumpShort = () => { const p = dset('pumps'); return `norad ${fmt(p.norad, 2)} · dob ${fmt(p.dobut, 1)}`; };
+const bandLabel = (v) => (CONTROLS.warm.bands.find((b) => b.v === v) || {}).label || '—';
+
+function scopeOverviewHTML() {
+  const off = (k) => (scOn(k) ? '' : ' sc-off');
+  const v = dset('vent'), ib = dset('iabp');
+  return `
+    <div class="sc-hd"><span class="sc-t">SCOPE</span><span class="sc-sub">POD 0 · h1</span><span class="sc-ok">IN LIMITS</span></div>
+    <div class="sc-scroll">
+      <div class="sc-tile${off('monitor')}">
+        <div class="sc-th">TELEMETRY<span class="sc-set">5-lead · sinus, paced backup</span></div>
+        <div class="sc-click" data-open="monitor">${scLane('ecg', 40)}${scLane('pleth', 30)}</div>
+        <div class="sc-click${off('art')}" data-open="art">${scLane('abp', 30)}</div>
+        <div class="sc-click${off('cvc')}" data-open="cvc">${scLane('cvp', 26)}</div>
+      </div>
+      <div class="sc-tile${off('vent')}">
+        <div class="sc-th">VENTILATOR<span class="sc-set">${v.mode}</span></div>
+        <div class="sc-click" data-open="vent">${scLane('vent', 30)}${scLane('capno', 26)}</div>
+        ${scChips([['FiO₂', v.fio2 + '%'], ['PEEP', v.peep], ['Vt', v.tv], ['f', v.rate]])}
+        <button class="sc-chip" data-open="ett">ET tube · ${POD0.ett.size} at ${POD0.ett.depth} cm · cuff ${POD0.ett.cuff}</button>
+      </div>
+      <div class="sc-tile${off('iabp')}">
+        <div class="sc-th">IABP<span class="sc-set">${ib.ratio} · ${ib.trigger} trigger</span></div>
+        <div class="sc-click" data-open="iabp">${scLane('iabp', 30)}</div>
+        ${scChips([['Aug', ib.aug + '%'], ['Unassist', '96'], ['Assist EDP', '48']])}
+      </div>
+      <div class="sc-tile">
+        <div class="sc-th">INFUSIONS &amp; OUTPUTS<span class="sc-set">last 6 h</span></div>
+        <div class="sc-grid">
+          ${['pumps', 'drains', 'ucath', 'warm'].map((k) => { const d = HOOKUP.find((x) => x.key === k); const cv = k === 'pumps' ? pumpShort() : d.short; return `<button class="sc-cell${off(k)}" data-open="${k}"><span class="sc-cl">${d.label}</span><b class="sc-cv">${cv}</b><canvas class="sc-trend" data-trend="${k}"></canvas></button>`; }).join('')}
+        </div>
+      </div>
+      <div class="sc-chips">
+        <button class="sc-chip${off('flowtron')}" data-open="flowtron">Flowtron · cycling</button>
+        <button class="sc-chip${off('suction')}" data-open="suction">Suction · standby</button>
+      </div>
+    </div>`;
+}
+function scopeDetailHTML(key) {
+  const d = HOOKUP.find((x) => x.key === key); if (!d) return scopeOverviewHTML();
+  const waves = (d.waves || []).map((k) => scLane(k, 46)).join('');
+  const t = TRENDS[key];
+  const trend = t ? `<div class="sc-tile"><div class="sc-th">TREND<span class="sc-set">${t.label} · ${t.unit} · 6 h</span></div><canvas class="sc-trend big" data-trend="${key}"></canvas></div>` : '';
+  const meas = MEASURED[key];
+  const ctrl = CONTROLS[key];
+  // for controllable devices the live setpoint lives in the CONTROL panel, so
+  // drop the duplicate settings line (d.full) and keep the orders/alarm context.
+  const lines = ctrl ? [d.site, ...(SCOPE_DETAIL[key] || [])] : [d.full, d.site, ...(SCOPE_DETAIL[key] || [])];
+  const tag = ctrl ? '<span class="sc-live"><i></i>CONTROL</span>' : '<span class="sc-ro">READ-ONLY</span>';
+  return `
+    <div class="sc-hd"><button id="scBack">‹</button><span class="sc-t">${d.label}</span>${tag}</div>
+    <div class="sc-scroll">
+      ${waves ? `<div class="sc-tile">${waves}</div>` : ''}
+      ${meas ? `<div class="sc-tile"><div class="sc-th">MEASURED<span class="sc-set">reported by device</span></div>${scStats(meas)}</div>` : ''}
+      ${trend}
+      ${ctrl ? controlsHTML(key) : ''}
+      <div class="sc-tile sc-info">${lines.map((l) => `<div class="sc-il">${l}</div>`).join('')}</div>
+    </div>`;
+}
+
+// --- the on-device control panels (one markup per CONTROLS.kind) -------------
+function controlsHTML(key) {
+  const c = CONTROLS[key], s = dset(key);
+  const head = (sub) => `<div class="sc-th">CONTROL<span class="sc-set">${sub}</span></div><div class="sc-setmsg" data-msg></div>`;
+  if (c.kind === 'knob') {
+    const modes = c.modes.map((m) => `<button class="vk-mode${m === s.mode ? ' on' : ''}" data-mode="${m}">${m}</button>`).join('');
+    const tiles = c.params.map((p, i) => `<button class="vk-param${i === 0 ? ' sel' : ''}" data-param="${p.key}"><span class="vk-pl">${p.label}</span><b class="vk-pv" data-pv="${p.key}">${s[p.key]}</b><i class="vk-pu">${p.unit}</i></button>`).join('');
+    return `<div class="sc-tile sc-ctrl" data-ctrl="vent">${head('select · turn · push to confirm')}
+      <div class="vk-modes">${modes}</div>
+      <div class="vk-body">
+        <div class="vk-params">${tiles}</div>
+        <div class="vk-knobwrap">
+          <div class="vk-knob" tabindex="0"><span class="vk-tick"></span><button class="vk-hub" data-hub>PUSH</button></div>
+          <div class="vk-read" data-read>—</div>
+        </div>
+      </div></div>`;
+  }
+  if (c.kind === 'pumps') {
+    const rows = c.channels.map((ch) => `<div class="pm-row" data-ch="${ch.key}"><span class="pm-name">${ch.label}<i>${ch.unit}</i></span><button class="pm-step" data-d="-1">−</button><b class="pm-val" data-pv="${ch.key}">${fmt(s[ch.key], ch.dp)}</b><button class="pm-step" data-d="1">＋</button><button class="pm-set" data-set="${ch.key}" disabled>SET</button></div>`).join('');
+    return `<div class="sc-tile sc-ctrl" data-ctrl="pumps">${head('titrate · confirm each change')}${rows}</div>`;
+  }
+  if (c.kind === 'iabp') {
+    const seg = (name, opts, cur) => `<div class="seg" data-seg="${name}">${opts.map((o) => `<button class="${o === cur ? 'on' : ''}" data-v="${o}">${o}</button>`).join('')}</div>`;
+    return `<div class="sc-tile sc-ctrl" data-ctrl="iabp">${head('augmentation · confirm')}
+      <div class="ib-line"><span class="ib-lbl">Ratio</span>${seg('ratio', c.ratios, s.ratio)}</div>
+      <div class="ib-line"><span class="ib-lbl">Trigger</span>${seg('trigger', c.triggers, s.trigger)}</div>
+      <div class="ib-line"><span class="ib-lbl">Augment</span><input class="ib-slider" type="range" min="${c.aug.min}" max="${c.aug.max}" step="${c.aug.step}" value="${s.aug}" data-aug><b class="ib-augv" data-augv>${s.aug}%</b></div>
+      <div class="ib-line"><button class="ib-run${s.running ? ' on' : ''}" data-run>${s.running ? 'RUNNING' : 'STANDBY'}</button><button class="sc-confirm" data-confirm disabled>CONFIRM</button></div></div>`;
+  }
+  if (c.kind === 'bands') {
+    const bands = c.bands.map((b) => `<button class="${b.v === s.band ? 'on' : ''}" data-v="${b.v}">${b.label}</button>`).join('');
+    return `<div class="sc-tile sc-ctrl" data-ctrl="warm">${head(c.context)}
+      <div class="seg wide" data-seg="band">${bands}</div>
+      <button class="sc-confirm" data-confirm disabled>CONFIRM</button></div>`;
+  }
+  if (c.kind === 'toggle') {
+    return `<div class="sc-tile sc-ctrl" data-ctrl="flowtron">${head(c.context)}
+      <div class="ib-line"><button class="ib-run${s.on ? ' on' : ''}" data-run>${s.on ? 'RUNNING' : 'STANDBY'}</button><button class="sc-confirm" data-confirm disabled>CONFIRM</button></div></div>`;
+  }
+  return '';
+}
+// --- control wiring: every change stages as PENDING, applied only on confirm -
+function flashSet(tile, txt) {
+  const m = tile.querySelector('[data-msg]'); if (!m) return;
+  m.textContent = txt; m.classList.add('on');
+  clearTimeout(m._t); m._t = window.setTimeout(() => m.classList.remove('on'), 1500);
+}
+function pulseMarker(key) {
+  const d = HOOKUP.find((x) => x.key === key);
+  if (d && d.marker) window.dispatchEvent(new CustomEvent('hud:marker:pulse', { detail: { marker: d.marker } }));
+}
+function wireControls(el, key) {
+  const tile = el.querySelector('.sc-ctrl'); if (!tile) return;
+  const c = CONTROLS[key], s = dset(key);
+  if (c.kind === 'knob') wireKnob(tile, c, s, key);
+  else if (c.kind === 'pumps') wirePumps(tile, c, s, key);
+  else if (c.kind === 'iabp') wireIabp(tile, c, s, key);
+  else if (c.kind === 'bands') wireBands(tile, c, s, key);
+  else if (c.kind === 'toggle') wireToggle(tile, c, s, key);
+}
+function wireKnob(tile, c, s, key) {
+  const pmap = {}; c.params.forEach((p) => (pmap[p.key] = p));
+  const knob = tile.querySelector('.vk-knob'), tick = tile.querySelector('.vk-tick'), read = tile.querySelector('[data-read]');
+  const st = { kind: 'param', key: c.params[0].key, pending: s[c.params[0].key], rot: 0 };
+  const pvEl = (k) => tile.querySelector(`.vk-pv[data-pv="${k}"]`);
+  const paramEl = (k) => tile.querySelector(`.vk-param[data-param="${k}"]`);
+  const refresh = () => {
+    c.params.forEach((pp) => { const sel = st.kind === 'param' && pp.key === st.key; paramEl(pp.key).classList.toggle('sel', sel); pvEl(pp.key).textContent = sel ? st.pending : s[pp.key]; paramEl(pp.key).classList.toggle('pending', sel && st.pending !== s[pp.key]); });
+    tile.querySelectorAll('.vk-mode').forEach((b) => { b.classList.toggle('on', b.dataset.mode === s.mode); b.classList.toggle('pending', st.kind === 'mode' && b.dataset.mode === st.pending && st.pending !== s.mode); });
+    let changed, txt;
+    if (st.kind === 'param') { const p = pmap[st.key]; changed = st.pending !== s[st.key]; txt = changed ? `${p.label} ${s[st.key]} → ${st.pending} ${p.unit}` : `${p.label} · ${s[st.key]} ${p.unit}`; }
+    else { changed = st.pending !== s.mode; txt = changed ? `MODE ${s.mode} → ${st.pending}` : `MODE · ${s.mode}`; }
+    read.textContent = txt; read.classList.toggle('live', changed); tick.style.transform = `rotate(${st.rot}deg)`;
+  };
+  const selectParam = (k) => { st.kind = 'param'; st.key = k; st.pending = s[k]; st.rot = 0; refresh(); };
+  const stageMode = (m) => { st.kind = 'mode'; st.pending = m; refresh(); };
+  const bump = (dir) => { if (st.kind !== 'param') return; const p = pmap[st.key]; st.pending = Math.min(p.max, Math.max(p.min, +(st.pending + dir * p.step).toFixed(4))); st.rot += dir * 15; };
+  const confirm = () => {
+    if (st.kind === 'param') { if (st.pending === s[st.key]) return; s[st.key] = st.pending; const p = pmap[st.key]; flashSet(tile, `${p.label} SET ${s[st.key]} ${p.unit} ✓`); }
+    else { if (st.pending === s.mode) return; s.mode = st.pending; flashSet(tile, `MODE SET ${s.mode} ✓`); }
+    pulseMarker(key); refresh();
+  };
+  tile.querySelectorAll('.vk-param').forEach((elp) => (elp.onclick = () => selectParam(elp.dataset.param)));
+  tile.querySelectorAll('.vk-mode').forEach((b) => (b.onclick = () => stageMode(b.dataset.mode)));
+  tile.querySelector('[data-hub]').onclick = (e) => { e.stopPropagation(); confirm(); };
+  let drag = false, lastA = 0, acc = 0;
+  const ang = (e) => { const r = knob.getBoundingClientRect(); return Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180 / Math.PI; };
+  knob.addEventListener('pointerdown', (e) => { if (e.target.closest('[data-hub]')) return; drag = true; lastA = ang(e); acc = 0; try { knob.setPointerCapture(e.pointerId); } catch (_) {} });
+  knob.addEventListener('pointermove', (e) => { if (!drag) return; const a = ang(e); let d = a - lastA; if (d > 180) d -= 360; if (d < -180) d += 360; lastA = a; st.rot += d; acc += d; while (acc >= 15) { acc -= 15; bump(1); } while (acc <= -15) { acc += 15; bump(-1); } refresh(); });
+  knob.addEventListener('pointerup', () => { drag = false; });
+  knob.addEventListener('wheel', (e) => { e.preventDefault(); bump(e.deltaY < 0 ? 1 : -1); refresh(); }, { passive: false });
+  knob.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { bump(1); refresh(); e.preventDefault(); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { bump(-1); refresh(); e.preventDefault(); }
+    else if (e.key === 'Enter' || e.key === ' ') { confirm(); e.preventDefault(); }
+  });
+  refresh();
+}
+function wirePumps(tile, c, s, key) {
+  const cmap = {}; c.channels.forEach((ch) => (cmap[ch.key] = ch));
+  const pend = {}; c.channels.forEach((ch) => (pend[ch.key] = s[ch.key]));
+  const row = (k) => tile.querySelector(`.pm-row[data-ch="${k}"]`);
+  const refresh = (k) => { const ch = cmap[k], r = row(k), changed = pend[k] !== s[k]; const v = r.querySelector('.pm-val'); v.textContent = fmt(pend[k], ch.dp); v.classList.toggle('pending', changed); r.querySelector('.pm-set').disabled = !changed; };
+  c.channels.forEach((ch) => {
+    const r = row(ch.key);
+    r.querySelectorAll('.pm-step').forEach((b) => (b.onclick = () => { const dir = +b.dataset.d; pend[ch.key] = Math.min(ch.max, Math.max(ch.min, +(pend[ch.key] + dir * ch.step).toFixed(4))); refresh(ch.key); }));
+    r.querySelector('.pm-set').onclick = () => { if (pend[ch.key] === s[ch.key]) return; s[ch.key] = pend[ch.key]; refresh(ch.key); flashSet(tile, `${ch.label} SET ${fmt(s[ch.key], ch.dp)} ${ch.unit} ✓`); pulseMarker(key); };
+  });
+}
+function wireIabp(tile, c, s, key) {
+  const pend = { ...s }, confirmBtn = tile.querySelector('[data-confirm]');
+  const dirty = () => (confirmBtn.disabled = pend.ratio === s.ratio && pend.trigger === s.trigger && pend.aug === s.aug && pend.running === s.running);
+  tile.querySelectorAll('.seg[data-seg]').forEach((seg) => {
+    const name = seg.dataset.seg;
+    seg.querySelectorAll('button').forEach((b) => (b.onclick = () => { pend[name] = b.dataset.v; seg.querySelectorAll('button').forEach((x) => { x.classList.toggle('on', x.dataset.v === s[name]); x.classList.toggle('pending', x === b && x.dataset.v !== s[name]); }); dirty(); }));
+  });
+  const slider = tile.querySelector('[data-aug]'), augv = tile.querySelector('[data-augv]');
+  if (slider) slider.oninput = () => { pend.aug = +slider.value; augv.textContent = slider.value + '%'; augv.classList.toggle('pending', pend.aug !== s.aug); dirty(); };
+  const run = tile.querySelector('[data-run]');
+  if (run) run.onclick = () => { pend.running = !pend.running; run.textContent = pend.running ? 'RUNNING' : 'STANDBY'; run.classList.toggle('on', pend.running); run.classList.toggle('pending', pend.running !== s.running); dirty(); };
+  confirmBtn.onclick = () => {
+    Object.assign(s, pend);
+    tile.querySelectorAll('.pending').forEach((x) => x.classList.remove('pending'));
+    tile.querySelectorAll('.seg[data-seg]').forEach((seg) => seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.v === s[seg.dataset.seg])));
+    confirmBtn.disabled = true; flashSet(tile, `IABP SET ${s.ratio} · aug ${s.aug}% · ${s.trigger} ✓`); pulseMarker(key);
+  };
+}
+function wireBands(tile, c, s, key) {
+  const seg = tile.querySelector('.seg[data-seg="band"]'), confirmBtn = tile.querySelector('[data-confirm]');
+  let pend = s.band;
+  seg.querySelectorAll('button').forEach((b) => (b.onclick = () => { pend = +b.dataset.v; seg.querySelectorAll('button').forEach((x) => x.classList.toggle('pending', +x.dataset.v === pend && pend !== s.band)); confirmBtn.disabled = pend === s.band; }));
+  confirmBtn.onclick = () => { s.band = pend; seg.querySelectorAll('button').forEach((x) => { x.classList.toggle('on', +x.dataset.v === s.band); x.classList.remove('pending'); }); confirmBtn.disabled = true; flashSet(tile, `WARMER SET ${bandLabel(s.band)} ✓`); };
+}
+function wireToggle(tile, c, s, key) {
+  const run = tile.querySelector('[data-run]'), confirmBtn = tile.querySelector('[data-confirm]');
+  let pend = s.on;
+  run.onclick = () => { pend = !pend; run.textContent = pend ? 'RUNNING' : 'STANDBY'; run.classList.toggle('on', pend); run.classList.toggle('pending', pend !== s.on); confirmBtn.disabled = pend === s.on; };
+  confirmBtn.onclick = () => { s.on = pend; run.classList.remove('pending'); run.classList.toggle('on', s.on); confirmBtn.disabled = true; flashSet(tile, `FLOWTRON ${s.on ? 'RUNNING' : 'STANDBY'} ✓`); pulseMarker(key); };
+}
+function renderScope() {
+  const el = root && root.querySelector('.pa-scope'); if (!el) return;
+  stopScope();
+  el.innerHTML = scopeView === 'detail' ? scopeDetailHTML(scopeDev) : scopeOverviewHTML();
+  el.querySelectorAll('.sc-wave').forEach((cv) => { const s = makeMiniScope(cv, cv.dataset.wave); s.start(); scopeScopes.push(s); });
+  el.querySelectorAll('.sc-trend').forEach((cv) => { const t = TRENDS[cv.dataset.trend]; if (t) makeTrend(cv, t.series, { target: t.target }); });
+  el.querySelectorAll('[data-open]').forEach((n) => (n.onclick = (e) => { e.stopPropagation(); scopeView = 'detail'; scopeDev = n.dataset.open; renderScope(); }));
+  if (scopeView === 'detail' && CONTROLS[scopeDev]) wireControls(el, scopeDev);
+  const back = el.querySelector('#scBack'); if (back) back.onclick = () => { scopeView = 'overview'; scopeDev = null; renderScope(); };
+  // live numbers (HR / SpO₂ track the bed like the twin's vitals block)
+  scopeTimer = window.setInterval(() => {
+    const b = bedById(state.focusId); if (!b) return;
+    el.querySelectorAll('[data-scv]').forEach((n) => { const k = n.dataset.scv; n.textContent = k === 'bp' ? b.vitals.sys + '/' + b.vitals.dia : k === 'temp' ? b.vitals.temp.toFixed(1) : b.vitals[k]; });
+  }, 1000);
+}
 
 // ---- connected-devices rail (top-right): every machine wired to this patient.
 // Chapter-aware: pre-cath is a quiet room; post-cath the pumps + site checks
@@ -231,8 +489,20 @@ export function initHud(hostSel) {
 
   // Scene 4 · hookup wiring: chat beats drive connects (hud:hookup); hovering
   // a rail row or a glowing body marker surfaces the compact device card.
-  window.addEventListener('hud:hookup:connected', (e) => hookupRail(e.detail ? e.detail.n : hkConnected + 1));
-  window.addEventListener('hud:hookup:reset', hookupReset);
+  window.addEventListener('hud:hookup:connected', (e) => {
+    hookupRail(e.detail ? e.detail.n : hkConnected + 1);
+    if (root.classList.contains('win-scope') && scopeView === 'overview') renderScope(); // undim the new tile
+  });
+  window.addEventListener('hud:hookup:reset', () => {
+    hookupReset();
+    if (root.classList.contains('win-scope')) { scopeView = 'overview'; scopeDev = null; renderScope(); }
+  });
+  // clicking a glow marker (scene.js raycast) opens that machine's feed in SCOPE
+  window.addEventListener('hud:scope:open', (e) => {
+    const mk = e.detail && e.detail.marker;
+    const dev = HOOKUP.slice(0, hkConnected).find((d) => d.marker === mk);
+    if (dev) { scopeView = 'detail'; scopeDev = dev.key; setWindow('scope'); }
+  });
   // card lives on #hud (root) — a positioned, full-size layer — so it sits
   // BESIDE the cursor/marker (patientLayer collapses to ~0 height, which was
   // pinning the card to the top).
@@ -279,11 +549,8 @@ export function initHud(hostSel) {
   const tabs = root.querySelector('#paTabs');
   if (tabs) {
     if (state.chapter !== 'postop') tabs.style.display = 'none';
-    tabs.querySelectorAll('button').forEach((b) => (b.onclick = () => {
-      tabs.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
-      root.classList.remove('win-scope', 'win-watch');
-      if (b.dataset.w !== 'twin') root.classList.add('win-' + b.dataset.w);
-    }));
+    // the tab always lands on the overview — markers are the detail entry
+    tabs.querySelectorAll('button').forEach((b) => (b.onclick = () => { scopeView = 'overview'; scopeDev = null; setWindow(b.dataset.w); }));
   }
 
   // the LSam trajectory block only appears when the story summons it

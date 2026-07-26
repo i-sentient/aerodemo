@@ -38,7 +38,7 @@ export const HOOKUP = [
     full: `size ${POD0.ett.size} · ${POD0.ett.depth} cm at lips · cuff ${POD0.ett.cuff} cmH₂O`, site: 'secured', marker: 'mouth',
     note: `ET tube — size ${POD0.ett.size} secured at ${POD0.ett.depth} cm, cuff ${POD0.ett.cuff} cmH₂O.` },
   { key: 'vent', label: 'Ventilator', short: `${POD0.vent.mode} · FiO₂ ${POD0.vent.fio2}`,
-    full: `${POD0.vent.mode} · FiO₂ ${POD0.vent.fio2}% · PEEP ${POD0.vent.peep} · TV ${POD0.vent.tv} · rate ${POD0.vent.rate}`, site: 'per ventilation order', feeds: ['rr'], marker: 'chestL', waves: ['vent', 'capno'],
+    full: `${POD0.vent.mode} · FiO₂ ${POD0.vent.fio2}% · PEEP ${POD0.vent.peep} · TV ${POD0.vent.tv} · rate ${POD0.vent.rate}`, site: 'per ventilation order', feeds: ['rr'], marker: 'chestL', waves: ['vent', 'flow', 'capno'],
     note: `Ventilator — set to order: ${POD0.vent.mode}, FiO₂ ${POD0.vent.fio2}%, PEEP ${POD0.vent.peep}, TV ${POD0.vent.tv} mL, rate ${POD0.vent.rate}.` },
   { key: 'iabp', label: 'IABP', short: `${POD0.iabp} augmenting`,
     full: `${POD0.iabp} augmentation · timing auto`, site: 'R femoral', marker: 'groin', waves: ['iabp'],
@@ -66,6 +66,157 @@ export const HOOKUP = [
     full: `bedhead · ${POD0.suctionVac} mmHg · standby`, site: 'airway ready',
     note: `Suction — bedhead unit set to ${POD0.suctionVac} mmHg, standby.` },
 ];
+
+// --- SCOPE · trend histories for the numeric devices (last ~6 h, authored) ---
+export const TRENDS = {
+  pumps: { unit: 'µg/kg/min', label: 'noradrenaline', series: [0.16, 0.14, 0.12, 0.10, 0.09, POD0.norad], target: 0 },
+  drains: { unit: 'mL/hr', label: 'combined output', series: [110, 92, 78, 66, 52, POD0.drainRate], target: null },
+  ucath: { unit: 'mL/hr', label: 'hourly urine', series: [30, 34, 42, 50, 38, POD0.urine], target: 35 },
+  warm: { unit: '°C', label: 'core temp', series: [35.2, 35.6, 36.0, 36.4, 36.7, POD0.warmTarget], target: 37 },
+};
+
+// --- SCOPE · the number docked beside each waveform (monitor grammar) --------
+// Every trace carries its own primary readout, coloured to match the trace.
+// 'live' pulls from the bed sim so it ticks; the rest are POD 0 constants.
+export const WAVE_NUM = {
+  ecg:   { l: 'HR', v: POD0.hr, u: 'bpm', live: 'hr' },
+  pleth: { l: 'SpO₂', v: POD0.spo2, u: '%', live: 'spo2' },
+  abp:   { l: 'ART', v: POD0.art, u: `MAP ${POD0.map}`, wide: true },
+  cvp:   { l: 'CVP', v: POD0.cvp, u: 'mmHg' },
+  vent:  { l: 'Ppeak', v: 24, u: 'cmH₂O' },
+  capno: { l: 'EtCO₂', v: 38, u: 'mmHg' },
+  flow:  { l: 'PIF', v: 42, u: 'L/min' },
+  iabp:  { l: 'AUG', v: 118, u: 'mmHg' },
+};
+
+// --- SCOPE · what each machine REPORTS BACK (its measured block) -------------
+// This is the density that makes a device page feel like the real instrument:
+// set values are in CONTROLS, these are the readings the machine returns.
+// w = colour key (matches its waveform) · live = tracks the bed sim.
+export const MEASURED = {
+  monitor: [
+    { l: 'HR', v: POD0.hr, u: 'bpm', w: 'ecg', live: 'hr' }, { l: 'SpO₂', v: POD0.spo2, u: '%', w: 'pleth', live: 'spo2' },
+    { l: 'RR', v: POD0.vent.rate, u: '/min', w: 'vent' }, { l: 'Temp', v: '36.4', u: '°C' },
+    { l: 'Rhythm', v: 'SR' }, { l: 'Ectopy', v: 'nil' },
+  ],
+  art: [
+    { l: 'Systolic', v: 96, u: 'mmHg', w: 'abp' }, { l: 'Diastolic', v: 54, u: 'mmHg', w: 'abp' },
+    { l: 'MAP', v: POD0.map, u: 'mmHg', w: 'abp' }, { l: 'Pulse press', v: 42, u: 'mmHg' },
+    { l: 'Damping', v: 'optimal' }, { l: 'Zeroed', v: '00:40' },
+  ],
+  cvc: [
+    { l: 'CVP', v: POD0.cvp, u: 'mmHg', w: 'cvp' }, { l: 'a-wave', v: 11, u: 'mmHg', w: 'cvp' },
+    { l: 'v-wave', v: 9, u: 'mmHg', w: 'cvp' }, { l: 'ScvO₂', v: 68, u: '%' },
+    { l: 'Lumens', v: '4 · patent' }, { l: 'Tip', v: 'SVC/RA' },
+  ],
+  ett: [
+    { l: 'Size', v: POD0.ett.size, u: 'mm' }, { l: 'At lips', v: POD0.ett.depth, u: 'cm' },
+    { l: 'Cuff', v: POD0.ett.cuff, u: 'cmH₂O' }, { l: 'Leak', v: 'nil' },
+    { l: 'CXR', v: 'confirmed' }, { l: 'Secured', v: 'tie' },
+  ],
+  vent: [
+    { l: 'Ppeak', v: 24, u: 'cmH₂O', w: 'vent' }, { l: 'Pplat', v: 18, u: 'cmH₂O', w: 'vent' },
+    { l: 'PEEP', v: POD0.vent.peep, u: 'cmH₂O', w: 'vent' }, { l: 'Vte', v: 465, u: 'mL' },
+    { l: 'MV', v: '6.7', u: 'L/min' }, { l: 'I:E', v: '1:2.1' },
+    { l: 'Cstat', v: 34, u: 'mL/cmH₂O' }, { l: 'Raw', v: 8, u: 'cmH₂O/L/s' },
+    { l: 'EtCO₂', v: 38, u: 'mmHg', w: 'capno' }, { l: 'PIF', v: 42, u: 'L/min', w: 'flow' },
+  ],
+  iabp: [
+    { l: 'Unassisted sys', v: 96, u: 'mmHg', w: 'iabp' }, { l: 'Aug diastolic', v: 118, u: 'mmHg', w: 'iabp' },
+    { l: 'Assisted EDP', v: 48, u: 'mmHg', w: 'iabp' }, { l: 'Balloon', v: 40, u: 'cc' },
+    { l: 'Helium', v: 'ok' }, { l: 'Timing', v: 'auto' },
+  ],
+  pumps: [
+    { l: 'Noradrenaline', v: POD0.norad, u: 'µg/kg/min' }, { l: 'Dobutamine', v: POD0.dobut, u: 'µg/kg/min' },
+    { l: 'Norad volume', v: 14, u: 'mL' }, { l: 'Syringe left', v: 36, u: 'mL' },
+    { l: 'Line', v: 'central' }, { l: 'Occlusion', v: 'nil' },
+  ],
+  drains: [
+    { l: 'Last hour', v: POD0.drainRate, u: 'mL' }, { l: '4-h total', v: 236, u: 'mL' },
+    { l: 'Since arrival', v: 310, u: 'mL' }, { l: 'Suction', v: POD0.drainSuction, u: 'cmH₂O' },
+    { l: 'Swinging', v: 'yes' }, { l: 'Clots', v: 'nil' },
+  ],
+  ucath: [
+    { l: 'Last hour', v: POD0.urine, u: 'mL' }, { l: '4-h total', v: 164, u: 'mL' },
+    { l: 'Since arrival', v: 219, u: 'mL' }, { l: 'Per kg', v: '0.6', u: 'mL/kg/hr' },
+    { l: 'Colour', v: 'clear' }, { l: 'Balance', v: '+1.2 L' },
+  ],
+  warm: [
+    { l: 'Core temp', v: '36.4', u: '°C' }, { l: 'Target', v: POD0.warmTarget.toFixed(1), u: '°C' },
+    { l: 'Delta', v: '−0.6', u: '°C' }, { l: 'Blanket', v: 'upper body' },
+    { l: 'Rate', v: '+0.4', u: '°C/hr' }, { l: 'Shivering', v: 'nil' },
+  ],
+  flowtron: [
+    { l: 'Pressure', v: 45, u: 'mmHg' }, { l: 'Cycle', v: 60, u: 's' },
+    { l: 'Garment', v: 'calf' }, { l: 'Both legs', v: 'yes' },
+  ],
+  suction: [
+    { l: 'Vacuum', v: POD0.suctionVac, u: 'mmHg' }, { l: 'Mode', v: 'standby' },
+    { l: 'Canister', v: 20, u: 'mL' }, { l: 'Catheter', v: '14 Fr' },
+  ],
+};
+
+// --- SCOPE · extra detail lines per device (the full-interface view) ---------
+export const SCOPE_DETAIL = {
+  monitor: ['Alarms: HR 50–130 · SpO₂ ≥ 90%', '5-lead · paced-rhythm detection ON'],
+  art: [`MAP target ≥ ${POD0.map} (per orders)`, 'Zeroed at phlebostatic axis'],
+  cvc: ['Target CVP 8–12 (per orders)', '4-lumen · distal port transduced'],
+  ett: [`Size ${POD0.ett.size} · secured ${POD0.ett.depth} cm at lips`, `Cuff ${POD0.ett.cuff} cmH₂O`, 'Position confirmed on CXR'],
+  vent: ['Wean & extubate when awake, gases acceptable (per orders)', 'ABG 4-hourly · next due 04:00'],
+  iabp: ['Trigger: ECG · timing auto', 'Wean overnight if cardiac index holds'],
+  pumps: [`Noradrenaline ${POD0.norad} + dobutamine ${POD0.dobut} µg/kg/min`, `Weaning to MAP ≥ ${POD0.map} (per orders)`],
+  drains: [`Suction ${POD0.drainSuction} cmH₂O · swinging, no clots`, 'Escalate: > 200 mL/hr, or > 100 ×4 h (per orders)', 'Nurse recon: hourly measure'],
+  ucath: ['Target ≥ 0.5 mL/kg/hr (per orders)', 'Nurse recon: hourly volumes'],
+  warm: [`Target ${POD0.warmTarget.toFixed(1)} °C · forced-air`, 'Rewarming after bypass'],
+  flowtron: ['Both calves · continuous cycling', 'Mechanical DVT prophylaxis'],
+  suction: [`Set ${POD0.suctionVac} mmHg · standby`, 'Bedhead · airway ready'],
+};
+
+// --- SCOPE · on-device CONTROLS for the 5 actuators we can actually command --
+// Each mirrors the real machine's control surface AND its step size, so setting
+// it here maps 1:1 onto the bedside panel. 'seed' = current setting (from POD0).
+// Every change stages as PENDING until confirm — the same select → set → confirm
+// interlock the device enforces itself. The other 7 devices are sensors /
+// passive lines (read-only) and carry no control panel.
+export const CONTROLS = {
+  vent: {
+    kind: 'knob',                                   // push-and-turn rotary + tiles + mode menu
+    modes: ['SIMV', 'PC-AC', 'PSV', 'ASV'],
+    params: [
+      { key: 'fio2', label: 'FiO₂', unit: '%', min: 21, max: 100, step: 5 },
+      { key: 'peep', label: 'PEEP', unit: 'cmH₂O', min: 0, max: 20, step: 1 },
+      { key: 'tv', label: 'Vt', unit: 'mL', min: 300, max: 700, step: 10 },
+      { key: 'rate', label: 'f', unit: '/min', min: 6, max: 35, step: 1 },
+    ],
+    seed: { mode: POD0.vent.mode, fio2: POD0.vent.fio2, peep: POD0.vent.peep, tv: POD0.vent.tv, rate: POD0.vent.rate },
+  },
+  pumps: {
+    kind: 'pumps',                                  // per-channel titrate + confirm (DERS limits)
+    channels: [
+      { key: 'norad', label: 'Noradrenaline', unit: 'µg/kg/min', min: 0, max: 0.5, step: 0.01, dp: 2 },
+      { key: 'dobut', label: 'Dobutamine', unit: 'µg/kg/min', min: 0, max: 20, step: 0.5, dp: 1 },
+    ],
+    seed: { norad: POD0.norad, dobut: POD0.dobut },
+  },
+  iabp: {
+    kind: 'iabp',                                   // ratio + trigger + augment%, one CONFIRM
+    ratios: ['1:1', '1:2', '1:3'],
+    triggers: ['ECG', 'Pressure', 'Internal'],
+    aug: { min: 0, max: 100, step: 5, unit: '%' },
+    seed: { ratio: POD0.iabp, trigger: 'ECG', aug: 100, running: true },
+  },
+  warm: {
+    kind: 'bands',                                  // Bair Hugger temperature bands
+    context: `patient core target ${POD0.warmTarget.toFixed(1)} °C`,
+    bands: [{ label: 'Off', v: 0 }, { label: '32°', v: 32 }, { label: '38°', v: 38 }, { label: '43°', v: 43 }],
+    seed: { band: 38 },                             // medium — rewarming post-bypass
+  },
+  flowtron: {
+    kind: 'toggle',                                 // run / standby (garment auto)
+    context: 'garment auto · calf · 45 mmHg preset',
+    seed: { on: true },
+  },
+};
 
 // --- the post-op ORDERS & PLAN block (reads the SAME POD0) -------------------
 export const POD0_ORDERS = [

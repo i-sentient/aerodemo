@@ -74,6 +74,17 @@ body{font-family:var(--font);color:var(--ink);background:radial-gradient(1200px 
 .gutter::after{content:"";position:absolute;top:0;bottom:0;left:3px;width:1px;background:var(--line);transition:background .15s,box-shadow .15s}
 .gutter:hover::after,.gutter.dragging::after{background:var(--glass-brd);box-shadow:0 0 8px rgba(120,160,200,.35)}
 body.resizing{cursor:col-resize;user-select:none;-webkit-user-select:none}
+/* collapse handle riding the B|C boundary — folds Panel C away and gives the
+   width back to the stage. The chevron points where the panel is headed. */
+.pc-toggle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:24px;height:24px;padding:0;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:9;border:1px solid var(--glass-brd);background:var(--bg2);color:var(--ink-3);box-shadow:0 2px 8px rgba(20,45,60,.18);transition:color .16s,box-shadow .16s,transform .16s}
+.pc-toggle::before{content:"›";font:700 15px/1 var(--mono);transform:translateY(-1px)}
+body.pc-collapsed .pc-toggle::before{content:"‹"}
+.pc-toggle:hover{color:var(--ink);box-shadow:0 3px 12px rgba(20,45,60,.3);transform:translate(-50%,-50%) scale(1.08)}
+.pc-toggle:focus-visible{outline:2px solid var(--ink-3);outline-offset:2px}
+body.pc-collapsed #gutBC{cursor:default}
+body.pc-collapsed #gutBC::after{opacity:0}
+/* only animate on the fold — a per-frame transition would lag the drag */
+#panels.anim{transition:grid-template-columns .3s cubic-bezier(.4,0,.2,1)}
 .panel-hd{display:flex;align-items:center;gap:9px;padding:13px 16px 11px;flex:0 0 auto;position:relative;z-index:1}
 .panel-hd .t{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
 .panel-hd .accent{width:7px;height:7px;border-radius:50%;background:var(--ink-3)}
@@ -395,7 +406,7 @@ body.theme-dark .rise.readout,body.theme-dark .rise.wave{background:rgba(16,24,3
 .pa-tabs button{font:700 10px/1 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.14em;color:#5b7d88;background:rgba(255,255,255,.55);border:1px solid rgba(120,160,180,.35);border-radius:7px;padding:6px 11px;cursor:pointer;backdrop-filter:blur(6px)}
 .pa-tabs button:hover{color:#2f5f6f}
 .pa-tabs button.on{color:#f4fbfd;background:#2f8d8e;border-color:#2f8d8e}
-.pa-win{display:none;position:absolute;inset:0;z-index:5;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(241,245,247,.97)}
+.pa-win{display:none;position:absolute;inset:0;z-index:5;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(241,245,247,.97);pointer-events:auto}
 #hud.win-scope .pa-scope{display:flex}
 #hud.win-watch .pa-watch{display:flex}
 .pw-tk{font:700 11px/1 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.16em;color:#2f5f6f}
@@ -406,6 +417,157 @@ body.theme-dark .pa-tabs button.on{color:#06131a;background:#5fd0e6;border-color
 body.theme-dark .pa-win{background:rgba(10,15,21,.97)}
 body.theme-dark .pw-tk{color:#9fd5e2}
 body.theme-dark .pw-empty{color:#5f7d86}
+
+/* ---- Scene 4 · SCOPE: the monitor wall (overview tiles + machine detail) -- */
+/* each parameter owns a colour — the trace, its docked number and its stat all
+   read the same hue, so the page scans like an instrument instead of a form */
+#hud .pa-scope{--w-ecg:#159a56;--w-pleth:#1f8fb0;--w-abp:#d84a44;--w-cvp:#5a78bc;--w-vent:#2f80b8;--w-flow:#2a8f7a;--w-capno:#b0891a;--w-iabp:#d86a30;
+  align-items:stretch;justify-content:flex-start;gap:7px;padding:44px 12px 10px}
+body.theme-dark #hud .pa-scope{--w-ecg:#2fbf71;--w-pleth:#57c8e0;--w-abp:#ff6a64;--w-cvp:#9db6e6;--w-vent:#5fb0e0;--w-flow:#7fd4c1;--w-capno:#e0b34c;--w-iabp:#ff8a5a}
+.sc-hd{display:flex;align-items:center;gap:8px;flex:none}
+.sc-t{flex:none;font:700 12px/1 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.14em;color:#2f5f6f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc-sub{flex:1;min-width:0;font:500 9px/1 "JetBrains Mono","SF Mono",Consolas,monospace;color:#8aa3ab;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#scBack{font:700 13px/1 "JetBrains Mono","SF Mono",Consolas,monospace;color:#2f8d8e;background:rgba(47,141,142,.1);border:1px solid rgba(47,141,142,.4);border-radius:6px;padding:4px 8px;cursor:pointer;flex:none}
+#scBack:hover{background:rgba(47,141,142,.18)}
+.sc-hd #scBack + .sc-t{flex:1}
+.sc-live{display:flex;align-items:center;gap:5px;font:700 9px/1 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.12em;color:#159a56}
+.sc-live i{width:6px;height:6px;border-radius:50%;background:#159a56;animation:scblink 1.6s infinite}
+@keyframes scblink{50%{opacity:.25}}
+.sc-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:7px;padding-right:2px}
+.sc-tile{flex:none;background:rgba(255,255,255,.66);border:1px solid rgba(120,160,180,.32);border-radius:10px;padding:7px 9px;display:flex;flex-direction:column;gap:5px}
+.sc-tile.sc-off,.sc-click.sc-off,.sc-cell.sc-off,.sc-chip.sc-off{opacity:.35;pointer-events:none;filter:saturate(.4)}
+.sc-th{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font:700 9.5px/1 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.12em;color:#2f5f6f}
+.sc-set{font:600 8.5px/1.4 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.02em;color:#8aa3ab;text-align:right}
+.sc-ok{flex:none;font:700 8px/1 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.09em;color:#159a56;background:rgba(21,154,86,.1);border:1px solid rgba(21,154,86,.3);border-radius:5px;padding:4px 6px;white-space:nowrap}
+.sc-click{border-radius:7px;cursor:pointer;padding:1px 3px;margin:0 -3px}
+.sc-click:hover{background:rgba(47,141,142,.07)}
+/* LANE — trace runs full width, its primary number docked right, both tinted */
+.sc-lane{display:flex;align-items:center;gap:7px;padding:2px 0}
+.sc-lane + .sc-lane{border-top:1px solid rgba(120,160,180,.16)}
+/* no border/box — a boxed trace reads as a form input; on a monitor the trace
+   simply sits on the panel with a hairline baseline behind it */
+.sc-wave{display:block;flex:1;min-width:0;border-radius:3px;background:linear-gradient(rgba(28,52,64,.035),rgba(28,52,64,.035))}
+.sc-lv{flex:none;width:58px;display:flex;flex-direction:column;align-items:flex-end;line-height:1;color:var(--wc)}
+.sc-lv span{font:600 7.5px/1 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;opacity:.72}
+.sc-lv b{font:700 21px/1.06 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:-.02em}
+.sc-lv i{font:600 7.5px/1 "JetBrains Mono","SF Mono",Consolas,monospace;font-style:normal;opacity:.7}
+.sc-lv.wide{width:70px}
+.sc-lv.wide b{font-size:15px}
+/* MEASURED — the machine's own readback, 3-up dense */
+.sc-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.sc-stat{display:flex;flex-direction:column;gap:1px;line-height:1;min-width:0}
+.sc-stat span{font:600 7.5px/1.2 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.05em;text-transform:uppercase;color:#8aa3ab;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc-stat b{font:700 14px/1.15 "JetBrains Mono","SF Mono",Consolas,monospace;color:#12343c}
+.sc-stat b.tint{color:var(--wc)}
+.sc-stat i{font:600 7.5px/1 "JetBrains Mono","SF Mono",Consolas,monospace;font-style:normal;color:#8aa3ab}
+/* setting chips — what it's SET to, beside what it measures */
+.sc-setchips{display:flex;flex-wrap:wrap;gap:4px}
+.sc-sch{display:inline-flex;align-items:baseline;gap:4px;font:700 10px/1 "JetBrains Mono","SF Mono",Consolas,monospace;color:#12343c;background:rgba(47,141,142,.07);border:1px solid rgba(120,160,180,.25);border-radius:5px;padding:4px 6px}
+.sc-sch i{font:600 7.5px/1 "JetBrains Mono","SF Mono",Consolas,monospace;font-style:normal;color:#8aa3ab;letter-spacing:.06em;text-transform:uppercase}
+.sc-trend{display:block;width:100%;height:34px}
+.sc-trend.big{height:96px;background:rgba(28,52,64,.05);border:1px solid rgba(120,160,180,.2);border-radius:6px}
+.sc-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sc-cell{display:flex;flex-direction:column;gap:2px;align-items:stretch;text-align:left;background:rgba(255,255,255,.5);border:1px solid rgba(120,160,180,.3);border-radius:8px;padding:6px 8px;cursor:pointer}
+.sc-cell:hover{border-color:#2f8d8e;background:rgba(47,141,142,.06)}
+.sc-cl{font:600 8.5px/1 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.08em;color:#5b7d88;text-transform:uppercase}
+.sc-cv{font:700 11.5px/1.2 "JetBrains Mono","SF Mono",Consolas,monospace;color:#12343c}
+.sc-chips{display:flex;gap:6px;flex:none}
+.sc-chip{font:600 9.5px/1 "JetBrains Mono","SF Mono",Consolas,monospace;letter-spacing:.04em;color:#3f6570;background:rgba(255,255,255,.55);border:1px solid rgba(120,160,180,.32);border-radius:7px;padding:6px 9px;cursor:pointer;text-align:left}
+.sc-chip:hover{border-color:#2f8d8e;color:#1f4a52}
+.sc-info{gap:0}
+.sc-il{font:500 10.5px/1.75 "JetBrains Mono","SF Mono",Consolas,monospace;color:#3b565f}
+.sc-il:first-child{font-weight:700;color:#1f4a52}
+body.theme-dark .sc-t,body.theme-dark .sc-th{color:#9fd5e2}
+body.theme-dark .sc-sub,body.theme-dark .sc-set,body.theme-dark .sc-stat span,body.theme-dark .sc-stat i,body.theme-dark .sc-sch i{color:#5f7d86}
+body.theme-dark .sc-tile{background:rgba(16,24,32,.6);border-color:rgba(120,180,200,.2)}
+body.theme-dark .sc-stat b,body.theme-dark .sc-sch{color:#dff2f8}
+body.theme-dark .sc-lane + .sc-lane{border-color:rgba(120,180,200,.14)}
+body.theme-dark .sc-sch{background:rgba(95,208,230,.07);border-color:rgba(120,180,200,.2)}
+body.theme-dark .sc-ok{color:#4fdf8f;background:rgba(79,223,143,.1);border-color:rgba(79,223,143,.28)}
+body.theme-dark .sc-click:hover{background:rgba(95,208,230,.07)}
+body.theme-dark .sc-wave{background:linear-gradient(rgba(4,9,14,.55),rgba(4,9,14,.55))}
+body.theme-dark .sc-trend.big{background:rgba(4,9,14,.85);border-color:rgba(120,180,200,.18)}
+body.theme-dark .sc-cell{background:rgba(16,24,32,.5);border-color:rgba(120,180,200,.22)}
+body.theme-dark .sc-cell:hover{border-color:#5fd0e6;background:rgba(95,208,230,.08)}
+body.theme-dark .sc-cl{color:#7f9aa2}
+body.theme-dark .sc-cv{color:#dff2f8}
+body.theme-dark .sc-chip{color:#a9c4cc;background:rgba(16,24,32,.55);border-color:rgba(120,180,200,.22)}
+body.theme-dark .sc-chip:hover{border-color:#5fd0e6;color:#dff2f8}
+body.theme-dark #scBack{color:#5fd0e6;background:rgba(95,208,230,.1);border-color:rgba(95,208,230,.4)}
+body.theme-dark #scBack:hover{background:rgba(95,208,230,.18)}
+body.theme-dark .sc-live{color:#4fdf8f}
+body.theme-dark .sc-live i{background:#4fdf8f}
+body.theme-dark .sc-il{color:#a9c4cc}
+body.theme-dark .sc-il:first-child{color:#dff2f8}
+
+/* ---- Scene 4 · SCOPE control panels (the on-device actuator controls) ----- */
+.sc-ctrl{gap:8px}
+.sc-setmsg{max-height:0;overflow:hidden;opacity:0;transition:.28s;font:700 9.5px/1.4 var(--mono);letter-spacing:.07em;color:#159a56}
+.sc-setmsg.on{max-height:20px;opacity:1;margin-top:1px}
+.sc-ro{font:700 8.5px/1 var(--mono);letter-spacing:.12em;color:#8a9aa0;background:rgba(120,140,150,.14);border:1px solid rgba(120,140,150,.3);border-radius:5px;padding:4px 7px}
+/* ventilator: push-and-turn knob + parameter tiles + mode menu */
+.vk-modes{display:flex;gap:5px}
+.vk-mode{flex:1;font:700 9.5px/1 var(--mono);letter-spacing:.05em;color:#5b7d88;background:rgba(255,255,255,.5);border:1px solid rgba(120,160,180,.32);border-radius:6px;padding:6px 4px;cursor:pointer}
+.vk-mode.on{color:#f4fbfd;background:#2f8d8e;border-color:#2f8d8e}
+.vk-mode.pending{border-color:#b7791f;color:#b7791f;box-shadow:0 0 0 1px #b7791f inset}
+.vk-body{display:flex;gap:10px;align-items:center}
+.vk-params{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.vk-param{display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:rgba(255,255,255,.5);border:1px solid rgba(120,160,180,.3);border-radius:7px;padding:5px 8px;cursor:pointer;text-align:left}
+.vk-param.sel{border-color:#2f8d8e;background:rgba(47,141,142,.08)}
+.vk-param.pending{border-color:#b7791f;background:rgba(183,121,31,.08)}
+.vk-pl{font:600 8px/1 var(--mono);letter-spacing:.07em;color:#5b7d88;text-transform:uppercase}
+.vk-pv{font:700 15px/1.1 var(--mono);color:#12343c}
+.vk-param.pending .vk-pv{color:#b7791f}
+.vk-pu{font:600 8px/1 var(--mono);font-style:normal;color:#8aa3ab}
+.vk-knobwrap{display:flex;flex-direction:column;align-items:center;gap:5px;flex:none}
+.vk-knob{position:relative;width:84px;height:84px;border-radius:50%;background:radial-gradient(circle at 50% 38%,#f4f8fa,#d3dee3 70%,#bccad0);border:1px solid rgba(90,130,150,.5);box-shadow:0 2px 6px rgba(20,50,60,.18),inset 0 1px 2px rgba(255,255,255,.7);cursor:grab;touch-action:none;outline:none}
+.vk-knob:focus-visible{box-shadow:0 0 0 2px #2f8d8e}
+.vk-knob:active{cursor:grabbing}
+.vk-tick{position:absolute;left:50%;top:6px;width:3px;height:14px;margin-left:-1.5px;border-radius:2px;background:#2f8d8e;transform-origin:50% 36px}
+.vk-hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;border:1px solid rgba(90,130,150,.4);background:radial-gradient(circle at 50% 40%,#fff,#e7eef1);font:700 8.5px/1 var(--mono);letter-spacing:.1em;color:#2f5f6f;cursor:pointer}
+.vk-hub:hover{color:#2f8d8e}
+.vk-read{font:700 10px/1.2 var(--mono);letter-spacing:.03em;color:#5b7d88;text-align:center;min-height:12px}
+.vk-read.live{color:#b7791f}
+/* pumps: titrate + confirm per channel */
+.pm-row{display:flex;align-items:center;gap:7px}
+.pm-name{flex:1;font:600 10px/1.2 var(--mono);color:#2f5f6f}
+.pm-name i{display:block;font-style:normal;font-size:8px;color:#8aa3ab;letter-spacing:.04em}
+.pm-step{width:26px;height:26px;border-radius:6px;border:1px solid rgba(120,160,180,.35);background:rgba(255,255,255,.6);font:700 15px/1 var(--mono);color:#2f5f6f;cursor:pointer}
+.pm-step:hover{border-color:#2f8d8e;color:#2f8d8e}
+.pm-val{min-width:44px;text-align:center;font:700 14px/1 var(--mono);color:#12343c}
+.pm-val.pending{color:#b7791f}
+.pm-set,.sc-confirm{font:700 9.5px/1 var(--mono);letter-spacing:.08em;color:#f4fbfd;background:#2f8d8e;border:1px solid #2f8d8e;border-radius:6px;padding:7px 11px;cursor:pointer}
+.sc-confirm{align-self:flex-start}
+.pm-set:disabled,.sc-confirm:disabled{opacity:.45;cursor:default;background:transparent;color:#8aa3ab}
+/* iabp / warmer bands / flowtron toggle */
+.ib-line{display:flex;align-items:center;gap:8px}
+.ib-lbl{width:56px;font:600 9px/1 var(--mono);letter-spacing:.05em;color:#5b7d88;text-transform:uppercase}
+.seg{display:flex;gap:3px;flex:1}
+.seg button{flex:1;font:700 9.5px/1 var(--mono);color:#5b7d88;background:rgba(255,255,255,.5);border:1px solid rgba(120,160,180,.32);border-radius:6px;padding:6px 6px;cursor:pointer}
+.seg button.on{color:#f4fbfd;background:#2f8d8e;border-color:#2f8d8e}
+.seg button.pending{border-color:#b7791f;color:#b7791f;box-shadow:0 0 0 1px #b7791f inset}
+.ib-slider{flex:1;accent-color:#2f8d8e}
+.ib-augv{width:38px;text-align:right;font:700 11px/1 var(--mono);color:#12343c}
+.ib-augv.pending{color:#b7791f}
+.ib-run{flex:1;font:700 9.5px/1 var(--mono);letter-spacing:.07em;color:#2f5f6f;background:rgba(255,255,255,.55);border:1px solid rgba(120,160,180,.35);border-radius:6px;padding:7px 12px;cursor:pointer}
+.ib-run.on{color:#f4fbfd;background:#159a56;border-color:#159a56}
+.ib-run.pending{border-color:#b7791f;color:#b7791f}
+body.theme-dark .vk-mode,body.theme-dark .vk-param,body.theme-dark .seg button,body.theme-dark .pm-step,body.theme-dark .ib-run{background:rgba(16,24,32,.5);border-color:rgba(120,180,200,.22);color:#a9c4cc}
+body.theme-dark .vk-mode.on,body.theme-dark .seg button.on{background:#5fd0e6;border-color:#5fd0e6;color:#06131a}
+body.theme-dark .vk-param.sel{border-color:#5fd0e6;background:rgba(95,208,230,.1)}
+body.theme-dark .vk-pv,body.theme-dark .pm-val,body.theme-dark .ib-augv{color:#dff2f8}
+body.theme-dark .vk-knob{background:radial-gradient(circle at 50% 38%,#2a3a44,#151f28 70%,#0c141b);border-color:rgba(120,180,200,.3);box-shadow:0 2px 6px rgba(0,0,0,.4),inset 0 1px 2px rgba(255,255,255,.08)}
+body.theme-dark .vk-hub{background:radial-gradient(circle at 50% 40%,#243139,#131c24);border-color:rgba(120,180,200,.25);color:#9fd5e2}
+body.theme-dark .vk-tick{background:#5fd0e6}
+body.theme-dark .pm-set,body.theme-dark .sc-confirm{background:#2f8d8e;border-color:#2f8d8e;color:#eafcff}
+body.theme-dark .pm-set:disabled,body.theme-dark .sc-confirm:disabled{background:transparent;color:#5f7d86}
+body.theme-dark .ib-run.on{background:#2f9d63;border-color:#2f9d63;color:#eafff4}
+body.theme-dark .pm-name,body.theme-dark .ib-lbl,body.theme-dark .vk-pl,body.theme-dark .vk-read,body.theme-dark .vk-pu{color:#7f9aa2}
+body.theme-dark .sc-setmsg{color:#4fdf8f}
+body.theme-dark .sc-ro{color:#7f9aa2;background:rgba(120,150,160,.12);border-color:rgba(120,150,160,.28)}
+body.theme-dark .vk-mode.pending,body.theme-dark .seg button.pending{border-color:#e0b34c;color:#e0b34c;box-shadow:0 0 0 1px #e0b34c inset}
+body.theme-dark .vk-read.live,body.theme-dark .vk-param.pending .vk-pv,body.theme-dark .pm-val.pending,body.theme-dark .ib-augv.pending,body.theme-dark .ib-run.pending{color:#e0b34c}
+body.theme-dark .vk-param.pending{border-color:#e0b34c;background:rgba(224,179,76,.08)}
 
 /* ---- Scene 4 · beat 0: CONNECTED rail (Panel A) --------------------------- */
 .hk-count{float:right;font-weight:700;color:#2f8d8e;letter-spacing:.06em}

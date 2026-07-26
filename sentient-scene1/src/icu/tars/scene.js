@@ -408,6 +408,8 @@ function applyMarkers(detail) {
   }
 }
 window.addEventListener('hud:markers', (e) => applyMarkers(e.detail));
+// a control confirm in SCOPE pings that device's marker on the twin
+window.addEventListener('hud:marker:pulse', (e) => { const m = e.detail && e.detail.marker, s = m && bodyMarkers[m]; if (s) s.userData.ping = 1; });
 function updateMarkers(dt) {
   for (const k of Object.keys(bodyMarkers)) {
     const s = bodyMarkers[k], u = s.userData;
@@ -472,7 +474,12 @@ function heartHit(e) {
   return raycaster.intersectObjects(human.heartMeshes, false)[0] || null;
 }
 function onPointerDown(e) {
-  if (displayMode === 'patient') { if (heartHit(e)) toggleHeartZoom(); return; }
+  if (displayMode === 'patient') {
+    // a glow-marker click → that machine's full feed in SCOPE (hud.js listens)
+    const mh = markerHit(e);
+    if (mh) { window.dispatchEvent(new CustomEvent('hud:scope:open', { detail: { marker: mh.object.userData.deviceKey } })); return; }
+    if (heartHit(e)) toggleHeartZoom(); return;
+  }
   if (displayMode !== 'floor') return;
   const r = canvas.getBoundingClientRect();
   ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1;

@@ -25,7 +25,9 @@ export const TARS_HTML = `
       <!-- PANEL B : SPLIT 2 — agent-swap surface (built by chat.js) -->
       <div class="panel" id="panelB"></div>
 
-      <div class="gutter" id="gutBC" title="Drag to resize"></div>
+      <div class="gutter" id="gutBC" title="Drag to resize">
+        <button class="pc-toggle" id="pcToggle" type="button" aria-expanded="true" aria-label="Hide clinical apps" title="Hide clinical apps"></button>
+      </div>
 
       <!-- PANEL C : apps + dock (light) -->
       <div class="panel" id="panelC">
