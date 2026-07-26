@@ -21,6 +21,12 @@ const GLOW = glowTexture();
 const HOME = { pos: new THREE.Vector3(0, 24, -14), look: new THREE.Vector3(0, 0.3, 3) }; // ring overview — the whole 8-bed ICU ring (matches the ward tour's final shot)
 const PATIENT = { pos: new THREE.Vector3(0, 1.12, 4.1), look: new THREE.Vector3(0, 0.95, 0) };
 const HEART = { pos: new THREE.Vector3(0.03, 1.34, 0.82), look: new THREE.Vector3(0.02, 1.31, 0.14) }; // tight close-up centred on the heart
+const BEDCAM = { pos: new THREE.Vector3(0, 3.2, 2.3), look: new THREE.Vector3(0, 0.9, -0.05) }; // WATCH supine: raised foot-of-bed view — the lying body runs up the tall panel
+// WATCH upright: BEDSIDE view — near-side-on, because hip/knee flexion only
+// reads in profile (front-on foreshortens a sitting figure into a blob). The
+// narrow panel only shows ~0.97 m of width at this range, which is just enough
+// for a seated thigh or a walking stride.
+const WATCHCAM = { pos: new THREE.Vector3(-3.55, 1.18, 0.32), look: new THREE.Vector3(0, 0.9, 0.22) };
 
 let renderer, composer, renderPass, bloom, camera, canvas;
 let floorScene, patientScene, human;
@@ -420,7 +426,7 @@ function updateMarkers(dt) {
   }
 }
 function markerHit(e) {
-  if (displayMode !== 'patient' || state.chapter !== 'postop' || !figs.body) return null;
+  if (displayMode !== 'patient' || state.chapter !== 'postop' || !figs.body || activeLayer !== 'body') return null;
   const live = Object.values(bodyMarkers).filter((s) => s.userData.on);
   if (!live.length) return null;
   const r = canvas.getBoundingClientRect();
@@ -428,6 +434,178 @@ function markerHit(e) {
   raycaster.setFromCamera(ptr, camera);
   return raycaster.intersectObjects(live, false)[0] || null;
 }
+
+// ---- Scene 4 · WATCH — the rigged grid twin --------------------------------
+// body.glb ships as a single unrigged shell, so we rig it PROCEDURALLY: an
+// armature authored from anthropometric fractions of the figure's own height,
+// capsule-distance skin weights, and clinical poses (supine / edge-of-bed /
+// standing / walking) tweened on the bones. The wireframe lattice shader reads
+// PRE-skinned object space, so the grid stays glued to the body as limbs bend.
+function makeRiggedFigure(gltf) {
+  let src = null; gltf.scene.traverse((o) => { if (o.isMesh && !src) src = o; });
+  robustPlace(gltf.scene, 1.81); gltf.scene.updateMatrixWorld(true);
+  const geo = src.geometry.clone().applyMatrix4(src.matrixWorld); // bake stage placement
+  const H = 1.81, D2R = THREE.MathUtils.degToRad;
+
+  // joints: [x, y, z] as fractions of height (x mirrored per side). Heights are
+  // standard anthropometry; lateral offsets match this mesh's near-A-pose (max
+  // |x| ≈ 0.198·H at the hands).
+  const JF = {
+    hips: [0, 0.530], spine: [0, 0.585], chest: [0, 0.660], neck: [0, 0.810], head: [0, 0.870], headTop: [0, 0.995],
+    shL: [0.129, 0.800], elL: [0.160, 0.650], wrL: [0.185, 0.500], haL: [0.198, 0.435],
+    shR: [-0.129, 0.800], elR: [-0.160, 0.650], wrR: [-0.185, 0.500], haR: [-0.198, 0.435],
+    hipL: [0.058, 0.515], knL: [0.062, 0.285], anL: [0.066, 0.048], toL: [0.066, 0.018, 0.065],
+    hipR: [-0.058, 0.515], knR: [-0.062, 0.285], anR: [-0.066, 0.048], toR: [-0.066, 0.018, 0.065],
+  };
+  const P = {}; for (const k in JF) P[k] = new THREE.Vector3(JF[k][0] * H, JF[k][1] * H, (JF[k][2] || 0) * H);
+
+  // bones: [name, parent, head joint, tail joint, capsule radius (m)]
+  const DEF = [
+    ['hips', null, 'hips', 'spine', 0.165], ['spine', 'hips', 'spine', 'chest', 0.165], ['chest', 'spine', 'chest', 'neck', 0.175],
+    ['neck', 'chest', 'neck', 'head', 0.07], ['head', 'neck', 'head', 'headTop', 0.125],
+    ['uaL', 'chest', 'shL', 'elL', 0.06], ['faL', 'uaL', 'elL', 'wrL', 0.05], ['haL', 'faL', 'wrL', 'haL', 0.05],
+    ['uaR', 'chest', 'shR', 'elR', 0.06], ['faR', 'uaR', 'elR', 'wrR', 0.05], ['haR', 'faR', 'wrR', 'haR', 0.05],
+    ['thL', 'hips', 'hipL', 'knL', 0.095], ['snL', 'thL', 'knL', 'anL', 0.07], ['ftL', 'snL', 'anL', 'toL', 0.06],
+    ['thR', 'hips', 'hipR', 'knR', 0.095], ['snR', 'thR', 'knR', 'anR', 0.07], ['ftR', 'snR', 'anR', 'toR', 0.06],
+  ];
+  const bones = [], byName = {};
+  for (const [name, parent, headJ] of DEF) {
+    const b = new THREE.Bone(); b.name = name;
+    if (parent) { b.position.copy(P[headJ]).sub(P[DEF.find((d) => d[0] === parent)[2]]); byName[parent].add(b); }
+    else b.position.copy(P[headJ]);
+    byName[name] = b; bones.push(b);
+  }
+
+  // skin weights: nearest-4 capsule distances, radius-relative so the fat torso
+  // bones win their own volume; the armpit blend is genuinely ambiguous and the
+  // wireframe forgives it.
+  const posA = geo.attributes.position, n = posA.count;
+  const sIdx = new Uint16Array(n * 4), sWt = new Float32Array(n * 4);
+  const v = new THREE.Vector3(), ab = new THREE.Vector3(), ap = new THREE.Vector3(), cl = new THREE.Vector3();
+  const segs = DEF.map((d, i) => ({ i, a: P[d[2]], b: P[d[3]], r: d[4] }));
+  const distSeg = (p, a, b) => { ab.subVectors(b, a); ap.subVectors(p, a); const t = THREE.MathUtils.clamp(ap.dot(ab) / Math.max(ab.lengthSq(), 1e-8), 0, 1); return cl.copy(ab).multiplyScalar(t).add(a).distanceTo(p); };
+  const cand = [];
+  for (let i = 0; i < n; i++) {
+    v.fromBufferAttribute(posA, i); cand.length = 0;
+    for (const s of segs) cand.push({ i: s.i, w: 1 / Math.pow(distSeg(v, s.a, s.b) / s.r + 0.15, 3) });
+    cand.sort((a, b) => b.w - a.w);
+    let sum = 0; for (let k = 0; k < 4; k++) sum += cand[k].w;
+    for (let k = 0; k < 4; k++) { sIdx[i * 4 + k] = cand[k].i; sWt[i * 4 + k] = cand[k].w / sum; }
+  }
+  geo.setAttribute('skinIndex', new THREE.BufferAttribute(sIdx, 4));
+  geo.setAttribute('skinWeight', new THREE.BufferAttribute(sWt, 4));
+
+  const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
+  const mat = makeGridMaterial(clip, 0x2fd0e0);
+  const mesh = new THREE.SkinnedMesh(geo, mat);
+  mesh.frustumCulled = false;
+  mesh.add(byName.hips); mesh.updateMatrixWorld(true);
+  mesh.bind(new THREE.Skeleton(bones));
+
+  const figG = new THREE.Group(); figG.add(mesh);
+  // holographic bed slab — fades in for the lying/sitting poses only
+  const slabGeo = new THREE.BoxGeometry(0.98, 0.07, 2.12);
+  const slabMat = new THREE.MeshBasicMaterial({ color: 0x2fd0e0, transparent: true, opacity: 0, depthWrite: false });
+  const edgeMat = new THREE.LineBasicMaterial({ color: 0x2fd0e0, transparent: true, opacity: 0 });
+  const slab = new THREE.Mesh(slabGeo, slabMat);
+  slab.add(new THREE.LineSegments(new THREE.EdgesGeometry(slabGeo), edgeMat));
+  slab.position.y = 0.845;
+  const bedG = new THREE.Group(); bedG.add(slab);
+  const group = new THREE.Group(); group.add(figG, bedG); group.visible = false;
+
+  // clinical poses: per-bone Euler degrees (−x pitch swings a limb forward).
+  const Q_LIE = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)); // head away, face up
+  const POSES = {
+    // yaw turns the chest a few degrees toward the bedside camera so the figure
+    // isn't a flat silhouette, while the legs stay effectively in profile
+    standing: { yaw: -0.30, pos: [0, 0, 0], bones: { uaL: [-4, 0, -11], uaR: [-4, 0, 11] } },
+    sitting: { yaw: -0.26, pos: [0, -0.09, 0], bed: 1, bedZ: -0.96, bones: {
+      thL: [-78, 0, -3], thR: [-78, 0, 3], snL: [72, 0, 0], snR: [72, 0, 0], ftL: [10, 0, 0], ftR: [10, 0, 0],
+      spine: [7, 0, 0], chest: [5, 0, 0], neck: [2, 0, 0], head: [4, 0, 0],
+      uaL: [-16, 0, -14], uaR: [-16, 0, 14], faL: [-44, 0, 0], faR: [-44, 0, 0] } },
+    supine: { lie: 1, pos: [0, 1.0, 0.92], bed: 1, bedZ: 0, bones: {
+      thL: [-7, 0, -2], thR: [-7, 0, 2], snL: [13, 0, 0], snR: [13, 0, 0], ftL: [30, 0, 0], ftR: [30, 0, 0],
+      neck: [-5, 0, 0], head: [-8, 0, 0], uaL: [2, 0, -9], uaR: [2, 0, 9], faL: [-8, 0, 0], faR: [-8, 0, 0] } },
+    walking: { yaw: -0.34, pos: [0, 0, 0], gait: 1, bones: { spine: [-3, 0, 0] } },
+  };
+  let poseKey = 'standing', ph = 0;
+  const rootPos = new THREE.Vector3(), rootQ = new THREE.Quaternion(), bedPos = new THREE.Vector3();
+  let bedT = 0;
+  const tE = new THREE.Euler(), tQ = new THREE.Quaternion(), idQ = new THREE.Quaternion();
+  const setPose = (k) => {
+    poseKey = POSES[k] ? k : 'standing';
+    const p = POSES[poseKey];
+    rootPos.set(p.pos[0], p.pos[1], p.pos[2]);
+    if (p.lie) rootQ.copy(Q_LIE); else rootQ.setFromEuler(tE.set(0, p.yaw || 0, 0));
+    bedT = p.bed ? 1 : 0; bedPos.set(0, 0, p.bedZ || 0);
+  };
+  setPose('standing');
+  figG.position.copy(rootPos); figG.quaternion.copy(rootQ); // no ease-in from origin on first show
+
+  return {
+    group, clip, heartMeshes: [],
+    setPose,
+    setHeartColor() {},
+    setReveal() { clip.constant = 2.0; },
+    update(dt) {
+      const t = performance.now() / 1000;
+      const p = POSES[poseKey];
+      const deg = {};
+      if (p.bones) for (const nm in p.bones) deg[nm] = p.bones[nm];
+      const br = 1.3 * Math.sin(t * 0.9); // quiet breathing on the chest
+      deg.chest = deg.chest ? [deg.chest[0] + br, deg.chest[1], deg.chest[2]] : [br, 0, 0];
+      let bob = 0;
+      if (p.gait) {
+        ph += dt * 5.2;
+        const s = Math.sin(ph), s2 = Math.sin(ph + Math.PI);
+        deg.thL = [-26 * s, 0, 0]; deg.thR = [-26 * s2, 0, 0];
+        deg.snL = [8 + 30 * Math.max(0, Math.sin(ph - 1.1)), 0, 0];
+        deg.snR = [8 + 30 * Math.max(0, Math.sin(ph - 1.1 + Math.PI)), 0, 0];
+        deg.uaL = [18 * s2, 0, -12]; deg.uaR = [18 * s, 0, 12];
+        deg.faL = [-26, 0, 0]; deg.faR = [-26, 0, 0];
+        bob = 0.024 * Math.abs(Math.cos(ph));
+      }
+      const k = 1 - Math.exp(-dt * (p.gait ? 12 : 5.5));
+      for (const b of bones) {
+        const d = deg[b.name];
+        if (d) { tQ.setFromEuler(tE.set(D2R(d[0]), D2R(d[1]), D2R(d[2]))); b.quaternion.slerp(tQ, k); }
+        else b.quaternion.slerp(idQ, k);
+      }
+      const kp = 1 - Math.exp(-dt * 4);
+      cl.copy(rootPos); cl.y += bob;
+      figG.position.lerp(cl, kp); figG.quaternion.slerp(rootQ, kp);
+      bedG.position.lerp(bedPos, kp);
+      const bo = slabMat.opacity + (bedT * 0.05 - slabMat.opacity) * Math.min(1, dt * 4);
+      slabMat.opacity = bo; edgeMat.opacity = bo * 9;
+      mat.userData.uTime.value = t;
+    },
+  };
+}
+const watchCbs = [];
+function ensureWatchLayer(cb) {
+  if (figs.watch) { cb && cb(); return; }
+  if (cb) watchCbs.push(cb);
+  if (loadingNames.has('watch')) return;
+  loadingNames.add('watch');
+  getLoader().load(SYSTEM_URLS.body, (g) => {
+    figs.watch = makeRiggedFigure(g);
+    patientScene.add(figs.watch.group); loadingNames.delete('watch');
+    while (watchCbs.length) watchCbs.shift()();
+  }, undefined, (e) => { loadingNames.delete('watch'); watchCbs.length = 0; console.warn('[TARS] watch rig failed', e); });
+}
+// DORMANT until the discharge beat. WATCH is a 2-D surveillance panel now — the
+// rig stays parked for POD 4, where the twin has to stand up off the bed and
+// walk out, which nothing else can do. Drive it with:
+//   hud:rig {on:true, pose:'standing'|'sitting'|'supine'|'walking'}
+let watchOn = false, watchPose = 'standing';
+window.addEventListener('hud:rig', (e) => {
+  const d = e.detail || {};
+  watchOn = !!d.on; if (d.pose) watchPose = d.pose;
+  if (displayMode !== 'patient') return;
+  if (watchOn) ensureWatchLayer(() => { if (!watchOn) return; activeLayer = 'watch'; applyLayer(); figs.watch.setPose(watchPose); });
+  else if (activeLayer === 'watch') { activeLayer = state.chapter === 'continued' ? 'vascular' : 'body'; applyLayer(); }
+});
+window.addEventListener('hud:rig:pose', (e) => { const p = e.detail && e.detail.pose; if (p) { watchPose = p; if (figs.watch) figs.watch.setPose(p); } });
 
 function buildPatientFigure() {
   human = buildHuman(); human.group.visible = false; patientScene.add(human.group); // invisible placeholder
@@ -519,6 +697,7 @@ function frame(now) {
   let dp, dl;
   if (displayMode === 'floor') { dp = HOME.pos.clone(); dp.x += Math.sin(driftT * 0.16) * 0.22; dl = HOME.look.clone(); }
   else if (zoomHeart) { dp = HEART.pos; dl = HEART.look; }
+  else if (activeLayer === 'watch') { const w = watchPose === 'supine' ? BEDCAM : WATCHCAM; dp = w.pos; dl = w.look; }
   else { dp = PATIENT.pos; dl = PATIENT.look; }
   const k = damp(dt, zoomHeart ? 3.0 : 2.3); camPos.lerp(dp, k); camLook.lerp(dl, k);
   camera.position.copy(camPos); camera.lookAt(camLook);

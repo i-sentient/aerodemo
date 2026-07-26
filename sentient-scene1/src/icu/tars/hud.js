@@ -1,8 +1,10 @@
 import { beds, bedById } from './ontology.js';
 import { state, onModeChange, setMode } from './state.js';
 import { lerp } from './utils.js';
-import { HOOKUP, POD0, TRENDS, SCOPE_DETAIL, CONTROLS, MEASURED, WAVE_NUM } from './postop.js';
+import { HOOKUP, POD0, TRENDS, SCOPE_DETAIL, CONTROLS, MEASURED, WAVE_NUM, WATCH } from './postop.js';
 import { makeMiniScope, makeTrend, WAVES } from './waveforms.js';
+import { makeWatchCam } from './watchcam.js';
+import { emrNavigate } from './apps.js';
 
 let root, floorLayer, patientLayer, wipe, ecgCv, ecgX;
 let lsamRevealAt = 0, lsamShown = 0;
@@ -124,7 +126,77 @@ function setWindow(w) {
   const tabs = root.querySelector('#paTabs');
   if (tabs) tabs.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.w === w));
   if (w === 'scope') renderScope(); else stopScope();
+  if (w === 'watch') renderWatch(); else stopWatch();
 }
+
+// ---- Scene 4 · WATCH — the surveillance record -----------------------------
+// The bed camera watches continuously and pose estimation turns what it sees
+// into a timestamped movement log. THE LOG IS THE PANEL; the stick figure in
+// the corner viewport is only the live vision read (a keypoint skeleton is
+// literally what a pose model emits). Each day's log is what TARS quotes into
+// that POD's progress note — which the clinician then assesses, examines
+// against, and turns into recovery orders.
+let watchDay = 0, watchCam = null, watchClock = 0;
+const wDay = () => WATCH.days[watchDay] || WATCH.days[0];
+// 24 h movement density, derived from the log's own timestamps — a logged event
+// makes its hour tall, the hours either side lift a little. The point of the
+// strip is that the record is CONTINUOUS: quiet hours are still observed hours.
+function actBars(d) {
+  const b = new Array(24).fill(d.pod === 0 ? 0.06 : 0.1);
+  for (const [t] of d.log) {
+    const h = parseInt(t.slice(0, 2), 10); if (isNaN(h)) continue;
+    b[h] = Math.max(b[h], 1);
+    if (h > 0) b[h - 1] = Math.max(b[h - 1], 0.42);
+    if (h < 23) b[h + 1] = Math.max(b[h + 1], 0.42);
+  }
+  return b.map((v, h) => `<i style="height:${Math.round(v * 100)}%" class="${v >= 1 ? 'hi' : ''}" title="${String(h).padStart(2, '0')}:00"></i>`).join('');
+}
+function stopWatch() { if (watchCam) { watchCam.stop(); watchCam = null; } if (watchClock) { clearInterval(watchClock); watchClock = 0; } }
+function renderWatch() {
+  const el = root && root.querySelector('.pa-watch'); if (!el) return;
+  stopWatch();
+  const d = wDay();
+  el.innerHTML = `
+    <div class="sc-hd"><span class="sc-t">WATCH</span><span class="sc-sub">continuous observation</span><span class="sc-live"><i></i>LSam</span></div>
+    <div class="wt-top">
+      <div class="wt-now">
+        <div class="wt-nowh"><b>${d.state}</b><span>${d.sub}</span></div>
+        <div class="wt-nowf">
+          <div class="wt-pain"><div class="wt-bar"><i style="width:${Math.round(d.cpot / 8 * 100)}%"></i></div>
+            <div class="wt-pl"><span>CPOT ${d.cpot}/8</span><span>${d.cl}</span></div></div>
+          <div class="wt-srcs"><span class="wt-tag cam">CAM</span><span class="wt-tag pat">PATCH</span></div>
+        </div>
+      </div>
+      <div class="wt-cam">
+        <canvas id="wtCanvas"></canvas>
+        <i class="wt-grid"></i>
+        <i class="wt-bk tl"></i><i class="wt-bk tr"></i><i class="wt-bk bl"></i><i class="wt-bk br"></i>
+        <span class="wt-cid">${WATCH.cam.id}</span>
+        <span class="wt-rec"><i></i><b id="wtClock">--:--:--</b></span>
+      </div>
+    </div>
+    <div class="wt-card"><div class="wt-h">24 H ACTIVITY<span class="wt-src">continuous</span></div>
+      <div class="wt-strip">${actBars(d)}</div>
+      <div class="wt-sx"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
+    <div class="wt-logwrap">
+      <div class="wt-h">MOVEMENT LOG · POD ${d.pod}<span class="wt-src">${d.log.length} events</span></div>
+      <div class="wt-log">${d.log.map(([t, ev, det, src]) => `<div class="wt-ev"><i>${t}</i><div class="wt-evb"><b>${ev}</b>${det ? `<em>${det}</em>` : ''}</div><span class="wt-tag ${src}">${src.toUpperCase()}</span></div>`).join('')}</div>
+    </div>
+    <div class="wt-card"><div class="wt-h">DAY TOTALS</div>
+      <div class="wt-led">${d.ledger.map(([l, vv]) => `<div class="wt-li"><span>${l}</span><em>${vv}</em></div>`).join('')}</div></div>
+    <div class="wt-card wt-gest"><div class="wt-h">GESTALT<span class="wt-src">camera-scored</span></div><div class="wt-g">${d.g}</div></div>
+    <button class="wt-note" id="wtNote">→ feeds the POD ${d.pod} progress note</button>
+    <div class="wt-days">${WATCH.days.map((x, i) => `<button data-day="${i}"${i === watchDay ? ' class="on"' : ''}>POD ${x.pod}</button>`).join('')}</div>`;
+
+  const cv = el.querySelector('#wtCanvas');
+  watchCam = makeWatchCam(cv); watchCam.setPose(d.pose); watchCam.start();
+  const clock = el.querySelector('#wtClock');
+  const tick = () => { const t = new Date(); clock.textContent = [t.getHours(), t.getMinutes(), t.getSeconds()].map((x) => String(x).padStart(2, '0')).join(':'); };
+  tick(); watchClock = window.setInterval(tick, 1000);
+  el.querySelectorAll('[data-day]').forEach((b) => (b.onclick = () => { watchDay = +b.dataset.day; renderWatch(); }));
+  el.querySelector('#wtNote').onclick = () => emrNavigate('notes'); // the record it writes into
+}
+window.addEventListener('hud:watch:day', (e) => { const n = e.detail && e.detail.day; if (n == null) return; watchDay = Math.max(0, Math.min(WATCH.days.length - 1, n)); if (root && root.classList.contains('win-watch')) renderWatch(); });
 const scOn = (k) => HOOKUP.findIndex((d) => d.key === k) < hkConnected; // connected yet?
 
 // A LANE is the monitor grammar: the trace runs the full width with its own

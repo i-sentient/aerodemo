@@ -218,6 +218,73 @@ export const CONTROLS = {
   },
 };
 
+// --- WATCH · the surveillance record (Panel A) --------------------------------
+// The bed camera watches continuously; pose estimation turns what it sees into
+// a timestamped movement log. That log IS the panel — the stick figure in the
+// corner is just the live vision read. CPOT is scored by WATCHING (face, body
+// movement, muscle tension, ventilator compliance), which is exactly why a
+// camera can do it on a patient too sedated to self-report.
+// Each day's log is what TARS quotes into that POD's progress note — the
+// clinician reads it, examines, and orders the next step of recovery.
+export const WATCH = {
+  cam: { id: 'CAM 02', place: 'BED · ICU-08' },
+  days: [
+    { pod: 0, pose: 'supine', state: 'SEDATED', sub: 'ventilated · no spontaneous movement', cpot: 3, cl: 'on suctioning',
+      g: 'No spontaneous movement. Grimace and rigidity on suctioning only.',
+      log: [
+        ['04:10', 'Position change → right lateral', 'nursing', 'cam'],
+        ['03:20', 'CPOT 3 on suctioning', 'grimace + rigidity', 'cam'],
+        ['02:45', 'Sedation hold', 'no spontaneous movement', 'cam'],
+        ['01:30', 'Position change → supine', 'nursing', 'cam'],
+        ['00:50', 'Arrival — transferred to bed', 'sedated', 'cam'],
+      ],
+      ledger: [['Out of bed', '0 m'], ['Turns', '3'], ['Walked', '—'], ['CPOT max', '3']],
+      note: 'Sedated and ventilated throughout. Turned 2-hourly for pressure care. No spontaneous movement; CPOT 3 on suctioning only, settling between cares.' },
+    { pod: 1, pose: 'sitting', state: 'SITTING', sub: 'edge of bed · unaided', cpot: 4, cl: 'on movement',
+      g: 'Alert and following commands. Leaning forward, guarding the sternotomy.',
+      log: [
+        ['16:40', 'Sat out in chair', '45 min', 'cam'],
+        ['14:05', 'First sit — edge of bed', 'unaided', 'cam'],
+        ['11:20', 'Extubated', 'spontaneous movement returns', 'cam'],
+        ['09:15', 'Obeys commands', 'grip + toe wiggle', 'cam'],
+        ['07:30', 'Sedation off — eyes open', '', 'cam'],
+      ],
+      ledger: [['Out of bed', '45 m'], ['First sit', '14:05'], ['Walked', '—'], ['CPOT max', '4']],
+      note: 'Woke to command, extubated 11:20. First sat at the edge of the bed unaided at 14:05, then 45 minutes out in the chair. Guarding the sternotomy on movement; CPOT peaks at 4 on transfers.' },
+    { pod: 2, pose: 'standing', state: 'STANDING', sub: 'unaided · steady', cpot: 3, cl: 'on exertion',
+      g: 'Steady on standing, one hand on the rail. Gait slow but even.',
+      log: [
+        ['14:22', 'Stood, unaided', '3 min', 'cam'],
+        ['13:40', 'Walked 14 m', 'with frame', 'cam'],
+        ['11:05', 'Sat out in chair', '2h 10m', 'cam'],
+        ['09:30', 'Stood with assist', '×2', 'cam'],
+        ['08:14', 'First sit of the day', 'unaided', 'cam'],
+      ],
+      ledger: [['Out of bed', '4h 20m'], ['Stood', '×3'], ['Walked', '14 m'], ['CPOT max', '3']],
+      note: 'Mobilising well. Stood unaided, walked 14 m with a frame, and spent 4h 20m out of bed. Pain controlled — CPOT 3 on exertion, 1 at rest.' },
+    { pod: 3, pose: 'walking', state: 'WALKING', sub: 'corridor · unaided', cpot: 2, cl: 'on exertion',
+      g: 'Walking the corridor unaided. Slight stoop, still guarding, gait steady.',
+      log: [
+        ['15:10', 'Walked 60 m — corridor', 'unaided', 'cam'],
+        ['12:30', 'Stairs assessment', '4 steps', 'cam'],
+        ['10:00', 'Sat out in chair', '3h', 'cam'],
+        ['08:00', 'Independent transfer', 'bed → chair', 'cam'],
+      ],
+      ledger: [['Out of bed', '6h 05m'], ['Stood', '×6'], ['Walked', '60 m'], ['CPOT max', '2']],
+      note: 'Independent bed-to-chair transfers. Walked 60 m in the corridor unaided and managed 4 steps on stairs assessment. 6h 05m out of bed; pain well controlled.' },
+    { pod: 4, pose: 'walking', state: 'WALKING', sub: 'independent · 120 m', cpot: 2, cl: 'settled',
+      g: 'Independent for washing, dressing and walking. Ready for step-down.',
+      log: [
+        ['14:00', 'Walked 120 m', 'unaided', 'cam'],
+        ['11:15', 'Full stair flight', 'independent', 'cam'],
+        ['09:20', 'Washed and dressed', 'independent', 'cam'],
+        ['07:45', 'Up for breakfast', 'unaided', 'cam'],
+      ],
+      ledger: [['Out of bed', '8h 30m'], ['Stood', '×9'], ['Walked', '120 m'], ['CPOT max', '2']],
+      note: 'Independent with washing, dressing and mobility. Walked 120 m and completed a full flight of stairs. Meets mobility criteria for step-down and cardiac rehab referral.' },
+  ],
+};
+
 // --- the post-op ORDERS & PLAN block (reads the SAME POD0) -------------------
 export const POD0_ORDERS = [
   ['Ventilation', `${POD0.vent.mode}, FiO₂ ${POD0.vent.fio2}%, PEEP ${POD0.vent.peep} — wean & extubate when awake, gases acceptable, haemodynamically stable`],
