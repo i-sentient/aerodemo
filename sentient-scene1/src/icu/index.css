@@ -1,0 +1,30 @@
+/* Global canvas + overlay styling. Kept minimal — the scene lives in WebGL. */
+* { box-sizing: border-box; }
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.overlay > * {
+  pointer-events: auto;
+}
+
+/* dark theme: the page ground behind the 3D (the light aero radial lives in
+   icu.html's inline style; this later rule wins when the class is on) */
+body.theme-dark {
+  background: radial-gradient(1200px 900px at 50% 20%, #1b2431 0%, #141b26 40%, #0c1118 75%, #06080c 100%);
+  color: #e8eef4;
+}

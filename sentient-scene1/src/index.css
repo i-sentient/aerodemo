@@ -1,0 +1,49 @@
+/* Global canvas + overlay styling. Kept minimal — the scene lives in WebGL. */
+* { box-sizing: border-box; }
+
+/* non-white so the gap between the intro canvas and the ER-room canvas
+   (during the view swap) doesn't flash white — matches the ER studio bg */
+html, body, #root {
+  background: #aab2bb;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+canvas {
+  display: block;
+  touch-action: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.overlay > * {
+  pointer-events: auto;
+}
+
+/* slow-pulsing status dot (intro panel) */
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.75); }
+}
+.pulse-dot {
+  animation: dotPulse 2.6s ease-in-out infinite;
+}
+
+/* ICU boot loader tile — the pulsing "T" while the embedded TARS app initialises
+   (mirrors the TARS app's own #loading .lg pulse) */
+@keyframes icuBootPulse {
+  0% { box-shadow: 0 0 0 0 rgba(93, 202, 165, 0.55); }
+  70% { box-shadow: 0 0 0 7px rgba(93, 202, 165, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(93, 202, 165, 0); }
+}
+.icu-boot-tile {
+  animation: icuBootPulse 1.6s infinite;
+}
