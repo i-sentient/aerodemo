@@ -20,11 +20,14 @@ function BackdropOrb() {
 }
 
 // --- the dark exhibition stage ---------------------------------------------
-function DarkStage() {
+function DarkStage({ onto = false }: { onto?: boolean }) {
   return (
     <>
-      <color attach="background" args={['#cbd0d5']} />
-      <fog attach="fog" args={['#cbd0d5', 45, 140]} />
+      {/* ontology mode is a hologram: it needs a black field and no bright
+          floor, or the lattice washes out and the mirror cuts a hard grey
+          plane straight through the building. */}
+      <color attach="background" args={[onto ? '#050c13' : '#cbd0d5']} />
+      <fog attach="fog" args={onto ? ['#050c13', 60, 180] : ['#cbd0d5', 45, 140]} />
 
       <ambientLight intensity={0.5} color={0xdfe6ee} />
       {/* key rakes the metal */}
@@ -59,30 +62,34 @@ function DarkStage() {
         <Lightformer form="rect" intensity={1.4} color="#1fbf86" position={[0, -4, 4]} scale={[16, 4, 1]} />
       </Environment>
 
-      {/* wet-black reflective floor */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, -0.01, 0]} receiveShadow>
-        <planeGeometry args={[130, 130]} />
-        <MeshReflectorMaterial
-          color="#9aa1a8"
-          metalness={0.5}
-          roughness={0.55}
-          mirror={0.4}
-          blur={[220, 80]}
-          mixStrength={2.6}
-          // depth-driven blur disabled: it produced black splotches/speckles
-          // where the tower's base plinth intersects the mirror plane
-          mixBlur={0}
-          depthScale={0}
-          resolution={1024}
-        />
-      </mesh>
-      <ContactShadows position={[0, 0.012, 0]} scale={70} resolution={1024} blur={2.6} opacity={0.42} far={14} color="#2a3138" />
+      {/* wet-black reflective floor — unmounted entirely in ontology mode:
+          `visible={false}` still leaves drei's reflector doing its render pass,
+          and a bright mirror plane cuts the hologram in half. */}
+      {!onto && (
+        <mesh rotation-x={-Math.PI / 2} position={[0, -0.01, 0]} receiveShadow>
+          <planeGeometry args={[130, 130]} />
+          <MeshReflectorMaterial
+            color="#9aa1a8"
+            metalness={0.5}
+            roughness={0.55}
+            mirror={0.4}
+            blur={[220, 80]}
+            mixStrength={2.6}
+            // depth-driven blur disabled: it produced black splotches/speckles
+            // where the tower's base plinth intersects the mirror plane
+            mixBlur={0}
+            depthScale={0}
+            resolution={1024}
+          />
+        </mesh>
+      )}
+      {!onto && <ContactShadows position={[0, 0.012, 0]} scale={70} resolution={1024} blur={2.6} opacity={0.42} far={14} color="#2a3138" />}
     </>
   )
 }
 
-export function SceneEnvironment({ orb = true, dark = false }: { orb?: boolean; dark?: boolean }) {
-  if (dark) return <DarkStage />
+export function SceneEnvironment({ orb = true, dark = false, onto = false }: { orb?: boolean; dark?: boolean; onto?: boolean }) {
+  if (dark) return <DarkStage onto={onto} />
 
   return (
     <>

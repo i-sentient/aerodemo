@@ -47,3 +47,21 @@ canvas {
 .icu-boot-tile {
   animation: icuBootPulse 1.6s infinite;
 }
+
+/* Ontology-mode switch: a fluorescent tube striking. Two failed strikes, a dim
+   half-lit beat, then it holds. The cover is DARK, so each dip in opacity is a
+   flash of the scene behind it — same shape as a real starter firing.
+   Compressed to 380ms: a real tube takes ~1s, which is too slow for a toggle. */
+@keyframes tubeStrike {
+  0%   { opacity: 1; }
+  10%  { opacity: 0.10; }   /* first strike — bright, brief */
+  17%  { opacity: 1; }      /* fails back to dark */
+  30%  { opacity: 0.28; }   /* second strike, weaker */
+  38%  { opacity: 1; }
+  56%  { opacity: 0.06; }   /* third catches */
+  66%  { opacity: 0.62; }   /* sags once */
+  100% { opacity: 0; }      /* holds at full */
+}
+.tube-strike {
+  animation: tubeStrike 380ms linear forwards;
+}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Line, OrbitControls } from '@react-three/drei'
 import { MathUtils, NoToneMapping, type Group } from 'three'
 import { SceneEnvironment } from './scene/Environment'
@@ -8,6 +8,7 @@ import { RoundERLab } from './lab/RoundERLab'
 import { CathLabScene } from './lab/CathLabScene'
 import { ORScene } from './lab/ORScene'
 import { BuildingStack, ER_INFO, ICU_INFO, CATH_INFO, OR_INFO, STACK_TOP } from './scene/BuildingStack'
+import { OntologyTower } from './scene/OntologyTower'
 import { Postprocessing } from './scene/Postprocessing'
 import { PatientLayer } from './components/PatientLayer'
 import { RelationEdges } from './components/RelationEdges'
@@ -209,7 +210,7 @@ const OR_DIVE_POS: [number, number, number] = [OR_INFO.x, OR_INFO.y + 0.2, OR_IN
 const lp = (a: number, b: number, t: number) => a + (b - a) * t
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
 
-type Phase = 'orbit' | 'front' | 'target' | 'fly'
+type Phase = 'orbit' | 'front' | 'onto' | 'target' | 'fly'
 
 /** Drives the camera through the target-lock + dive; calls onArrived at the end. */
 function FlyRig({
@@ -223,7 +224,7 @@ function FlyRig({
   const done = useRef(false)
   useFrame((state, dt) => {
     const cam = state.camera as any
-    if (phase === 'front') {
+    if (phase === 'front' || phase === 'onto') {
       cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 2.4, dt)
       cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 2.4, dt)
       cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 2.4, dt)
@@ -297,19 +298,85 @@ function TargetReticle() {
   )
 }
 
+// ---------------------------------------------------------------------------
+//  ONTOLOGY MODE — shared by every view that shows the tower (the intro and all
+//  three between-scene returns). The solid pavilion dissolves into what TARS
+//  actually holds: each tier classified, counted and scored for provenance.
+//  The switch is a fluorescent tube striking — the building swaps during the
+//  first dark, so it reads as a fixture powering on, not a cut.
+// ---------------------------------------------------------------------------
+function useOntologyMode() {
+  const [onto, setOnto] = useState(false)
+  const [strike, setStrike] = useState(0)
+  const switching = useRef(false)
+  const run = useRef((next: boolean) => {})
+  run.current = (next: boolean) => {
+    if (switching.current || next === onto) return
+    switching.current = true
+    setStrike((n) => n + 1)
+    window.setTimeout(() => setOnto(next), 70) // swap inside the first dark
+    window.setTimeout(() => { switching.current = false }, 420)
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'KeyO') { e.preventDefault(); run.current(!onto) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onto])
+  return {
+    onto,
+    strike,
+    toggle: () => run.current(!onto),
+    /** drive it explicitly — the dive sequences turn it ON before plunging */
+    setOnto: (v: boolean) => run.current(v),
+  }
+}
+
+/** The [O] switch + the tube-strike cover. Fixed-positioned so it works in any
+ *  view regardless of what wraps the canvas. */
+function OntologyChrome({ onto, strike, onToggle }: { onto: boolean; strike: number; onToggle: () => void }) {
+  return (
+    <>
+      <button
+        onClick={onToggle}
+        style={{
+          position: 'fixed', top: 22, right: 22, zIndex: 40, pointerEvents: 'auto', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: onto ? 'rgba(95,208,230,0.16)' : 'rgba(255,255,255,0.55)',
+          border: `1px solid ${onto ? 'rgba(95,208,230,0.6)' : 'rgba(120,160,180,0.35)'}`,
+          borderRadius: 9, padding: '8px 13px', backdropFilter: 'blur(8px)',
+          font: '700 11px ui-monospace, "JetBrains Mono", monospace',
+          letterSpacing: '.14em', color: onto ? '#2a7f92' : '#5b7d88',
+        }}
+      >
+        <span style={{ width: 7, height: 7, borderRadius: 2, background: onto ? '#2fb8d8' : '#9fb4bd', boxShadow: onto ? '0 0 7px #5fd0e6' : 'none' }} />
+        ONTOLOGY
+        <span style={{ opacity: 0.5, letterSpacing: 0 }}>[O]</span>
+      </button>
+      {strike > 0 && (
+        <div key={strike} className="tube-strike" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 50, background: '#050c13' }} />
+      )}
+    </>
+  )
+}
+
 function IntroView({ onEnter }: { onEnter: () => void }) {
   const [phase, setPhase] = useState<Phase>('orbit')
+  const { onto, strike, toggle: toggleOnto, setOnto } = useOntologyMode()
   const phaseRef = useRef<Phase>('orbit')
   phaseRef.current = phase
 
-  // → / Space starts the dive into the ER
+  // → / Space starts the dive into the ER (O is handled by useOntologyMode)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'ArrowRight' && e.code !== 'Space') return
       e.preventDefault()
       const p = phaseRef.current
+      // the dive is now two beats: read the building as ontology, THEN go in
       if (p === 'orbit') setPhase('front')
-      else if (p === 'front') {
+      else if (p === 'front') { setOnto(true); setPhase('onto') }
+      else if (p === 'onto') {
         setPhase('target')
         window.setTimeout(() => setPhase('fly'), 1500)
       }
@@ -326,14 +393,17 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
         gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
         camera={{ position: [34, 18, 40], fov: 34 }}
       >
-        <SceneEnvironment orb={false} dark />
-        <BuildingStack showPills={phase === 'front' || phase === 'target'} />
+        <SceneEnvironment orb={false} dark onto={onto} />
+        {onto ? <OntologyTower labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'front' || phase === 'target'} />}
         {phase === 'orbit' && (
           <OrbitControls
             target={ORBIT_TARGET}
             enableDamping
             dampingFactor={0.08}
-            autoRotate
+            // the ontology view holds still: its labels are pinned to fixed
+            // sides of the building (census left, journey right) and a rotating
+            // tower drags them behind the geometry
+            autoRotate={!onto}
             autoRotateSpeed={0.5}
             minDistance={20}
             maxDistance={95}
@@ -343,6 +413,8 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
         <FlyRig phase={phase} onArrived={onEnter} />
         <Postprocessing dark />
       </Canvas>
+
+      <OntologyChrome onto={onto} strike={strike} onToggle={toggleOnto} />
 
       <div className="overlay">
         <div style={{ position: 'absolute', top: 22, left: 22, ...panel }}>
@@ -356,7 +428,6 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
           </div>
         </div>
 
-
       </div>
     </>
   )
@@ -366,7 +437,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
 //  ICU RETURN — after the ER story ends (TARS→ICU), pull back out of the ER to
 //  reveal the whole tower, then dive into the ICU drum and hand off to Scene-2.
 // ---------------------------------------------------------------------------
-type IcuPhase = 'reveal' | 'target' | 'fly'
+type IcuPhase = 'reveal' | 'onto' | 'target' | 'fly'
 
 /** Reveal the building, then dive into the ICU; calls onArrived at the cut. */
 function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }) {
@@ -374,7 +445,7 @@ function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }
   const done = useRef(false)
   useFrame((state, dt) => {
     const cam = state.camera as any
-    if (phase === 'reveal') {
+    if (phase === 'reveal' || phase === 'onto') {
       cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
       cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
       cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
@@ -411,6 +482,7 @@ function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }
 
 function IcuReturnView({ onDone }: { onDone: () => void }) {
   const [phase, setPhase] = useState<IcuPhase>('reveal')
+  const { onto, strike, toggle: toggleOnto, setOnto } = useOntologyMode()
   const phaseRef = useRef<IcuPhase>('reveal')
   phaseRef.current = phase
   // → / Space: (once the building is revealed) dive into the ICU
@@ -418,7 +490,9 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'ArrowRight' && e.code !== 'Space') return
       e.preventDefault()
-      if (phaseRef.current !== 'reveal') return
+      const p = phaseRef.current
+      if (p === 'reveal') { setOnto(true); setPhase('onto'); return }
+      if (p !== 'onto') return
       setPhase('target')
       window.setTimeout(() => setPhase('fly'), 1500)
     }
@@ -426,17 +500,20 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
   return (
+    <>
     <Canvas
       shadows
       dpr={[1, 2]}
       gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
       camera={{ position: ICU_RETURN_START, fov: 40 }}
     >
-      <SceneEnvironment orb={false} dark />
-      <BuildingStack showPills={phase === 'reveal'} />
+      <SceneEnvironment orb={false} dark onto={onto} />
+      {onto ? <OntologyTower journey={1} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} />}
       <IcuRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
+    <OntologyChrome onto={onto} strike={strike} onToggle={toggleOnto} />
+    </>
   )
 }
 
@@ -445,7 +522,7 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
 //  #cath-return hash. Step out of the ICU → reveal the whole tower → dive into
 //  the Cath Lab tier (the +x hex half) → hard-cut into the CathLabScene.
 // ---------------------------------------------------------------------------
-type CathPhase = 'reveal' | 'target' | 'fly'
+type CathPhase = 'reveal' | 'onto' | 'target' | 'fly'
 
 /** Reveal the building, then dive into the Cath Lab; calls onArrived at the cut. */
 function CathRig({ phase, onArrived }: { phase: CathPhase; onArrived: () => void }) {
@@ -453,7 +530,7 @@ function CathRig({ phase, onArrived }: { phase: CathPhase; onArrived: () => void
   const done = useRef(false)
   useFrame((state, dt) => {
     const cam = state.camera as any
-    if (phase === 'reveal') {
+    if (phase === 'reveal' || phase === 'onto') {
       cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
       cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
       cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
@@ -490,6 +567,7 @@ function CathRig({ phase, onArrived }: { phase: CathPhase; onArrived: () => void
 
 function CathReturnView({ onDone }: { onDone: () => void }) {
   const [phase, setPhase] = useState<CathPhase>('reveal')
+  const { onto, strike, toggle: toggleOnto, setOnto } = useOntologyMode()
   const phaseRef = useRef<CathPhase>('reveal')
   phaseRef.current = phase
   // → / Space: (once the building is revealed) dive into the Cath Lab
@@ -497,7 +575,9 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'ArrowRight' && e.code !== 'Space') return
       e.preventDefault()
-      if (phaseRef.current !== 'reveal') return
+      const p = phaseRef.current
+      if (p === 'reveal') { setOnto(true); setPhase('onto'); return }
+      if (p !== 'onto') return
       setPhase('target')
       window.setTimeout(() => setPhase('fly'), 1500)
     }
@@ -505,17 +585,20 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
   return (
+    <>
     <Canvas
       shadows
       dpr={[1, 2]}
       gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
       camera={{ position: CATH_RETURN_START, fov: 40 }}
     >
-      <SceneEnvironment orb={false} dark />
-      <BuildingStack showPills={phase === 'reveal'} keepPill="cath" />
+      <SceneEnvironment orb={false} dark onto={onto} />
+      {onto ? <OntologyTower journey={2} focusFloor="Cath Lab" labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="cath" />}
       <CathRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
+    <OntologyChrome onto={onto} strike={strike} onToggle={toggleOnto} />
+    </>
   )
 }
 
@@ -523,14 +606,14 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
 //  OR RETURN — after the CABG decision (Scene 3), step out of the ICU, reveal
 //  the tower, dive into the theatres tier (OR-1) → the operating theatre.
 // ---------------------------------------------------------------------------
-type OrPhase = 'reveal' | 'target' | 'fly'
+type OrPhase = 'reveal' | 'onto' | 'target' | 'fly'
 
 function ORRig({ phase, onArrived }: { phase: OrPhase; onArrived: () => void }) {
   const prog = useRef(0)
   const done = useRef(false)
   useFrame((state, dt) => {
     const cam = state.camera as any
-    if (phase === 'reveal') {
+    if (phase === 'reveal' || phase === 'onto') {
       cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
       cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
       cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
@@ -567,6 +650,7 @@ function ORRig({ phase, onArrived }: { phase: OrPhase; onArrived: () => void }) 
 
 function ORReturnView({ onDone }: { onDone: () => void }) {
   const [phase, setPhase] = useState<OrPhase>('reveal')
+  const { onto, strike, toggle: toggleOnto, setOnto } = useOntologyMode()
   const phaseRef = useRef<OrPhase>('reveal')
   phaseRef.current = phase
   // → / Space: (once the building is revealed) dive into the OR
@@ -574,7 +658,9 @@ function ORReturnView({ onDone }: { onDone: () => void }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'ArrowRight' && e.code !== 'Space') return
       e.preventDefault()
-      if (phaseRef.current !== 'reveal') return
+      const p = phaseRef.current
+      if (p === 'reveal') { setOnto(true); setPhase('onto'); return }
+      if (p !== 'onto') return
       setPhase('target')
       window.setTimeout(() => setPhase('fly'), 1500)
     }
@@ -582,17 +668,20 @@ function ORReturnView({ onDone }: { onDone: () => void }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
   return (
+    <>
     <Canvas
       shadows
       dpr={[1, 2]}
       gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
       camera={{ position: OR_RETURN_START, fov: 40 }}
     >
-      <SceneEnvironment orb={false} dark />
-      <BuildingStack showPills={phase === 'reveal'} keepPill="or" />
+      <SceneEnvironment orb={false} dark onto={onto} />
+      {onto ? <OntologyTower journey={3} focusFloor="OR1" labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="or" />}
       <ORRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
+    <OntologyChrome onto={onto} strike={strike} onToggle={toggleOnto} />
+    </>
   )
 }
 

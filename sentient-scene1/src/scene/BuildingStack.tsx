@@ -110,6 +110,7 @@ export const ER_INFO = { y: floorCenterY(0), frontZ: R_ER, w: 2 * R_ER, h: H_ER 
 // ICU drum dive target (for the ER→ICU return transition). icu is FLOORS index 3.
 export const ICU_INFO = { y: floorCenterY(3), frontZ: R_ICU, w: 2 * R_ICU, h: H_ICU }
 
+
 // --- shared squircle profile ------------------------------------------------
 function squircle(halfW: number, halfD: number, n: number, seg: number): Shape {
   const s = new Shape()
@@ -232,6 +233,66 @@ const TWIN_HEX_GEOS: GeoSet = {
   cover: extrudeUp(HEX_SHAPE, 0.62, 0),
   core: extrudeUp(HEX_SHAPE, 0.7, 0),
 }
+
+// --- floor volumes, published for the ONTOLOGY view -------------------------
+// The hologram has to sit exactly inside each tier's silhouette, and every
+// dimension that decides that lives in this module. Rather than duplicate the
+// constants (and drift), publish them: the ontology view is then a pure
+// consumer of the building's own geometry.
+export type BlockShape = 'squircle' | 'twin' | 'hex' | 'drum' | 'crown'
+/** one physical mass on a tier. Twin tiers have TWO, offset ±dx, with a bridge
+ *  between them — the hologram has to say so or it isn't the same building. */
+export interface FloorBlockVol {
+  x: number
+  shape: BlockShape
+  /** which named room this mass is (Cath Lab is the +x hex, OR-1 the −x slab) */
+  room: string
+  r: number
+  halfW: number
+  halfD: number
+}
+export interface FloorVol {
+  id: string
+  index: number
+  y: number
+  h: number
+  blocks: FloorBlockVol[]
+  /** twin tiers are joined by a glazed link bridge across the centre gap */
+  bridge: boolean
+  /** widest horizontal reach — where a label clears the geometry */
+  reach: number
+}
+export const FLOOR_VOLS: FloorVol[] = FLOORS.map((f, i) => {
+  const y = floorCenterY(i)
+  const h = LAYOUT[i].height
+  const mk = (x: number, shape: BlockShape, room: string, r = 0, halfW = HALF_W, halfD = HALF_D): FloorBlockVol =>
+    ({ x, shape, room, r, halfW, halfD })
+  let blocks: FloorBlockVol[]
+  if (f.id === 'er') blocks = [mk(0, 'drum', f.label, R_ER)]
+  else if (f.id === 'icu') blocks = [mk(0, 'drum', f.label, R_ICU)]
+  else if (f.shape === 'disc') blocks = [mk(0, 'crown', f.label, DISC_ROOF_R)]
+  else if (f.twin && f.shape === 'hex')
+    blocks = [mk(-TWIN_DX, 'hex', f.label, HEX_R), mk(TWIN_DX, 'hex', f.twin.label, HEX_R)]
+  else if (f.twin) {
+    const dx = f.id === 'theatres' ? OR_DX : WARD_DX
+    blocks = [mk(-dx, 'twin', f.label, 0, TWIN_HALF_W), mk(dx, 'twin', f.twin.label, 0, TWIN_HALF_W)]
+  } else blocks = [mk(0, 'squircle', f.label)]
+  const reach = Math.max(...blocks.map((b) => Math.abs(b.x) + (b.shape === 'drum' || b.shape === 'crown' || b.shape === 'hex' ? b.r : b.halfW)))
+  return { id: f.id, index: i, y, h, blocks, bridge: !!f.twin, reach }
+})
+/** find a named room's mass — the journey thread routes THROUGH these, so it
+ *  visibly crosses to the right-hand hex for Cath and the left slab for OR-1. */
+export function roomVol(floorId: string, room?: string) {
+  const v = FLOOR_VOLS.find((x) => x.id === floorId)
+  if (!v) return null
+  const b = (room && v.blocks.find((x) => x.room === room)) || v.blocks[0]
+  return { v, b }
+}
+/** the exact outlines the solid tiers use, so the hologram traces the same curves */
+export const squircleShape = (halfW = HALF_W, halfD = HALF_D) => squircle(halfW, halfD, SQ_N, 88)
+export const twinShape = () => squircle(TWIN_HALF_W, HALF_D, SQ_N, 88)
+export const hexOutline = () => hexShape(HEX_R)
+export const BRIDGE_W = 2.2
 
 const POD_GEO = new CapsuleGeometry(0.26, 0.5, 6, 12)
 
