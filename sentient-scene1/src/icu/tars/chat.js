@@ -408,6 +408,21 @@ function bedsideConnect(i) {
 }
 function hkFinishBusy() { if (hkBusyIdx >= 0) { clearTimeout(hkRowTimer); clearTimeout(hkLinkTimer); const b = hkBusyIdx; hkBusyIdx = -1; hkFinishRow(b); } }
 
+// Each POD starts on a CLEAN feed — the previous day's chatter (and POD 0's
+// pinned bedside card) would otherwise stack five days deep. Fired at every
+// day-break, under the cover, so the wipe reads as the day turning rather than
+// messages vanishing mid-view.
+function clearFeed() { if (chatEl) chatEl.innerHTML = ''; hkCardEl = null; }
+/** one POD's opening move: day-break card up, feed wiped, Panel A back on the
+ *  twin, Panel C parked on the summary (the note reopens it when it publishes) */
+function podOpen(day) {
+  window.dispatchEvent(new CustomEvent('hud:daybreak', { detail: { day } }));
+  clearFeed();
+  window.dispatchEvent(new CustomEvent('hud:window', { detail: { w: 'twin' } }));
+  openApp('summary');
+}
+const paWindow = (w) => window.dispatchEvent(new CustomEvent('hud:window', { detail: { w } }))
+
 // RECON gate: the nurse-side confirm card (a bedside check the system can't sense)
 function reconPrompt(ask, reading, onDone) {
   activeHuman = 'nurse'; humanNotch.classList.add('awaiting'); expBottom = true; renderHuman();
@@ -519,18 +534,57 @@ function patientScript(b) {
     () => { hkFinishBusy(); addMsg('tars', `Bedside established — twelve systems live, all set to order, all feeds on the console. <span class="em">Post-op day 0, hour 1.</span>`, 'bedside established'); },
 
     // ── POD 1 · wake up and come off ──────────────────────────────────────
-    // The day-break card hides the switch: five devices leave behind it, so
-    // when it lifts the missing tube reads as a reveal. Everything TARS says
-    // here is quoted by the POD 1 progress note in Panel C.
-    () => { window.dispatchEvent(new CustomEvent('hud:daybreak', { detail: { day: 1 } })); addMsg('tars', `Overnight — he rewarmed, stayed in sinus, and the drains settled. <span class="em">Post-op day 1: time to wake him up and start taking things away.</span>`, 'post-op day 1'); },
-    () => { addMsg('tars', `Sedation off at 07:30. He's opened his eyes, he's obeying commands — grip and toe wiggle both there. <b>Neurologically intact.</b>`, 'waking up'); emrNavigate('vitals'); },
-    () => { addMsg('tars', `Weaned <b>SIMV → PSV</b> and ran a spontaneous breathing trial at 10:40. Tidal volumes holding, rate 18, gases fine. <span class="em">He's passed — he doesn't need the ventilator.</span>`, 'breathing trial'); },
+    // The day-break card hides the switch: the feed wipes and five devices
+    // leave behind it, so when it lifts the clean slate and the missing tube
+    // both read as the day turning. Panel A is CHOREOGRAPHED per beat: SCOPE up
+    // for the beats that kill machines (their tiles die on screen), WATCH up
+    // when the camera speaks, the twin otherwise. Panel C only opens when a
+    // note publishes — the record is consulted, not lived in.
+    () => { podOpen(1); addMsg('tars', `Overnight — he rewarmed, stayed in sinus, and the drains settled. <span class="em">Post-op day 1: time to wake him up and start taking things away.</span>`, 'post-op day 1'); },
+    () => { addMsg('tars', `Sedation off at 07:30. He's opened his eyes, he's obeying commands — grip and toe wiggle both there. <b>Neurologically intact.</b>`, 'waking up'); },
+    () => { paWindow('scope'); addMsg('tars', `Weaned <b>SIMV → PSV</b> and ran a spontaneous breathing trial at 10:40. Tidal volumes holding, rate 18, gases fine. <span class="em">He's passed — he doesn't need the ventilator.</span>`, 'breathing trial'); },
     () => { addMsg('tars', `<b>Extubated 11:20.</b> Facemask at 28%, sats 96, chest clear, good cough. Tube and ventilator are off him.`, 'extubated'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['ett', 'vent'] } })); },
     () => { addMsg('tars', `Balloon pump weaned 1:1 → 1:2 overnight and <b>out at 13:10</b> — groin's stable, distal pulses intact. Noradrenaline off at 15:40; he's holding a MAP of 82 on his own. Warming blanket off, he's at 37.0.`, 'support withdrawn'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['iabp', 'pumps', 'warm'] } })); },
-    () => { addMsg('lsam', `Camera's logged the rest: <b>first sit at 14:05</b>, unaided, then forty-five minutes out in the chair. Guarding the sternotomy on transfers — CPOT peaks at 4, settles to 1 at rest.`, 'movement logged'); openApp && openApp('notes'); },
+    () => { paWindow('watch'); addMsg('lsam', `Camera's logged the rest: <b>first sit at 14:05</b>, unaided, then forty-five minutes out in the chair. Guarding the sternotomy on transfers — CPOT peaks at 4, settles to 1 at rest.`, 'movement logged'); },
     () => { addMsg('tars', `I've written the day up — the mobility section is straight off the camera log. <span class="em">Seven devices left on him, down from twelve.</span> Plan for tomorrow needs your name:`, 'drafting note'); window.dispatchEvent(new CustomEvent('hud:note:publish', { detail: { day: 1 } })); addOrders([
       { label: PODS[1].orders.label, items: PODS[1].orders.items, detail: 'Daily plan · requires sign-off', autonomy: 'gated', exec: () => emrNavigate('notes') }]); },
-    () => { addMsg('tars', `Signed. Beta-blocker started for rhythm prophylaxis. <span class="em">He's had a good day — off the ventilator, off support, sitting out.</span>`, 'pod 1 closed'); },
+    () => { paWindow('twin'); openApp('summary'); addMsg('tars', `Signed. Beta-blocker started for rhythm prophylaxis. <span class="em">He's had a good day — off the ventilator, off support, sitting out.</span>`, 'pod 1 closed'); },
+
+    // ── POD 2 · mobilising — drains out ───────────────────────────────────
+    () => { podOpen(2); addMsg('tars', `Overnight quiet — sinus on the beta-blocker, drains down to a trickle. <span class="em">Post-op day 2: get him up, get the tubes out.</span>`, 'post-op day 2'); },
+    () => { paWindow('watch'); addMsg('lsam', `He <b>stood at 08:40</b> — unaided, steady — then marched on the spot with physio. Two chair transfers logged since. CPOT 3 on exertion, settling at rest.`, 'movement logged'); },
+    () => { paWindow('scope'); addMsg('tars', `Drains gave <b>40 mL over the last 8 hours</b>, serous — that clears the removal threshold. <b>Out at 10:15</b>, post-pull film's clean. Suction's stood down with them.`, 'drains out'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['drains', 'suction'] } })); },
+    () => { paWindow('twin'); addMsg('tars', `PCA's off — oral analgesia is holding him through transfers. <span class="em">Five machines left at the bed, down from seven.</span>`, 'de-escalating'); },
+    () => { addMsg('tars', `Day 2's written up — the mobility section is the camera log again. Tomorrow's plan needs your name:`, 'drafting note'); window.dispatchEvent(new CustomEvent('hud:note:publish', { detail: { day: 2 } })); addOrders([
+      { label: PODS[2].orders.label, items: PODS[2].orders.items, detail: 'Daily plan · requires sign-off', autonomy: 'gated', exec: () => emrNavigate('notes') }]); },
+    () => { paWindow('twin'); openApp('summary'); addMsg('tars', `Signed. <span class="em">The lines come out in the morning.</span>`, 'pod 2 closed'); },
+
+    // ── POD 3 · lines out — the last invasive day ─────────────────────────
+    () => { podOpen(3); addMsg('tars', `Untroubled night — telemetry quiet, not a run of ectopy. <span class="em">Post-op day 3: everything invasive comes out today.</span>`, 'post-op day 3'); },
+    () => { paWindow('watch'); addMsg('lsam', `Three corridor walks logged — <b>sixty metres each</b>, gait steady, sternal precautions held on every stand. He queues for the walk before physio arrives.`, 'movement logged'); },
+    () => { paWindow('scope'); addMsg('tars', `Arterial line <b>out 09:20</b>, central line <b>out 09:40</b> — sites clean, no ooze. The cuff agrees with everything the art line said on its way out.`, 'lines out'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['art', 'cvc'] } })); },
+    () => { addMsg('tars', `Catheter <b>out at 10:00</b> — he voided at 13:30. <span class="em">Trial of void passed.</span>`, 'catheter out'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['ucath'] } })); },
+    () => { paWindow('twin'); addMsg('tars', `Two machines left on him — <b>telemetry and the calf pumps</b>. The monitor wall has gone dark tile by tile.`, 'telemetry only'); },
+    () => { addMsg('tars', `Day 3's drafted. The plan on this one moves him: <span class="em">Step-Down, in the morning.</span>`, 'drafting note'); window.dispatchEvent(new CustomEvent('hud:note:publish', { detail: { day: 3 } })); addOrders([
+      { label: PODS[3].orders.label, items: PODS[3].orders.items, detail: 'Transfer plan · requires sign-off', autonomy: 'gated', exec: () => emrNavigate('notes') }]); },
+    () => { paWindow('twin'); openApp('summary'); addMsg('tars', `Signed — the Step-Down bed is his. <span class="em">Moving him out of the unit.</span>`, 'transfer ready'); },
+  ] : state.chapter === 'stepdown' ? [
+    // ── POD 4 · STEP-DOWN — after the transfer (its own chapter: the shell
+    // flies the building between POD 3 and here). Same bedside machinery, one
+    // wire left. Boots straight into the day-break so the ward arrival IS the
+    // title card; setPod(4) behind it leaves telemetry as the only live device.
+    () => { podOpen(4); addMsg('tars', `Transferred — <b>Step-Down, bay 4</b>. Calf pumps came off on the way over. <span class="em">One wire left on him: telemetry.</span>`, 'arrived · step-down'); },
+    () => { paWindow('scope'); addMsg('tars', `The monitor wall is <b>one live tile</b> now — eleven dark. Sinus 74 on the beta-blocker.`, 'telemetry only'); },
+    () => { paWindow('watch'); addMsg('lsam', `Camera's logging an independent patient — <b>120 metres</b> today, stairs with physio this afternoon, most of the day in the chair.`, 'movement logged'); },
+    () => { paWindow('twin'); addMsg('tars', `Wound check: sternotomy clean and dry, no click, harvest site settled. <b>Not one run of AF the whole admission</b> — the prophylaxis paid for itself.`, 'wound check'); },
+    () => { addMsg('tars', `Day 4's written. What's left is the way home — the discharge planning set needs your name:`, 'discharge planning'); window.dispatchEvent(new CustomEvent('hud:note:publish', { detail: { day: 4 } })); addOrders([
+      { label: PODS[4].orders.label, items: PODS[4].orders.items, detail: 'Discharge planning · requires sign-off', autonomy: 'gated', exec: () => emrNavigate('notes') }]); },
+    () => { paWindow('twin'); addMsg('tars', `Planning's running. Echo came back within the hour — <b>EF 50%</b>, up from 40 on the table, grafts flowing, no effusion. Rehab's booked and the letters are queued.`, 'plan running'); },
+    // the record's closing artifact: the whole admission as ONE document. TARS
+    // drafts it from the notes it already wrote; the signature files it.
+    () => { addMsg('tars', `I've drafted his <b>discharge summary</b> — door to staircase, the med list, the follow-up. <span class="em">One signature closes the record:</span>`, 'summary drafted'); window.dispatchEvent(new CustomEvent('hud:discharge:publish')); addOrders([
+      { label: 'Discharge summary — sign to file', detail: 'Closes the admission record · copies to GP + cardiothoracic clinic', autonomy: 'gated', exec: () => window.dispatchEvent(new CustomEvent('hud:discharge:sign')) }]); },
+    () => { addMsg('tars', `Filed — his GP and the surgical clinic have it. <span class="em">Four days from a stopped heart to a staircase.</span> He goes home Thursday.`, 'record closed'); },
   ] : [
     // 1 · we're already in — the chart's up (continues straight from the ward dive)
     () => { addMsg('lsam', `${b.patient.name}, ${b.patient.age}. His chart's up.`, 'opening record'); emrNavigate('summary'); },
@@ -655,9 +709,11 @@ function advance() {
   if (idx >= steps.length) {
     // end of a patient story → hand off to the next transition (the React shell
     // listens for 'tars:finished' and the host routes by chapter: workup → Cath
-    // Lab dive · continued → OR dive). The floor briefing and the postop stub
-    // (current terminus) just replay.
-    if (state.mode === 'patient' && (state.chapter === 'workup' || state.chapter === 'continued')) { window.dispatchEvent(new CustomEvent('tars:finished')); return; }
+    // Lab dive · continued → OR dive · postop (PODs 0-3 done) → the Step-Down
+    // transfer flight. The stepdown chapter is the terminus: it HOLDS on its
+    // final bedside instead of replaying — there is nowhere left to go.
+    if (state.chapter === 'stepdown') return;
+    if (state.mode === 'patient' && (state.chapter === 'workup' || state.chapter === 'continued' || state.chapter === 'postop')) { window.dispatchEvent(new CustomEvent('tars:finished')); return; }
     load(state.mode, state.focusId); return;
   }
   runStep();

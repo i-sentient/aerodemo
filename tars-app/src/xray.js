@@ -102,15 +102,52 @@ export function makeClinicalXrayMaterial(clip, color = 0x2f8d8e) {
   return m;
 }
 
-// "Grid" material: the body's GLB is a baked quad-wire lattice (clean uniform quads),
-// so this is a crisp unlit cyan applied to that geometry — reads as a glowing scan grid
-// on the light stage. Carries a dummy uTime so the figure update loop is happy.
-export function makeGridMaterial(clip, color = 0x2fd0e0) {
+// "Grid" material: the wireframe-lattice scan look, drawn PROCEDURALLY on a solid body mesh
+// (body.glb) rather than read off baked wire geometry. The old grid.glb welded each wire into
+// a solid tube, so both cell count and line weight were fixed at authoring time — this makes
+// them uniforms instead: `density` = lattice lines per world unit, `width` = line weight in
+// PIXELS (constant on screen at any zoom, so it stays hairline when the camera pushes in).
+//
+// The lattice is triplanar: three axis-aligned grids blended by the surface normal, so limbs
+// get rings around them plus lines running along them, and the projection never smears on
+// steep faces the way a single plane would. Coordinates are OBJECT space × the model scale —
+// object space so the lattice is welded to the body and doesn't swim as the figure spins,
+// × scale so `density` stays in world units whatever the GLB was authored in (~mm here).
+export function makeGridMaterial(clip, color = 0x2fd0e0, { density = 44, width = 1.0 } = {}) {
   const m = new THREE.MeshBasicMaterial({
-    color, transparent: true, opacity: 0.95, depthWrite: false,
+    color, transparent: true, opacity: 1.0, depthWrite: false,
     side: THREE.DoubleSide, clippingPlanes: clip ? [clip] : null,
   });
   m.userData.uTime = { value: 0 };
+  m.userData.uDensity = { value: density };
+  m.userData.uWidth = { value: width };
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uDensity = m.userData.uDensity;
+    sh.uniforms.uWidth = m.userData.uWidth;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vGP;\nvarying vec3 vGN;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float gScale = length(modelMatrix[1].xyz);   // uniform scale → density in world units
+        vGP = transformed * gScale;                  // object space: lattice rides with the body
+        vGN = normalize(normal);`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform float uDensity; uniform float uWidth;
+        varying vec3 vGP; varying vec3 vGN;
+        // distance to the nearest cell edge, divided by the screen-space derivative so the
+        // line lands at a constant pixel width and antialiases instead of shimmering
+        float lattice(vec2 p) {
+          vec2 c = p * uDensity;
+          vec2 d = abs(fract(c - 0.5) - 0.5) / max(fwidth(c), 1e-5);
+          return 1.0 - min(min(d.x, d.y) / uWidth, 1.0);
+        }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        vec3 bw = pow(abs(normalize(vGN)), vec3(4.0));      // sharp triplanar blend
+        bw /= max(bw.x + bw.y + bw.z, 1e-5);
+        float line = lattice(vGP.zy) * bw.x + lattice(vGP.xz) * bw.y + lattice(vGP.xy) * bw.z;
+        diffuseColor.a *= clamp(line, 0.0, 1.0);
+        if (diffuseColor.a < 0.01) discard;                 // keep the cells fully see-through`);
+  };
   return m;
 }
 

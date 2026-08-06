@@ -1,5 +1,5 @@
 import { beds, bedById } from './ontology.js';
-import { state, onModeChange, setMode } from './state.js';
+import { state, isPostopWorld, onModeChange, setMode } from './state.js';
 import { lerp } from './utils.js';
 import { HOOKUP, POD0, TRENDS, SCOPE_DETAIL, CONTROLS, MEASURED, WAVE_NUM, WATCH, PODS } from './postop.js';
 import { makeMiniScope, makeTrend, WAVES } from './waveforms.js';
@@ -102,7 +102,7 @@ const live = new Set();     // device keys currently attached to the patient
 let hkActive = false;       // postop hookup mode on
 let podDay = 0;             // which post-op day the bedside is showing
 function railRender(ping) {
-  if (state.chapter !== 'postop' || !root) return;
+  if (!isPostopWorld() || !root) return;
   feedOn.clear(); const marks = [];
   const on = HOOKUP.filter((d) => live.has(d.key));
   for (const d of on) { (d.feeds || []).forEach((f) => feedOn.add(f)); if (d.marker) marks.push(d.marker); }
@@ -173,6 +173,10 @@ function dayBreak(day) {
   dbTimers.push(setTimeout(() => dbEl.classList.remove('on'), 1750));
 }
 window.addEventListener('hud:daybreak', (e) => dayBreak((e.detail || {}).day));
+// Beats drive the Panel A window directly: a beat that removes a device wants
+// SCOPE up so the tile goes dark ON SCREEN; a camera beat wants WATCH. Same
+// setWindow the tabs use, so the tab row highlights stay honest.
+window.addEventListener('hud:window', (e) => setWindow(((e.detail || {}).w) || 'twin'));
 
 // ---- Scene 4 · SCOPE — the monitor wall (Panel A window) -------------------
 // Two levels. OVERVIEW: every bedside machine as a live tile — waveform units
@@ -510,8 +514,10 @@ const mmss = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padSta
 const hm = (t) => Math.floor(t / 3600) + 'h ' + String(Math.floor((t % 3600) / 60)).padStart(2, '0') + 'm';
 function devRailHTML() {
   dev.nibpEvery = dev.nibp = state.chapter === 'continued' ? 900 : 300; // q15m post-cath · q5m acute
-  if (state.chapter === 'postop') {
-    // boot empty — the rail fills as Panel B connects each device
+  if (isPostopWorld()) {
+    // boot empty — the rail fills as Panel B connects each device. The stepdown
+    // chapter reuses this shell for one frame only: its opening beat fires the
+    // POD-4 day-break, whose setPod rebuilds the rail at "telemetry only".
     podDay = 0; live.clear(); hkActive = true; feedOn.clear();
     return `<div class="tk">CONNECTED DEVICES · POD 0<span class="hk-count">0 / ${HOOKUP.length}</span></div><div class="kv hk-empty">establishing…</div>`;
   }
@@ -536,7 +542,7 @@ function devRailHTML() {
 }
 let devAcc = 0;
 function devTick(dt) {
-  if (state.chapter === 'postop') return; // postop rail is the hookup checklist — no q-timers
+  if (isPostopWorld()) return; // postop rail is the hookup checklist — no q-timers
   devAcc += dt; if (devAcc < 1) return; const step = Math.floor(devAcc); devAcc -= step;
   const q = (s2) => root.querySelector(s2);
   dev.nibp -= step; if (dev.nibp <= 0) dev.nibp = dev.nibpEvery; // cuff cycles, timer restarts
@@ -686,7 +692,7 @@ export function initHud(hostSel) {
   // earlier chapters never see the tabs and always render the twin.
   const tabs = root.querySelector('#paTabs');
   if (tabs) {
-    if (state.chapter !== 'postop') tabs.style.display = 'none';
+    if (!isPostopWorld()) tabs.style.display = 'none';
     // the tab always lands on the overview — markers are the detail entry
     tabs.querySelectorAll('button').forEach((b) => (b.onclick = () => { scopeView = 'overview'; scopeDev = null; setWindow(b.dataset.w); }));
   }

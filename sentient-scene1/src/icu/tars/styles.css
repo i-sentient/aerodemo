@@ -798,6 +798,18 @@ body.theme-dark .pn-p,body.theme-dark .pn-ov{color:#a9c6cd}
 body.theme-dark .pn-id{color:#7f9aa2}
 body.theme-dark .pn-setup{background:rgba(95,208,230,.06);border-left-color:#5fd0e6}
 body.theme-dark .pn-log{color:#bcd6dc}
+
+/* the DISCHARGE SUMMARY — a different document CLASS, not a fifth progress
+   note: green spine, a draft/signed state tag, a signature footer once filed */
+.pnote.dsum{border-left:3px solid #2fa96e;padding-left:12px;border-radius:2px 0 0 2px}
+.ds-tag{font:700 9px ui-monospace,monospace;letter-spacing:.1em;padding:2px 8px;border-radius:3px}
+.ds-tag.draft{background:rgba(224,179,76,.16);color:#8a6a1f}
+.ds-tag.signed{background:rgba(47,169,110,.15);color:#1e7d68}
+.ds-sig{margin-top:14px;padding-top:10px;border-top:1px dashed rgba(47,169,110,.45);font:600 10.5px ui-monospace,monospace;color:#1e7d68}
+body.theme-dark .pnote.dsum{border-left-color:#3fd598}
+body.theme-dark .ds-tag.draft{background:rgba(224,179,76,.14);color:#e0b34c}
+body.theme-dark .ds-tag.signed{background:rgba(63,213,152,.13);color:#3fd598}
+body.theme-dark .ds-sig{color:#3fd598;border-top-color:rgba(63,213,152,.35)}
 body.theme-dark .pn-t{color:#5fd0e6}
 body.theme-dark .pn-ok{color:#9fc0c9}
 .hk-card{position:absolute;z-index:9;min-width:190px;max-width:242px;background:rgba(255,255,255,.94);border:1px solid rgba(120,160,180,.4);border-radius:9px;padding:8px 11px;pointer-events:none;opacity:0;transition:opacity .14s ease;backdrop-filter:blur(8px);box-shadow:0 6px 22px rgba(20,40,52,.14)}

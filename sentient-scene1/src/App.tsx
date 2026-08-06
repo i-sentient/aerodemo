@@ -7,8 +7,8 @@ import { Building } from './scene/Building'
 import { RoundERLab } from './lab/RoundERLab'
 import { CathLabScene } from './lab/CathLabScene'
 import { ORScene } from './lab/ORScene'
-import { BuildingStack, ER_INFO, ICU_INFO, CATH_INFO, OR_INFO, STACK_TOP } from './scene/BuildingStack'
-import { OntologyTower } from './scene/OntologyTower'
+import { BuildingStack, ER_INFO, ICU_INFO, CATH_INFO, OR_INFO, STEPDOWN_INFO, STACK_TOP, roomVol } from './scene/BuildingStack'
+import { OntologyTower, OntologyPanels } from './scene/OntologyTower'
 import { Postprocessing } from './scene/Postprocessing'
 import { PatientLayer } from './components/PatientLayer'
 import { RelationEdges } from './components/RelationEdges'
@@ -187,7 +187,11 @@ function Overlay() {
 // ---------------------------------------------------------------------------
 const RETICLE_RED = '#ff3344'
 const ORBIT_TARGET: [number, number, number] = [0, STACK_TOP * 0.45, 0]
-const FRONT_VIEW_POS: [number, number, number] = [0, 18, 51] // hero elevation — same framing as the orbit view, straight-on
+// Hero elevation, straight-on. 45.5 rather than 51: the tower reads ~1.12x
+// larger in frame, which is the framing the building was composed for. Done by
+// moving the camera IN rather than narrowing the FOV, so it stays 34 everywhere
+// and the dive (which lerps 34 -> 44) has nothing to jump over.
+const FRONT_VIEW_POS: [number, number, number] = [0, 18, 45.5]
 const FRONT_LOOK_Y = STACK_TOP * 0.45
 const LOCK_POS: [number, number, number] = [0, ER_INFO.y + 2.8, 27]
 const DIVE_POS: [number, number, number] = [0, ER_INFO.y + 0.2, ER_INFO.frontZ + 0.1]
@@ -207,10 +211,68 @@ const CATH_DIVE_POS: [number, number, number] = [CATH_INFO.x, CATH_INFO.y + 0.2,
 const OR_RETURN_START: [number, number, number] = [0, ICU_INFO.y + 3, ICU_INFO.frontZ + 7]
 const OR_LOCK_POS: [number, number, number] = [OR_INFO.x, OR_INFO.y + 2.8, 24]
 const OR_DIVE_POS: [number, number, number] = [OR_INFO.x, OR_INFO.y + 0.2, OR_INFO.frontZ + 0.1]
+// Step-Down transfer: after POD 3 (Scene 4's ICU days end) we step out of the
+// ICU one last time → reveal the tower → the thread draws its FINAL leg → hold
+// on the wards tier as it individuates → dive into the +x Step-Down slab.
+const STEP_RETURN_START: [number, number, number] = [0, ICU_INFO.y + 3, ICU_INFO.frontZ + 7]
+const STEP_LOCK_POS: [number, number, number] = [STEPDOWN_INFO.x, STEPDOWN_INFO.y + 2.8, 24]
+const STEP_DIVE_POS: [number, number, number] = [STEPDOWN_INFO.x, STEPDOWN_INFO.y + 0.2, STEPDOWN_INFO.frontZ + 0.1]
 const lp = (a: number, b: number, t: number) => a + (b - a) * t
 const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2)
 
-type Phase = 'orbit' | 'front' | 'onto' | 'target' | 'fly'
+// ---------------------------------------------------------------------------
+//  THE HOLD — the beat before every dive. The camera stops close on the tier it
+//  is about to enter and that floor resolves from a count into its objects:
+//  one cluster per occupied bed, each patient inside their own cage of devices.
+//  You read the room as ontology, and THEN you go in.
+//
+//  Which floor each sequence is aimed at. The rooms are the same names the
+//  journey thread routes through (census.ts JOURNEY), so the hero bed the hold
+//  picks out is the same bed the thread already threads.
+// ---------------------------------------------------------------------------
+const FOCUS = {
+  er: { floorId: 'er', room: 'Emergency' },
+  icu: { floorId: 'icu', room: 'ICU' },
+  cath: { floorId: 'imgcath', room: 'Cath Lab' },
+  or: { floorId: 'theatres', room: 'OR1' },
+  stepdown: { floorId: 'wards', room: 'Step-Down' },
+} as const
+
+/** Framing for the hold, derived from the block's OWN geometry so it can't
+ *  drift from the building: standoff scales with the mass, and the camera sits
+ *  ~20° above it — high enough to read the floor's cluster layout in plan,
+ *  shallow enough to still see the device cages standing up off the beds. */
+function holdShot(f: { floorId: string; room?: string }) {
+  const { v, b } = roomVol(f.floorId, f.room)!
+  const round = b.shape === 'drum' || b.shape === 'crown' || b.shape === 'hex'
+  const depth = round ? b.r : b.halfD
+  const reach = round ? b.r : b.halfW
+  const standoff = depth + reach * 1.3 + 3
+  return {
+    pos: [b.x, v.y + standoff * 0.36, standoff] as [number, number, number],
+    look: [b.x, v.y - v.h * 0.12, 0] as [number, number, number],
+  }
+}
+const HOLD = {
+  er: holdShot(FOCUS.er),
+  icu: holdShot(FOCUS.icu),
+  cath: holdShot(FOCUS.cath),
+  or: holdShot(FOCUS.or),
+  stepdown: holdShot(FOCUS.stepdown),
+}
+
+/** ease the camera onto a fixed shot — the hold is the same move in all four
+ *  sequences, so it is written once here rather than four times in the rigs */
+function dampTo(cam: any, s: { pos: [number, number, number]; look: [number, number, number] }, dt: number) {
+  cam.position.x = MathUtils.damp(cam.position.x, s.pos[0], 1.9, dt)
+  cam.position.y = MathUtils.damp(cam.position.y, s.pos[1], 1.9, dt)
+  cam.position.z = MathUtils.damp(cam.position.z, s.pos[2], 1.9, dt)
+  cam.fov = MathUtils.damp(cam.fov, 30, 2.4, dt)
+  cam.updateProjectionMatrix()
+  cam.lookAt(s.look[0], s.look[1], s.look[2])
+}
+
+type Phase = 'orbit' | 'front' | 'onto' | 'hold' | 'target' | 'fly'
 
 /** Drives the camera through the target-lock + dive; calls onArrived at the end. */
 function FlyRig({
@@ -231,6 +293,8 @@ function FlyRig({
       cam.fov = MathUtils.damp(cam.fov, 34, 3, dt)
       cam.updateProjectionMatrix()
       cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'hold') {
+      dampTo(cam, HOLD.er, dt)
     } else if (phase === 'target') {
       cam.position.x = MathUtils.damp(cam.position.x, LOCK_POS[0], 2.2, dt)
       cam.position.y = MathUtils.damp(cam.position.y, LOCK_POS[1], 2.2, dt)
@@ -335,30 +399,14 @@ function useOntologyMode() {
 
 /** The [O] switch + the tube-strike cover. Fixed-positioned so it works in any
  *  view regardless of what wraps the canvas. */
-function OntologyChrome({ onto, strike, onToggle }: { onto: boolean; strike: number; onToggle: () => void }) {
-  return (
-    <>
-      <button
-        onClick={onToggle}
-        style={{
-          position: 'fixed', top: 22, right: 22, zIndex: 40, pointerEvents: 'auto', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: 8,
-          background: onto ? 'rgba(95,208,230,0.16)' : 'rgba(255,255,255,0.55)',
-          border: `1px solid ${onto ? 'rgba(95,208,230,0.6)' : 'rgba(120,160,180,0.35)'}`,
-          borderRadius: 9, padding: '8px 13px', backdropFilter: 'blur(8px)',
-          font: '700 11px ui-monospace, "JetBrains Mono", monospace',
-          letterSpacing: '.14em', color: onto ? '#2a7f92' : '#5b7d88',
-        }}
-      >
-        <span style={{ width: 7, height: 7, borderRadius: 2, background: onto ? '#2fb8d8' : '#9fb4bd', boxShadow: onto ? '0 0 7px #5fd0e6' : 'none' }} />
-        ONTOLOGY
-        <span style={{ opacity: 0.5, letterSpacing: 0 }}>[O]</span>
-      </button>
-      {strike > 0 && (
-        <div key={strike} className="tube-strike" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 50, background: '#050c13' }} />
-      )}
-    </>
-  )
+function OntologyChrome({ strike }: { strike: number }) {
+  // The [O] button is gone — the mode is driven by the keyboard and by the
+  // dive sequences, so the on-screen toggle was clutter in the top-right where
+  // the hospital card now lives. The tube-strike cover stays: it is the visible
+  // "fixture powering on" that sells the swap into ontology mode.
+  return strike > 0 ? (
+    <div key={strike} className="tube-strike" style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 50, background: '#050c13' }} />
+  ) : null
 }
 
 function IntroView({ onEnter }: { onEnter: () => void }) {
@@ -373,10 +421,12 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
       if (e.code !== 'ArrowRight' && e.code !== 'Space') return
       e.preventDefault()
       const p = phaseRef.current
-      // the dive is now two beats: read the building as ontology, THEN go in
+      // the dive is now three beats: read the building as ontology, hold close
+      // while the floor individuates into care units, THEN go in
       if (p === 'orbit') setPhase('front')
       else if (p === 'front') { setOnto(true); setPhase('onto') }
-      else if (p === 'onto') {
+      else if (p === 'onto') setPhase('hold')
+      else if (p === 'hold') {
         setPhase('target')
         window.setTimeout(() => setPhase('fly'), 1500)
       }
@@ -394,16 +444,18 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
         camera={{ position: [34, 18, 40], fov: 34 }}
       >
         <SceneEnvironment orb={false} dark onto={onto} />
-        {onto ? <OntologyTower labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'front' || phase === 'target'} />}
+        {onto ? <OntologyTower focus={FOCUS.er} open={phase === 'hold'} tags={phase === 'onto'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'front' || phase === 'target'} />}
         {phase === 'orbit' && (
           <OrbitControls
             target={ORBIT_TARGET}
             enableDamping
             dampingFactor={0.08}
-            // the ontology view holds still: its labels are pinned to fixed
-            // sides of the building (census left, journey right) and a rotating
-            // tower drags them behind the geometry
-            autoRotate={!onto}
+            // Keeps turning in ontology mode too. It used to stop, because the
+            // labels are pinned to fixed sides of the building (census left,
+            // journey right) and orbiting swings them around it — but a tower
+            // that freezes the moment you switch to ontology reads as broken,
+            // and that costs more than the labels do.
+            autoRotate
             autoRotateSpeed={0.5}
             minDistance={20}
             maxDistance={95}
@@ -414,16 +466,29 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
         <Postprocessing dark />
       </Canvas>
 
-      <OntologyChrome onto={onto} strike={strike} onToggle={toggleOnto} />
+      <OntologyChrome strike={strike} />
+      <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney={false} />
 
       <div className="overlay">
-        <div style={{ position: 'absolute', top: 22, left: 22, ...panel }}>
-          <div style={{ fontSize: 15, letterSpacing: 1.5, color: CText.teal, fontWeight: 800 }}>
+        {/* Dark glass, not the light `panel`: this sits on the near-black
+            ontology hall, where the frosted-white panel washed out to nothing.
+            Bright cyan title + pale subtitle read cleanly on the dark. */}
+        <div
+          style={{
+            position: 'absolute', top: 22, right: 22, textAlign: 'right',
+            background: 'rgba(6,14,20,0.72)',
+            border: '1px solid rgba(95,208,230,0.42)',
+            borderRadius: 12, padding: '12px 16px',
+            backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.4)',
+          }}
+        >
+          <div style={{ fontSize: 15, letterSpacing: 1.5, color: '#7de3f5', fontWeight: 800 }}>
             SENTIENT HOSPITAL
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', width: '100%', marginTop: 4, fontSize: 11, color: AERO.inkDim }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', marginTop: 5, fontSize: 11, color: 'rgba(190,235,245,0.75)' }}>
             <span className="pulse-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#2EE6A6', boxShadow: '0 0 6px #2EE6A6', flex: '0 0 auto' }} />
-            <span style={{ flex: 1, textAlign: 'center', letterSpacing: 1.5 }}>Live Clinical Ontology</span>
+            <span style={{ letterSpacing: 1.5 }}>Live Clinical Ontology</span>
             <span className="pulse-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#2EE6A6', boxShadow: '0 0 6px #2EE6A6', flex: '0 0 auto' }} />
           </div>
         </div>
@@ -437,7 +502,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
 //  ICU RETURN — after the ER story ends (TARS→ICU), pull back out of the ER to
 //  reveal the whole tower, then dive into the ICU drum and hand off to Scene-2.
 // ---------------------------------------------------------------------------
-type IcuPhase = 'reveal' | 'onto' | 'target' | 'fly'
+type IcuPhase = 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
 
 /** Reveal the building, then dive into the ICU; calls onArrived at the cut. */
 function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }) {
@@ -452,6 +517,8 @@ function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }
       cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
       cam.updateProjectionMatrix()
       cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'hold') {
+      dampTo(cam, HOLD.icu, dt)
     } else if (phase === 'target') {
       cam.position.x = MathUtils.damp(cam.position.x, ICU_LOCK_POS[0], 2.2, dt)
       cam.position.y = MathUtils.damp(cam.position.y, ICU_LOCK_POS[1], 2.2, dt)
@@ -492,7 +559,10 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
       e.preventDefault()
       const p = phaseRef.current
       if (p === 'reveal') { setOnto(true); setPhase('onto'); return }
-      if (p !== 'onto') return
+      // hold close on the tier first — it individuates into care units — and
+      // only then lock the reticle and plunge
+      if (p === 'onto') { setPhase('hold'); return }
+      if (p !== 'hold') return
       setPhase('target')
       window.setTimeout(() => setPhase('fly'), 1500)
     }
@@ -508,11 +578,12 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
       camera={{ position: ICU_RETURN_START, fov: 40 }}
     >
       <SceneEnvironment orb={false} dark onto={onto} />
-      {onto ? <OntologyTower journey={1} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} />}
+      {onto ? <OntologyTower journey={1} focus={FOCUS.icu} open={phase === 'hold'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} />}
       <IcuRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
-    <OntologyChrome onto={onto} strike={strike} onToggle={toggleOnto} />
+    <OntologyChrome strike={strike} />
+    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
     </>
   )
 }
@@ -522,7 +593,7 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
 //  #cath-return hash. Step out of the ICU → reveal the whole tower → dive into
 //  the Cath Lab tier (the +x hex half) → hard-cut into the CathLabScene.
 // ---------------------------------------------------------------------------
-type CathPhase = 'reveal' | 'onto' | 'target' | 'fly'
+type CathPhase = 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
 
 /** Reveal the building, then dive into the Cath Lab; calls onArrived at the cut. */
 function CathRig({ phase, onArrived }: { phase: CathPhase; onArrived: () => void }) {
@@ -537,6 +608,8 @@ function CathRig({ phase, onArrived }: { phase: CathPhase; onArrived: () => void
       cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
       cam.updateProjectionMatrix()
       cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'hold') {
+      dampTo(cam, HOLD.cath, dt)
     } else if (phase === 'target') {
       cam.position.x = MathUtils.damp(cam.position.x, CATH_LOCK_POS[0], 2.2, dt)
       cam.position.y = MathUtils.damp(cam.position.y, CATH_LOCK_POS[1], 2.2, dt)
@@ -577,7 +650,10 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
       e.preventDefault()
       const p = phaseRef.current
       if (p === 'reveal') { setOnto(true); setPhase('onto'); return }
-      if (p !== 'onto') return
+      // hold close on the tier first — it individuates into care units — and
+      // only then lock the reticle and plunge
+      if (p === 'onto') { setPhase('hold'); return }
+      if (p !== 'hold') return
       setPhase('target')
       window.setTimeout(() => setPhase('fly'), 1500)
     }
@@ -593,11 +669,12 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
       camera={{ position: CATH_RETURN_START, fov: 40 }}
     >
       <SceneEnvironment orb={false} dark onto={onto} />
-      {onto ? <OntologyTower journey={2} focusFloor="Cath Lab" labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="cath" />}
+      {onto ? <OntologyTower journey={2} focus={FOCUS.cath} open={phase === 'hold'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="cath" />}
       <CathRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
-    <OntologyChrome onto={onto} strike={strike} onToggle={toggleOnto} />
+    <OntologyChrome strike={strike} />
+    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
     </>
   )
 }
@@ -606,7 +683,7 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
 //  OR RETURN — after the CABG decision (Scene 3), step out of the ICU, reveal
 //  the tower, dive into the theatres tier (OR-1) → the operating theatre.
 // ---------------------------------------------------------------------------
-type OrPhase = 'reveal' | 'onto' | 'target' | 'fly'
+type OrPhase = 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
 
 function ORRig({ phase, onArrived }: { phase: OrPhase; onArrived: () => void }) {
   const prog = useRef(0)
@@ -620,6 +697,8 @@ function ORRig({ phase, onArrived }: { phase: OrPhase; onArrived: () => void }) 
       cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
       cam.updateProjectionMatrix()
       cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'hold') {
+      dampTo(cam, HOLD.or, dt)
     } else if (phase === 'target') {
       cam.position.x = MathUtils.damp(cam.position.x, OR_LOCK_POS[0], 2.2, dt)
       cam.position.y = MathUtils.damp(cam.position.y, OR_LOCK_POS[1], 2.2, dt)
@@ -660,7 +739,10 @@ function ORReturnView({ onDone }: { onDone: () => void }) {
       e.preventDefault()
       const p = phaseRef.current
       if (p === 'reveal') { setOnto(true); setPhase('onto'); return }
-      if (p !== 'onto') return
+      // hold close on the tier first — it individuates into care units — and
+      // only then lock the reticle and plunge
+      if (p === 'onto') { setPhase('hold'); return }
+      if (p !== 'hold') return
       setPhase('target')
       window.setTimeout(() => setPhase('fly'), 1500)
     }
@@ -676,11 +758,104 @@ function ORReturnView({ onDone }: { onDone: () => void }) {
       camera={{ position: OR_RETURN_START, fov: 40 }}
     >
       <SceneEnvironment orb={false} dark onto={onto} />
-      {onto ? <OntologyTower journey={3} focusFloor="OR1" labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="or" />}
+      {onto ? <OntologyTower journey={3} focus={FOCUS.or} open={phase === 'hold'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="or" />}
       <ORRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
-    <OntologyChrome onto={onto} strike={strike} onToggle={toggleOnto} />
+    <OntologyChrome strike={strike} />
+    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
+//  STEP-DOWN TRANSFER — after POD 3 (Scene 4's ICU days), he leaves the unit
+//  for the last time. Step out of the ICU → reveal the tower → the journey
+//  thread draws its FINAL leg → hold on the wards tier while it individuates
+//  into care units → dive into the +x Step-Down slab → POD 4 plays there.
+// ---------------------------------------------------------------------------
+type StepPhase = 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
+
+function StepDownRig({ phase, onArrived }: { phase: StepPhase; onArrived: () => void }) {
+  const prog = useRef(0)
+  const done = useRef(false)
+  useFrame((state, dt) => {
+    const cam = state.camera as any
+    if (phase === 'reveal' || phase === 'onto') {
+      cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
+      cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
+      cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
+      cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'hold') {
+      dampTo(cam, HOLD.stepdown, dt)
+    } else if (phase === 'target') {
+      cam.position.x = MathUtils.damp(cam.position.x, STEP_LOCK_POS[0], 2.2, dt)
+      cam.position.y = MathUtils.damp(cam.position.y, STEP_LOCK_POS[1], 2.2, dt)
+      cam.position.z = MathUtils.damp(cam.position.z, STEP_LOCK_POS[2], 2.2, dt)
+      cam.fov = MathUtils.damp(cam.fov, 34, 3, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(STEPDOWN_INFO.x, STEPDOWN_INFO.y, 0)
+    } else if (phase === 'fly') {
+      prog.current = Math.min(1, prog.current + dt / 1.9)
+      const p = easeInOut(prog.current)
+      cam.position.set(
+        lp(STEP_LOCK_POS[0], STEP_DIVE_POS[0], p),
+        lp(STEP_LOCK_POS[1], STEP_DIVE_POS[1], p),
+        lp(STEP_LOCK_POS[2], STEP_DIVE_POS[2], p),
+      )
+      cam.fov = lp(34, 44, p)
+      cam.updateProjectionMatrix()
+      cam.lookAt(STEPDOWN_INFO.x, STEPDOWN_INFO.y, 0)
+      // cut ~0.2s before the plunge, then hard-cut into the ward (POD 4)
+      if (prog.current >= 0.895 && !done.current) {
+        done.current = true
+        onArrived()
+      }
+    }
+  })
+  return null
+}
+
+function StepDownReturnView({ onDone }: { onDone: () => void }) {
+  const [phase, setPhase] = useState<StepPhase>('reveal')
+  const { onto, strike, setOnto } = useOntologyMode()
+  const phaseRef = useRef<StepPhase>('reveal')
+  phaseRef.current = phase
+  // → / Space: (once the building is revealed) dive into Step-Down
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'ArrowRight' && e.code !== 'Space') return
+      e.preventDefault()
+      const p = phaseRef.current
+      if (p === 'reveal') { setOnto(true); setPhase('onto'); return }
+      // hold close on the wards tier first — it individuates into care units —
+      // and only then lock the reticle and plunge
+      if (p === 'onto') { setPhase('hold'); return }
+      if (p !== 'hold') return
+      setPhase('target')
+      window.setTimeout(() => setPhase('fly'), 1500)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  return (
+    <>
+    <Canvas
+      shadows
+      dpr={[1, 2]}
+      gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
+      camera={{ position: STEP_RETURN_START, fov: 40 }}
+    >
+      <SceneEnvironment orb={false} dark onto={onto} />
+      {/* journey={4}: the thread completes — all five stops, ending on this tier */}
+      {onto ? <OntologyTower journey={4} focus={FOCUS.stepdown} open={phase === 'hold'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} />}
+      <StepDownRig phase={phase} onArrived={onDone} />
+      <Postprocessing dark />
+    </Canvas>
+    <OntologyChrome strike={strike} />
+    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
     </>
   )
 }
@@ -691,7 +866,7 @@ function ORReturnView({ onDone }: { onDone: () => void }) {
 //  across the two chapters). The chapter is chosen by the query param; the
 //  'workup' chapter posts 'icu:finished' when its patient story ends.
 // ---------------------------------------------------------------------------
-function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued' | 'postop'; onFinished?: () => void }) {
+function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued' | 'postop' | 'stepdown'; onFinished?: () => void }) {
   const ref = useRef<HTMLIFrameElement>(null)
   const [ready, setReady] = useState(false)
   useEffect(() => {
@@ -746,10 +921,11 @@ function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued' | '
 // The whole ride, one app, one port — transitions are in-app view swaps:
 //   intro → er → icu-return(dive) → icu-story(workup) → cath-return(dive)
 //         → cath-lab → icu-continued(decision) → or-return(dive) → or-room
-//         → icu-postop(Scene 4 stub, terminus)
+//         → icu-postop(Scene 4 · PODs 0-3) → step-return(the transfer flight)
+//         → icu-stepdown(POD 4 · terminus)
 type View =
   | 'intro' | 'er' | 'icu-return' | 'icu-story' | 'cath-return' | 'cath-lab'
-  | 'icu-continued' | 'or-return' | 'or-room' | 'icu-postop'
+  | 'icu-continued' | 'or-return' | 'or-room' | 'icu-postop' | 'step-return' | 'icu-stepdown'
 // DEV-only deep link for scene work: localhost:5210/?start=or-return etc.
 const DEV_START = import.meta.env.DEV
   ? (new URLSearchParams(window.location.search).get('start') as View | null)
@@ -786,6 +962,13 @@ export function App() {
   if (view === 'or-room')
     // the operating theatre: → at the last preset cuts to Scene 4 (post-op)
     return <ORScene onFinish={() => setView('icu-postop')} />
-  // Scene 4 (post-op) — stub terminus for now
-  return <IcuFrame chapter="postop" />
+  if (view === 'icu-postop')
+    // Scene 4 · PODs 0-3 at the ICU bedside; signing POD 3's transfer plan
+    // posts 'icu:finished' → the Step-Down transfer flight
+    return <IcuFrame chapter="postop" onFinished={() => setView('step-return')} />
+  if (view === 'step-return')
+    // out of the ICU one last time → the thread completes → dive into Step-Down
+    return <StepDownReturnView onDone={() => setView('icu-stepdown')} />
+  // Scene 4 · POD 4 in the Step-Down ward — the terminus (holds at its end)
+  return <IcuFrame chapter="stepdown" />
 }

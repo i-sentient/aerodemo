@@ -215,6 +215,9 @@ export const CATH_INFO = { x: TWIN_DX, y: floorCenterY(1), frontZ: 4.6, w: 2 * H
 // OR dive target (for the ICU→OR transition after the CABG decision). The
 // theatres twin is FLOORS index 2; OR-1 is the LEFT (−x) half at x = −OR_DX.
 export const OR_INFO = { x: -OR_DX, y: floorCenterY(2), frontZ: HALF_D, w: 2 * TWIN_HALF_W, h: BLOCK_H }
+// wards twin is FLOORS index 4; Step-Down is the RIGHT (+x) half — the POD 4
+// transfer dives into this block, mirroring OR-1's geometry on the other side.
+export const STEPDOWN_INFO = { x: WARD_DX, y: floorCenterY(4), frontZ: HALF_D, w: 2 * TWIN_HALF_W, h: BLOCK_H }
 function hexShape(r: number): Shape {
   const s = new Shape()
   for (let i = 0; i < 6; i++) {

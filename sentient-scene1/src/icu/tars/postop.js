@@ -239,13 +239,69 @@ export const PODS = [
     // without preventing it, which is what makes POD 2 honest rather than cheap
     orders: { label: 'POD 1 → POD 2 plan', items: ['Chest physio + mobilise twice daily', 'Remove drains if < 50 mL/8h', 'Start oral beta-blocker — AF prophylaxis', 'Step down to telemetry monitoring'] } },
   { pod: 2, title: 'Mobilising', sub: 'drains out · up and standing', off: ['drains', 'suction'],
-    vitals: { hr: 84, spo2: 96, sys: 122, dia: 72, rr: 17, temp: 36.9 } },
+    vitals: { hr: 84, spo2: 96, sys: 122, dia: 72, rr: 17, temp: 36.9 },
+    note: [
+      ['Cardiovascular', 'Sinus 84 on the beta-blocker — <b>no AF</b>. MAP holding without support. Peripheries warm.'],
+      ['Respiratory', 'FiO₂ weaned to room air by 09:00; sats 96%. Deep-breathing exercises with physio, secretions clearing.'],
+      ['Drains', 'Combined output <b>40 mL over 8 h</b>, serous — removal criterion met. Mediastinal + pleural drains <b>out 10:15</b>; post-removal film clear, no pneumothorax. Suction standby stood down.'],
+      ['Pain', 'PCA stopped overnight — oral analgesia holding CPOT ≤ 3 on exertion. Guarding the sternotomy on transfers only.'],
+      ['Renal &amp; fluids', 'Balance −0.4 L today. Creatinine 92 — back to baseline.'],
+    ],
+    orders: { label: 'POD 2 → POD 3 plan', items: ['Remove arterial + central lines', 'Urinary catheter out — trial of void', 'Mobilise to the corridor with physio', 'Daily ECG · continue beta-blocker'] } },
   { pod: 3, title: 'Lines out', sub: 'invasive monitoring off · walking the corridor',
     off: ['art', 'cvc', 'ucath'],
-    vitals: { hr: 78, spo2: 97, sys: 126, dia: 74, rr: 16, temp: 36.8 } },
+    vitals: { hr: 78, spo2: 97, sys: 126, dia: 74, rr: 16, temp: 36.8 },
+    note: [
+      ['Lines', 'Arterial line <b>out 09:20</b>, CVC <b>out 09:40</b> — sites clean, no ooze. One peripheral cannula stays for 24 h of IV access.'],
+      ['Renal', 'Urinary catheter <b>out 10:00</b>; voided 13:30 — <b>trial of void passed</b>. Output self-reported hourly.'],
+      ['Cardiovascular', 'Sinus 78. NIBP 126/74 — cuff readings concordant with the art line before removal.'],
+      ['Respiratory', 'Room air, sats 97%. Cough strong, chest clear to the bases.'],
+      ['Disposition', 'Down to <b>telemetry + calf pumps</b>. Step-down bed requested for the morning transfer.'],
+    ],
+    orders: { label: 'POD 3 → POD 4 plan', items: ['Transfer to Step-Down — telemetry', 'Calf pumps off on transfer', 'Stairs assessment with physio', 'Discharge review POD 6'] } },
   { pod: 4, title: 'Step-down', sub: 'telemetry only · ready for the ward', off: ['flowtron'],
-    vitals: { hr: 74, spo2: 98, sys: 128, dia: 76, rr: 15, temp: 36.7 } },
+    vitals: { hr: 74, spo2: 98, sys: 128, dia: 76, rr: 15, temp: 36.7 },
+    note: [
+      ['Transfer', 'Moved to <b>Step-Down · bay 4</b> this morning. Calf pumps off on transfer — mobilising well enough without them.'],
+      ['Cardiovascular', 'Telemetry only — sinus 74, <b>no AF for the whole admission</b>. Beta-blocker continues.'],
+      ['Wound', 'Sternotomy clean and dry, edges apposed, no click. Leg harvest site settled.'],
+      ['Function', 'Independent around the bay; <b>stairs with physio</b> completed. Sats 98% on air throughout.'],
+    ],
+    orders: { label: 'Discharge pathway', items: ['Echo before discharge', 'Cardiac rehab referral', 'Surgical + GP letters drafted', 'Review POD 6 — home if wound clean'] } },
 ];
+
+// ---- the DISCHARGE SUMMARY — the admission compressed into one document -----
+// This is the record's closing artifact: the whole demo (door → cath → theatre
+// → four PODs) as the document another hospital would actually receive. TARS
+// drafts it from the notes it already wrote; the clinician's signature files it.
+export const DISCHARGE = {
+  dx: 'Acute anterior STEMI → severe triple-vessel coronary disease (SYNTAX 34)',
+  proc: 'CABG ×3 (on-pump) — LIMA → LAD · SVG → OM · SVG → PDA',
+  course: [
+    ['Presentation', 'Anterior STEMI at the door — occlusive ECG, troponin 8.4. Cath lab activated from the ED.'],
+    ['Angiography', 'LAD 90% proximal · LCx 75% · RCA 60%. SYNTAX 34 — CABG chosen over staged PTCA.'],
+    ['Surgery', 'CABG ×3 on bypass (CPB 88 min). Weaned on noradrenaline + dobutamine, IABP overnight.'],
+    ['POD 1', 'Extubated 11:20. IABP and pressors off by evening; first sit 14:05.'],
+    ['POD 2', 'Drains out — standing and transferring unaided. PCA off, oral analgesia.'],
+    ['POD 3', 'All invasive lines out; walking the corridor. Trial of void passed.'],
+    ['POD 4', 'Stepped down — telemetry only. No AF at any point in the admission.'],
+  ],
+  echo: 'Pre-discharge TTE: LVEF 50% (40% intra-op), grafts flowing, no pericardial effusion.',
+  meds: [
+    ['Aspirin 75 mg', 'OD · lifelong'],
+    ['Bisoprolol 2.5 mg', 'OD · continue 12 weeks, then review'],
+    ['Atorvastatin 80 mg', 'nocte'],
+    ['Ramipril 2.5 mg', 'OD · GP to titrate'],
+    ['Paracetamol 1 g', 'QDS PRN · sternal pain'],
+  ],
+  followup: [
+    ['POD 6', 'Ward review — home if wound clean'],
+    ['Week 1', 'GP — wound check, BP, ramipril titration'],
+    ['Week 4', 'Cardiac rehabilitation programme'],
+    ['Week 6', 'Cardiothoracic clinic + repeat TTE'],
+  ],
+  functional: 'Independent around the ward, stairs with supervision, 120 m walked on POD 4. Sternal precautions taught and observed.',
+};
 
 // --- WATCH · the surveillance record (Panel A) --------------------------------
 // The bed camera watches continuously; pose estimation turns what it sees into

@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 import { beds, COL, bedById } from './ontology.js';
-import { state, setMode, onModeChange, onThemeChange } from './state.js';
+import { state, isPostopWorld, setMode, onModeChange, onThemeChange } from './state.js';
 import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial, makeVascularMaterial, makeGridMaterial, makeBodyHologramMaterial } from './xray.js';
 
 // Patient figure = real anatomical system layers (GLB) rendered as teal holograms.
@@ -426,7 +426,7 @@ function updateMarkers(dt) {
   }
 }
 function markerHit(e) {
-  if (displayMode !== 'patient' || state.chapter !== 'postop' || !figs.body || activeLayer !== 'body') return null;
+  if (displayMode !== 'patient' || !isPostopWorld() || !figs.body || activeLayer !== 'body') return null;
   const live = Object.values(bodyMarkers).filter((s) => s.userData.on);
   if (!live.length) return null;
   const r = canvas.getBoundingClientRect();
@@ -722,7 +722,7 @@ function updatePatient(dt) {
   const b = bedById(state.focusId) || beds[3];
   // postop: the twin stands still, facing front — devices are being connected
   // to a patient, not to a turntable (freeze eases to the anterior view)
-  const still = state.chapter === 'postop';
+  const still = isPostopWorld();
   human.update(dt, { hr: b.vitals.hr, reveal, spinSpeed: (zoomHeart || still) ? 0 : 0.38, freeze: zoomHeart || still, focus: zoomHeart });
   updateMarkers(dt);
   const ring = patientScene.userData.ring; if (ring) ring.rotation.z += dt * 0.2;

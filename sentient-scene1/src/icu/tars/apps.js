@@ -1,6 +1,6 @@
 import { beds, bedById, inventory, clinicians } from './ontology.js';
-import { state, onModeChange, setMode } from './state.js';
-import { POD0, POD0_ORDERS, PODS, WATCH } from './postop.js';
+import { state, isPostopWorld, onModeChange, setMode } from './state.js';
+import { DISCHARGE, POD0, POD0_ORDERS, PODS, WATCH } from './postop.js';
 
 const APPMETA = {
   emr: { nm: 'EMR', icon: '🗂️', tint: '#6aa6ff', sub: 'Electronic record' },
@@ -30,6 +30,9 @@ const view = () => document.getElementById('appView');
 const dockEl = () => document.getElementById('dock');
 
 export function initApps() {
+  // The record travels with the patient: arriving in Step-Down (POD 4), the
+  // three ICU progress notes are already written — the stack must not restart.
+  if (state.chapter === 'stepdown') notedDay = 3;
   onModeChange((mode) => {
     lisOrdered = false; lastFocus = null;
     if (mode === 'floor') { emarAgentFlag = false; emarExtra = []; }
@@ -119,7 +122,7 @@ function patientHeaderHTML(b) {
     </div>
     <button class="wardbtn" id="wardBack" title="Back to the ICU floor">${chevron}<span>ICU — North</span></button>
     <div class="idbar-spring"></div>
-    ${state.chapter === 'postop' ? podSpineHTML(currentNotedDay) : ''}
+    ${isPostopWorld() ? podSpineHTML(currentNotedDay) : ''}
     <div class="idbar-spring"></div>
     <div class="idcare">${care}</div>
   </div>`;
@@ -151,11 +154,12 @@ function renderSummary() { const b = emrBed(); return b ? shell('summary', `<div
 function renderVitals()  { const b = emrBed(); return b ? shell('vitals',  `<div class="emr-body">${emrSectionBody('vitals', b)}</div>`)  : ''; }
 function renderNotes()   {
   const b = emrBed(); if (!b) return '';
-  if (state.chapter !== 'postop') return shell('notes', `<div class="emr-body">${emrSectionBody('notes', b)}</div>`);
-  // newest day on top — the record grows downward into the operation
+  if (!isPostopWorld()) return shell('notes', `<div class="emr-body">${emrSectionBody('notes', b)}</div>`);
+  // newest on top — the discharge summary (once drafted) caps the record, then
+  // the days count down into the operation note
   let out = '';
   for (let d = notedDay; d >= 1; d--) out += progressNoteHTML(b, d);
-  return shell('notes', `<div class="emr-body">${out}${postopNoteHTML(b)}</div>`);
+  return shell('notes', `<div class="emr-body">${dischargeHTML(b)}${out}${postopNoteHTML(b)}</div>`);
 }
 
 // Scene 4 · the daily PROGRESS NOTE. Its mobility paragraph is quoted straight
@@ -167,9 +171,35 @@ function renderNotes()   {
 let notedDay = 0;
 window.addEventListener('hud:note:publish', (e) => {
   notedDay = Math.max(notedDay, (e.detail || {}).day | 0);
-  if (state.chapter === 'postop') emrNavigate('notes');
+  if (isPostopWorld()) emrNavigate('notes');
 });
-window.addEventListener('hud:hookup:reset', () => { notedDay = 0; });
+window.addEventListener('hud:hookup:reset', () => { notedDay = 0; dischargeState = 0; });
+
+// The discharge summary — drafted (state 1) by TARS at the end of POD 4, then
+// SIGNED (state 2) by the clinician, which files it and closes the record.
+let dischargeState = 0;
+window.addEventListener('hud:discharge:publish', () => { dischargeState = Math.max(dischargeState, 1); if (isPostopWorld()) emrNavigate('notes'); });
+window.addEventListener('hud:discharge:sign', () => { dischargeState = 2; if (isPostopWorld()) emrNavigate('notes'); });
+function dischargeHTML(b) {
+  if (!dischargeState) return '';
+  const p = b.patient;
+  const signed = dischargeState === 2;
+  const course = DISCHARGE.course.map(([h, t]) => `<div class="pn-r"><span>${h}</span><div>${t}</div></div>`).join('');
+  const meds = DISCHARGE.meds.map(([k, v]) => `<div class="pn-o"><span class="pn-ok">${k}</span><span class="pn-ov">${v}</span></div>`).join('');
+  const fup = DISCHARGE.followup.map(([k, v]) => `<div class="pn-o"><span class="pn-ok">${k}</span><span class="pn-ov">${v}</span></div>`).join('');
+  return `<div class="pnote dsum">
+    <div class="pn-hd"><b>DISCHARGE SUMMARY · Cardiac Surgery</b><span class="ds-tag ${signed ? 'signed' : 'draft'}">${signed ? 'SIGNED · FILED' : 'DRAFT'}</span></div>
+    <div class="pn-id">${p.name} · ${b.id} · ${p.age} ${p.sex || 'M'} &nbsp;·&nbsp; admitted day 0 · discharged POD 6 (planned) &nbsp;·&nbsp; drafted by <b>TARS</b> from the admission record</div>
+    <div class="pn-sh">DIAGNOSIS</div><div class="pn-p">${DISCHARGE.dx}</div>
+    <div class="pn-sh">PROCEDURE</div><div class="pn-p">${DISCHARGE.proc}</div>
+    <div class="pn-sh">HOSPITAL COURSE</div>${course}
+    <div class="pn-sh">PRE-DISCHARGE ECHO</div><div class="pn-p">${DISCHARGE.echo}</div>
+    <div class="pn-sh">DISCHARGE MEDICATIONS</div><div class="pn-orders">${meds}</div>
+    <div class="pn-sh">FOLLOW-UP</div><div class="pn-orders">${fup}</div>
+    <div class="pn-sh">FUNCTION AT DISCHARGE</div><div class="pn-p">${DISCHARGE.functional}</div>
+    ${signed ? `<div class="ds-sig">Signed · Dr. Rao — copies filed to GP + cardiothoracic clinic</div>` : ''}
+  </div>`;
+}
 function progressNoteHTML(b, day) {
   const p = PODS[day]; if (!p || !p.note) return '';
   const w = WATCH.days[day];

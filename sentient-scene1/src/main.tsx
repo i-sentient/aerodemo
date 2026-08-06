@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
+import { SentientICU } from './sentient-icu/SentientICU'
 import { useOntologyStore } from './ontology'
 import './index.css'
 
@@ -12,8 +13,11 @@ if (import.meta.env.DEV) {
 
 // Single clean entry point — the whole ride plays in-app from here
 // (tower → ER → ICU story → Cath Lab → ICU continued), no hash routes.
+// Opt-in side door: ?view=icu plays the standalone Sentient ICU showcase+tour.
+const view = new URLSearchParams(window.location.search).get('view')
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    {view === 'icu' ? <SentientICU /> : <App />}
   </React.StrictMode>,
 )
