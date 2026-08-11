@@ -12,6 +12,16 @@ const chapter =
   ((new URLSearchParams(location.search).get('chapter') as IcuChapter) || 'workup')
 ;(window as unknown as { __tarsChapter: string }).__tarsChapter = chapter
 
+// ?panela=1 — show ONLY Panel A (the dark scanner viewport). For the deck's
+// PLEXUS chapter, which iframes this app right after "Initialising PLEXUS":
+// PLEXUS is the perception layer, so only the perception panel belongs on
+// screen. B and C stay in the DOM (tars' modules query them by id) — CSS in
+// tars/styles.css hides them.
+const q = new URLSearchParams(location.search)
+if (q.get('panela') === '1') document.body.classList.add('panela-only')
+// &panelc=1 widens the demo to A + C — the EMR read/write beat
+if (q.get('panelc') === '1') document.body.classList.add('with-c')
+
 // dev-only handle for debugging / scripted screenshots (window.ontology)
 if (import.meta.env.DEV) {
   ;(window as unknown as { ontology: typeof useOntologyStore }).ontology = useOntologyStore

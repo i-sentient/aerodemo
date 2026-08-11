@@ -718,6 +718,31 @@ function advance() {
   }
   runStep();
 }
+// ── panelA demo seek ────────────────────────────────────────────────────────
+// The deck's PLEXUS chapter boots this app straight after "Initialising
+// PLEXUS" with only Panel A on screen. Opening on an EMPTY twin and walking 14
+// beats of hookup would contradict the graphic that just showed every stream
+// feeding the edge node — so the demo opens with the bedside already
+// established: POD 0, 12/12 connected, every vital awake.
+//
+// Done by running beat 0 (reset + bedside card), ticking every row via
+// hkFinishRow — the same call the script lands on, minus the spinners and the
+// recon nurse-gate, which lives in a panel that is not on screen — and then
+// running the close beat. `idx` is left agreeing with what has visibly
+// happened, so his next → steps into POD 1 exactly as if he had walked it.
+export function seekEstablished() {
+  if (state.chapter !== 'postop') return;
+  // load() (the mode-change reset) has ALREADY run steps[0] synchronously and
+  // left idx at 1 — beat 0 built the bedside card. Only seek from that exact
+  // point; anywhere else means the story has genuinely started.
+  if (idx === 0 && steps.length) { steps[0](); idx = 1; }
+  if (idx !== 1) return;
+  for (let i = 0; i < HOOKUP.length; i++) hkFinishRow(i);  // rail rows, twin markers, vitals
+  steps[1 + HOOKUP.length]();                              // 'bedside established'
+  idx = 2 + HOOKUP.length;
+  gated = false; busy = false; pendingNurse = null; updateNext();
+}
+
 export function initChat() {
   panelB = document.getElementById('panelB');
   buildPanel2();
@@ -728,6 +753,11 @@ export function initChat() {
     if (e.code !== 'Space' && e.code !== 'ArrowRight') return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    // Deck demo (?panela=1): the story does NOT advance on keys. The arrows
+    // belong to the deck's beat navigation — main.js forwards them up to the
+    // parent — and the interface is driven by mouse. Without this, fiddling
+    // with WATCH and pressing → walked the post-op story underneath the demo.
+    if (document.body.classList.contains('panela-only')) return;
     e.preventDefault();
     advance();
   });

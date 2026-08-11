@@ -9,6 +9,7 @@ import { CathLabScene } from './lab/CathLabScene'
 import { ORScene } from './lab/ORScene'
 import { BuildingStack, ER_INFO, ICU_INFO, CATH_INFO, OR_INFO, STEPDOWN_INFO, STACK_TOP, roomVol } from './scene/BuildingStack'
 import { OntologyTower, OntologyPanels } from './scene/OntologyTower'
+import { TarsTitle } from './scene/TarsTitle'
 import { Postprocessing } from './scene/Postprocessing'
 import { PatientLayer } from './components/PatientLayer'
 import { RelationEdges } from './components/RelationEdges'
@@ -193,11 +194,19 @@ const ORBIT_TARGET: [number, number, number] = [0, STACK_TOP * 0.45, 0]
 // and the dive (which lerps 34 -> 44) has nothing to jump over.
 const FRONT_VIEW_POS: [number, number, number] = [0, 18, 45.5]
 const FRONT_LOOK_Y = STACK_TOP * 0.45
+// the ring the resumed walk-around runs on — the front view's own distance,
+// so picking the turn back up cannot shift the tower's size in frame
+const FRONT_R = Math.hypot(FRONT_VIEW_POS[0], FRONT_VIEW_POS[2])
 const LOCK_POS: [number, number, number] = [0, ER_INFO.y + 2.8, 27]
 const DIVE_POS: [number, number, number] = [0, ER_INFO.y + 0.2, ER_INFO.frontZ + 0.1]
 // ICU return: pull out of the ER (start close on the ER tier) → reveal building
 // → dive into the ICU drum → hand off to Scene-2
 const ICU_RETURN_START: [number, number, number] = [0, ER_INFO.y + 3, ER_INFO.frontZ + 7]
+// the IntroView orbit, in numbers: it opened at [34, 18, 40] looking at
+// ORBIT_TARGET, so the ring is its horizontal distance and height
+const ORBIT_R = Math.hypot(34, 40)
+const ORBIT_H = 18
+const ORBIT_RATE = 0.055 // rad/s ~= OrbitControls autoRotateSpeed 0.5
 const ICU_LOCK_POS: [number, number, number] = [0, ICU_INFO.y + 2.8, 27]
 const ICU_DIVE_POS: [number, number, number] = [0, ICU_INFO.y + 0.2, ICU_INFO.frontZ + 0.1]
 // Cath return: after Scene-2 (ICU) ends we land back here (#cath-return). Start
@@ -444,7 +453,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
         camera={{ position: [34, 18, 40], fov: 34 }}
       >
         <SceneEnvironment orb={false} dark onto={onto} />
-        {onto ? <OntologyTower focus={FOCUS.er} open={phase === 'hold'} tags={phase === 'onto'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'front' || phase === 'target'} />}
+        {onto ? <OntologyTower focus={FOCUS.er} open={phase === 'hold'} tags={phase === 'onto'} labels={phase !== 'fly' && phase !== 'target'} /> : <BuildingStack showPills={phase === 'front' || phase === 'target'} />}
         {phase === 'orbit' && (
           <OrbitControls
             target={ORBIT_TARGET}
@@ -467,7 +476,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
       </Canvas>
 
       <OntologyChrome strike={strike} />
-      <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney={false} />
+      <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney={false} />
 
       <div className="overlay">
         {/* Dark glass, not the light `panel`: this sits on the near-black
@@ -507,24 +516,121 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
 // ride no longer visits now that it opens inside the ER — so without this
 // the pull-out jumped straight to the solid building and the ER's own
 // ontology beat was lost.
-type IcuPhase = 'erplot' | 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
+// 'plan' is the building turning to blueprint — the census reads, but the
+// journey thread is NOT drawn yet. It is the state the old IntroView showed
+// at its own `onto`, which never passed `journey` at all.
+// 'orbit' is the walk-around the old IntroView opened on: the building back
+// in the solid, seen whole, turning slowly — restored here between the ER
+// plot and the settled front view.
+// 'tars' / 'tarsx' are the agent title card, two beats like its siblings in
+// the deck. It stands AFTER the hospital ontology and BEFORE the thread: the
+// building has to have been shown before the thing that acts on it is named.
+type IcuPhase = 'erplot' | 'orbit' | 'reveal' | 'plan' | 'tars' | 'tarsx' | 'onto' | 'hold' | 'target' | 'fly'
+
+/**
+ * The resumed walk-around, shared by every rig that shows the whole tower.
+ *
+ * Each of them settles the camera onto the front view for the pills beat and
+ * used to stay there for the rest of the read — a tower that freezes the moment
+ * you start reading it looks broken, which is the same reason IntroView was
+ * always allowed to keep auto-rotating in ontology mode.
+ *
+ * `step` resumes from wherever the settle left the camera and eases the angular
+ * rate in, so the building never snaps into motion, and it runs on FRONT_R —
+ * the front view's own distance — so picking the turn back up cannot change the
+ * tower's size in frame. `reset` drops the seed whenever the turning beats are
+ * not live, so re-entering from a later scene starts from the live camera
+ * rather than a stale angle.
+ *
+ * Written once on purpose: the five rigs are otherwise byte-identical blocks,
+ * and a fifth copy of this is a fifth thing to forget when one of them changes.
+ */
+function useResumedTurn() {
+  const ang = useRef<number | null>(null)
+  const ease = useRef(0)
+  const from = useRef<[number, number]>([0, 0])
+  const reset = () => { ang.current = null }
+  const step = (cam: any, dt: number) => {
+    if (ang.current === null) {
+      ang.current = Math.atan2(cam.position.x, cam.position.z)
+      ease.current = 0
+      from.current = [Math.hypot(cam.position.x, cam.position.z), cam.position.y]
+    }
+    ease.current = Math.min(1, ease.current + dt / 1.6)
+    const e = easeInOut(ease.current)
+    ang.current += dt * ORBIT_RATE * e
+    const r = lp(from.current[0], FRONT_R, e)
+    const h = lp(from.current[1], FRONT_VIEW_POS[1], e)
+    cam.position.set(Math.sin(ang.current) * r, h, Math.cos(ang.current) * r)
+    cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
+    cam.updateProjectionMatrix()
+    cam.lookAt(0, FRONT_LOOK_Y, 0)
+  }
+  return { reset, step }
+}
 
 /** Reveal the building, then dive into the ICU; calls onArrived at the cut. */
 function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }) {
   const prog = useRef(0)
   const done = useRef(false)
+  const ang = useRef<number | null>(null)   // seeded on the first orbit frame
+  const pull = useRef(0)                    // 0..1 through the pull-back
+  const pullFrom = useRef<[number, number, number]>([0, 0, 0])
+  const turn = useResumedTurn()
   useFrame((state, dt) => {
     const cam = state.camera as any
+    if (phase !== 'plan' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'onto') turn.reset()
     if (phase === 'erplot') {
       // the ER's own plot, framed off the ER block rather than the ICU's
       dampTo(cam, HOLD.er, dt)
-    } else if (phase === 'reveal' || phase === 'onto') {
+    } else if (phase === 'orbit') {
+      // A SCRIPTED pull-back, like the dives — not a damp. Damping position
+      // while snapping the look-target from the ER tier to the tower's
+      // midpoint whipped the frame on the first press and then drifted.
+      // Here position AND look are eased together from where the ER plot
+      // left them out to the orbit ring, and the turn's angular rate builds
+      // with the same ease, so the walk-around inherits its motion from the
+      // pull instead of starting under it.
+      if (ang.current === null) {
+        ang.current = Math.atan2(cam.position.x, cam.position.z)
+        pull.current = 0
+        pullFrom.current = [cam.position.x, cam.position.y, cam.position.z]
+      }
+      pull.current = Math.min(1, pull.current + dt / 2.6)
+      const e = easeInOut(pull.current)
+      ang.current += dt * ORBIT_RATE * e
+      const rx = Math.sin(ang.current) * ORBIT_R
+      const rz = Math.cos(ang.current) * ORBIT_R
+      cam.position.set(
+        lp(pullFrom.current[0], rx, e),
+        lp(pullFrom.current[1], ORBIT_H, e),
+        lp(pullFrom.current[2], rz, e),
+      )
+      cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
+      cam.updateProjectionMatrix()
+      cam.lookAt(
+        lp(HOLD.er.look[0], ORBIT_TARGET[0], e),
+        lp(HOLD.er.look[1], ORBIT_TARGET[1], e),
+        lp(HOLD.er.look[2], ORBIT_TARGET[2], e),
+      )
+    } else if (phase === 'reveal') {
+      // the ONE still beat: the turn settles onto the front so the floor pills
+      // can be read off a stationary building
       cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
       cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
       cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
       cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
       cam.updateProjectionMatrix()
       cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'plan' || phase === 'onto') {
+      turn.step(cam, dt)
+    } else if (phase === 'tars' || phase === 'tarsx') {
+      // FROZEN behind the TARS card, deliberately. It used to keep turning so
+      // the tower was already in motion when the card lifted, but that means
+      // coming back to a building that moved while you were reading — and the
+      // longer the card is held, the further it has gone. No branch touches the
+      // camera here, and the turn's seed is NOT reset, so `onto` picks up from
+      // the same angle at full rate rather than easing in a second time.
     } else if (phase === 'hold') {
       dampTo(cam, HOLD.icu, dt)
     } else if (phase === 'target') {
@@ -560,6 +666,19 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
   const { onto, strike, toggle: toggleOnto, setOnto } = useOntologyMode()
   const phaseRef = useRef<IcuPhase>('erplot')
   phaseRef.current = phase
+  // Everything before the thread exists. Held as one flag because three phases
+  // share the answer and the journey prop reads better than a chain of !==.
+  const preThread = phase === 'erplot' || phase === 'plan' || phase === 'tars' || phase === 'tarsx'
+  // The transfer has to draw on HIS cue. Mounting it the instant the phase
+  // flips meant it drew UNDER the TARS card while that faded, so by the time
+  // the tower was visible the thread had already arrived. Arm it only once the
+  // card is genuinely gone.
+  const [threadArmed, setThreadArmed] = useState(false)
+  useEffect(() => {
+    if (preThread) { setThreadArmed(false); return }
+    const t = window.setTimeout(() => setThreadArmed(true), 580)   // the card's .55s fade + a frame
+    return () => window.clearTimeout(t)
+  }, [preThread])
   // the view opens already in ontology mode — the ER plot IS the first beat
   useEffect(() => { setOnto(true) }, [])
   // → / Space: (once the building is revealed) dive into the ICU
@@ -569,8 +688,17 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
       e.preventDefault()
       const p = phaseRef.current
       // ER plot -> the solid building -> the blueprint with the thread
-      if (p === 'erplot') { setOnto(false); setPhase('reveal'); return }
-      if (p === 'reveal') { setOnto(true); setPhase('onto'); return }
+      // solid again, pulled back to the whole building, slowly turning
+      if (p === 'erplot') { setOnto(false); setPhase('orbit'); return }
+      // the turn settles onto the front and the floor pills come up
+      if (p === 'orbit') { setPhase('reveal'); return }
+      // the solid building converts to blueprint...
+      if (p === 'reveal') { setOnto(true); setPhase('plan'); return }
+      // name the agent that works the building...
+      if (p === 'plan') { setPhase('tars'); return }
+      if (p === 'tars') { setPhase('tarsx'); return }
+      // ...and only then does the thread draw his transfer
+      if (p === 'tarsx') { setPhase('onto'); return }
       // hold close on the tier first — it individuates into care units — and
       // only then lock the reticle and plunge
       if (p === 'onto') { setPhase('hold'); return }
@@ -594,13 +722,14 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
           // 0 at the ER plot — he has only just arrived, so the leg up to
           // the ICU has not happened yet and drawing it gives away the
           // next beat. It advances to 1 the moment the building appears.
-          journey={phase === 'erplot' ? 0 : 1}
-          focus={phase === 'erplot' ? FOCUS.er : FOCUS.icu} open={phase === 'hold' || phase === 'erplot'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} />}
+          journey={preThread || !threadArmed ? 0 : 1}
+          focus={phase === 'erplot' ? FOCUS.er : FOCUS.icu} open={phase === 'hold' || phase === 'erplot'} tags={phase === 'plan'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly' && phase !== 'target'} /> : <BuildingStack showPills={phase === 'reveal'} />}
       <IcuRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
     <OntologyChrome strike={strike} />
-    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'erplot' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
+    <TarsTitle show={phase === 'tars' || phase === 'tarsx'} expanded={phase === 'tarsx'} />
+    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'erplot' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'target' && phase !== 'fly'} showTags={onto && phase === 'plan'} showJourney={onto && phase !== 'erplot' && phase !== 'plan' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} scope={phase === 'erplot' || phase === 'plan' ? null : 'icu'} />
     </>
   )
 }
@@ -616,15 +745,21 @@ type CathPhase = 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
 function CathRig({ phase, onArrived }: { phase: CathPhase; onArrived: () => void }) {
   const prog = useRef(0)
   const done = useRef(false)
+  const turn = useResumedTurn()
   useFrame((state, dt) => {
     const cam = state.camera as any
-    if (phase === 'reveal' || phase === 'onto') {
+    if (phase !== 'onto') turn.reset()
+    if (phase === 'reveal') {
+      // the one still beat: the turn settles onto the front so the floor pills
+      // read off a stationary building
       cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
       cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
       cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
       cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
       cam.updateProjectionMatrix()
       cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'onto') {
+      turn.step(cam, dt)
     } else if (phase === 'hold') {
       dampTo(cam, HOLD.cath, dt)
     } else if (phase === 'target') {
@@ -686,12 +821,12 @@ function CathReturnView({ onDone }: { onDone: () => void }) {
       camera={{ position: CATH_RETURN_START, fov: 40 }}
     >
       <SceneEnvironment orb={false} dark onto={onto} />
-      {onto ? <OntologyTower journey={2} focus={FOCUS.cath} open={phase === 'hold'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="cath" />}
+      {onto ? <OntologyTower journey={2} focus={FOCUS.cath} open={phase === 'hold'} tags={false} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly' && phase !== 'target'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="cath" />}
       <CathRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
     <OntologyChrome strike={strike} />
-    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
+    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} showTags={false} showJourney={onto && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} scope="imgcath" />
     </>
   )
 }
@@ -705,15 +840,21 @@ type OrPhase = 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
 function ORRig({ phase, onArrived }: { phase: OrPhase; onArrived: () => void }) {
   const prog = useRef(0)
   const done = useRef(false)
+  const turn = useResumedTurn()
   useFrame((state, dt) => {
     const cam = state.camera as any
-    if (phase === 'reveal' || phase === 'onto') {
+    if (phase !== 'onto') turn.reset()
+    if (phase === 'reveal') {
+      // the one still beat: the turn settles onto the front so the floor pills
+      // read off a stationary building
       cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
       cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
       cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
       cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
       cam.updateProjectionMatrix()
       cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'onto') {
+      turn.step(cam, dt)
     } else if (phase === 'hold') {
       dampTo(cam, HOLD.or, dt)
     } else if (phase === 'target') {
@@ -775,12 +916,12 @@ function ORReturnView({ onDone }: { onDone: () => void }) {
       camera={{ position: OR_RETURN_START, fov: 40 }}
     >
       <SceneEnvironment orb={false} dark onto={onto} />
-      {onto ? <OntologyTower journey={3} focus={FOCUS.or} open={phase === 'hold'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="or" />}
+      {onto ? <OntologyTower journey={3} focus={FOCUS.or} open={phase === 'hold'} tags={false} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly' && phase !== 'target'} /> : <BuildingStack showPills={phase === 'reveal'} keepPill="or" />}
       <ORRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
     <OntologyChrome strike={strike} />
-    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
+    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} showTags={false} showJourney={onto && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} scope="theatres" />
     </>
   )
 }
@@ -796,15 +937,21 @@ type StepPhase = 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
 function StepDownRig({ phase, onArrived }: { phase: StepPhase; onArrived: () => void }) {
   const prog = useRef(0)
   const done = useRef(false)
+  const turn = useResumedTurn()
   useFrame((state, dt) => {
     const cam = state.camera as any
-    if (phase === 'reveal' || phase === 'onto') {
+    if (phase !== 'onto') turn.reset()
+    if (phase === 'reveal') {
+      // the one still beat: the turn settles onto the front so the floor pills
+      // read off a stationary building
       cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
       cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
       cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
       cam.fov = MathUtils.damp(cam.fov, 34, 2, dt)
       cam.updateProjectionMatrix()
       cam.lookAt(0, FRONT_LOOK_Y, 0)
+    } else if (phase === 'onto') {
+      turn.step(cam, dt)
     } else if (phase === 'hold') {
       dampTo(cam, HOLD.stepdown, dt)
     } else if (phase === 'target') {
@@ -867,12 +1014,12 @@ function StepDownReturnView({ onDone }: { onDone: () => void }) {
     >
       <SceneEnvironment orb={false} dark onto={onto} />
       {/* journey={4}: the thread completes — all five stops, ending on this tier */}
-      {onto ? <OntologyTower journey={4} focus={FOCUS.stepdown} open={phase === 'hold'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} />}
+      {onto ? <OntologyTower journey={4} focus={FOCUS.stepdown} open={phase === 'hold'} tags={false} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly' && phase !== 'target'} /> : <BuildingStack showPills={phase === 'reveal'} />}
       <StepDownRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
     <OntologyChrome strike={strike} />
-    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
+    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} showTags={false} showJourney={onto && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} scope="wards" />
     </>
   )
 }

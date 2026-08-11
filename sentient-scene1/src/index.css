@@ -1,3 +1,12 @@
+/* The deck's heading face, loaded from the same CDN as presentationAlpha's own
+   src/index.css. It is here for ONE thing: the TARS title card, which is a
+   sibling of the deck's PLEXUS and ATLAS cards and has to set its name in the
+   same face as they do. Copperplate Gothic Light is a Windows font — macOS
+   ships an unrelated family called plain "Copperplate" — so without this the
+   stack finds nothing locally and silently falls through to serif.
+   Must stay at the top: @import is only valid before any other rule. */
+@import url('https://fonts.cdnfonts.com/css/copperplate-gothic-light');
+
 /* Global canvas + overlay styling. Kept minimal — the scene lives in WebGL. */
 * { box-sizing: border-box; }
 

@@ -95,6 +95,21 @@ export const CENSUS: FloorCensus[] = [
   { floorId: 'command',  counts: { patient: 0,  doctor: 0, nurse: 0, ops: 4, bed: 0,  device: 12 }, provenance: { A: 94, B: 6,  C: 0  } },
 ]
 
+/** What to call a floor when the ontology narrows from the whole building down
+ *  to one room. Kept here beside the census rather than in the view, so the name
+ *  a floor is announced by and the numbers announced under it come from one
+ *  table. JOURNEY.room is close but not usable directly — it carries 'OR1' for
+ *  the theatres tier, which reads as a typo at 26px. */
+export const FLOOR_TITLE: Record<string, string> = {
+  er: 'EMERGENCY',
+  imgcath: 'CATH LAB',
+  theatres: 'OR 1',
+  icu: 'ICU',
+  wards: 'STEP-DOWN',
+  hdu: 'HDU',
+  command: 'COMMAND',
+}
+
 export const censusFor = (floorId: string) => CENSUS.find((c) => c.floorId === floorId)
 
 /** percentage of the granted supply allocation still on the floor */

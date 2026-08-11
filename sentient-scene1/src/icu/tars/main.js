@@ -3,7 +3,8 @@ import { startVitals } from './ontology.js';
 import { setMode, state } from './state.js';
 import { initUI } from './ui.js';
 import { initApps } from './apps.js';
-import { initChat } from './chat.js';
+import { initChat, seekEstablished } from './chat.js';
+import { openApp } from './apps.js';
 import { initHud } from './hud.js';
 import { initScene } from './scene.js';
 
@@ -23,6 +24,31 @@ function boot() {
   // already did the floor establishing before handing off (no floor briefing).
   setMode('patient', 'ICU-08'); // fires all listeners → initial render
   if (import.meta.env && import.meta.env.DEV) window.__tars = { setMode }; // dev-only test hook
+
+  // deck demo (?panela=1): open POD 0 already established — see seekEstablished
+  if (document.body.classList.contains('panela-only') && state.chapter === 'postop') {
+    seekEstablished();
+    const q = new URLSearchParams(location.search);
+    // &win=watch: the second PLEXUS beat opens on the WATCH page, not the twin
+    const win = q.get('win');
+    if (win) window.dispatchEvent(new CustomEvent('hud:window', { detail: { w: win } }));
+    // &app=lis: land Panel C on a named clinical app (LIS for the record beat;
+    // PACS is one dock click away)
+    const app = q.get('app');
+    if (app) openApp(app);
+    // The iframe owns keyboard focus while he mouse-drives the interface, so
+    // the arrows are FORWARDED to the deck as beat navigation rather than
+    // consumed here — chat.js's story handler stands down in this mode.
+    window.addEventListener('keydown', (e) => {
+      const fwd = e.code === 'Space' || e.code === 'ArrowRight';
+      const back = e.code === 'ArrowLeft' || e.code === 'Backspace';
+      if (!fwd && !back) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: fwd ? 'plexus:next' : 'plexus:prev' }, '*'); } catch { /* not framed */ }
+    });
+  }
 
   const loading = document.getElementById('loading');
   loading.classList.add('hide');

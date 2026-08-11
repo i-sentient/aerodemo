@@ -826,3 +826,12 @@ body.theme-dark .hkc-t{color:#9fd5e2}
 body.theme-dark .hkc-v{color:#d9edf2}
 body.theme-dark .hkc-s{color:#6f8b94}
 body.theme-dark .hkc-hr{background:rgba(120,180,200,.2)}
+
+/* ?panela=1 — the deck's PLEXUS chapter: Panel A alone. B, C and the gutters
+   keep their DOM nodes (main.js queries them by id) but render nothing. */
+body.panela-only #panels{grid-template-columns:minmax(0,1fr)}
+body.panela-only #panelB,body.panela-only .gutter{display:none}
+body.panela-only:not(.with-c) #panelC{display:none}
+/* &panelc=1 — A + C, still no B: display:none children leave no track, so the
+   two live panels take the two columns in DOM order */
+body.panela-only.with-c #panels{grid-template-columns:minmax(0,1fr) minmax(0,440px)}

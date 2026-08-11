@@ -40,7 +40,7 @@ import {
   type FloorVol, type FloorBlockVol,
 } from './BuildingStack'
 import {
-  CENSUS_KINDS, KIND_STYLE, censusFor, suppliesPct, TOTALS, TOTAL_PROVENANCE, JOURNEY,
+  CENSUS_KINDS, KIND_STYLE, censusFor, suppliesPct, TOTALS, TOTAL_PROVENANCE, JOURNEY, FLOOR_TITLE,
   type MarkShape,
 } from '../ontology/census'
 import { FloorExplode } from './FloorExplode'
@@ -394,7 +394,8 @@ function leaderPoints(route: LeaderRoute, tp: { x: number; y: number }, ax: numb
   // draws a broken line to a dot it cannot reach.
   if (Math.abs(tp.y - cy) < LEVEL_EPS) return `${f(ax)},${f(cy)} ${f(tp.x)},${f(cy)}`
   if (route === 'card') {
-    const bx = ax + LEADER_STUB
+    // stub runs toward the tower, i.e. away from the card's right-hand column
+    const bx = ax - LEADER_STUB
     return `${f(ax)},${f(cy)} ${f(bx)},${f(cy)} ${f(bx)},${f(tp.y)} ${f(tp.x)},${f(tp.y)}`
   }
   // 'tier': flat at the card's level to the centre, then vertical to the tier
@@ -419,7 +420,9 @@ function FloorHUD({ show }: { show: boolean }) {
         if (!card || !line || !dot) return
         if (!show || !tp.vis) { line.style.opacity = '0'; dot.style.opacity = '0'; return }
         const r = card.getBoundingClientRect()
-        const ax = r.right + 7           // anchor just off the card's near (right) edge
+        // The billboards sit on the RIGHT now, so the leader leaves their
+        // LEFT edge — the near side facing the tower.
+        const ax = r.left - 7
         const cy = r.top + r.height / 2 + (LEADER_ANCHOR_DY[f.id] ?? 0) // off the card's centre
         line.setAttribute('points', leaderPoints(LEADER_ROUTE[f.id] ?? 'tier', tp, ax, cy))
         // dot marks the tier the leader points AT — the map convention
@@ -443,8 +446,9 @@ function FloorHUD({ show }: { show: boolean }) {
       </svg>
       <div
         style={{
-          position: 'fixed', left: 26, top: 88, bottom: 56, zIndex: 39,
+          position: 'fixed', right: 26, top: 88, bottom: 56, zIndex: 39,
           display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+          alignItems: 'flex-end',
           pointerEvents: 'none', opacity: show ? 1 : 0, transition: 'opacity .34s ease',
         }}
       >
@@ -468,45 +472,59 @@ function FloorHUD({ show }: { show: boolean }) {
 // OR-1 → Post-Op — and holds there. `upto` is how many stops he has reached, so
 // the caller (the inter-scene transitions) drives it; at 0 nothing is drawn.
 const TOTAL = JOURNEY.length - 1
+/**
+ * The route, built ONCE at module load instead of on mount.
+ *
+ * It depends on nothing but module-level data, yet it used to sit in a
+ * `useMemo(..., [])` inside JourneyThread — so a 320-segment TubeGeometry plus
+ * a 5x600 nearest-point search ran on the exact frame the thread appeared.
+ * r3f hands the NEXT frame a `dt` that swallows that hitch, and the draw is a
+ * dt-scaled damp, so `u` leapt most of the way in a single step: the transfer
+ * arrived instead of drawing. Building it at import cost means the mount frame
+ * is free.
+ *
+ * The geometry is shared, and `setDrawRange` mutates it — safe only because one
+ * view renders at a time, so there is never a second live JourneyThread.
+ */
+const THREAD = (() => {
+  const stops = JOURNEY.map((j) => {
+    const hit = roomVol(j.floorId, j.room)!
+    const b = hit.b
+    const depth = b.shape === 'drum' || b.shape === 'crown' || b.shape === 'hex' ? b.r : b.halfD
+    return new Vector3(b.x, yOf(hit.v), depth * 0.5)
+  })
+  const path: Vector3[] = []
+  stops.forEach((p, i) => {
+    path.push(p)
+    if (i < stops.length - 1) {
+      const n = stops[i + 1]
+      // bow each leg out in front of the tower so legs never overlap
+      path.push(new Vector3((p.x + n.x) / 2, (p.y + n.y) / 2, Math.max(p.z, n.z) + 2.1))
+    }
+  })
+  const curve = new CatmullRomCurve3(path)
+  const geo = new TubeGeometry(curve, 320, 0.05, 8, false)
+  // Where each stop ACTUALLY falls along the curve. The legs are different
+  // lengths (ER→ICU climbs four tiers, Cath→OR one) and each bows out by a
+  // different amount, so `i / TOTAL` lands the thread short of — or past —
+  // its dot. CatmullRom and TubeGeometry are both arc-length parameterised,
+  // so measure against evenly-spaced samples and the tube ends on the node.
+  const N = 600
+  const samples = curve.getSpacedPoints(N)
+  const uAt = stops.map((s) => {
+    let best = 0
+    let bd = Infinity
+    for (let i = 0; i <= N; i++) {
+      const d = samples[i].distanceToSquared(s)
+      if (d < bd) { bd = d; best = i }
+    }
+    return best / N
+  })
+  return { curve, geo, stops, uAt }
+})()
+
 function JourneyThread({ upto, labels = true, handedOff = false }: { upto: number; labels?: boolean; handedOff?: boolean }) {
-  const { curve, geo, stops, uAt } = useMemo(() => {
-    // route through the ACTUAL room mass on each tier — the +x hex for Cath,
-    // the −x slab for OR-1 — so the thread crosses the building as he does
-    const stops = JOURNEY.map((j) => {
-      const hit = roomVol(j.floorId, j.room)!
-      const b = hit.b
-      const depth = b.shape === 'drum' || b.shape === 'crown' || b.shape === 'hex' ? b.r : b.halfD
-      return new Vector3(b.x, yOf(hit.v), depth * 0.5)
-    })
-    const path: Vector3[] = []
-    stops.forEach((p, i) => {
-      path.push(p)
-      if (i < stops.length - 1) {
-        const n = stops[i + 1]
-        // bow each leg out in front of the tower so legs never overlap
-        path.push(new Vector3((p.x + n.x) / 2, (p.y + n.y) / 2, Math.max(p.z, n.z) + 2.1))
-      }
-    })
-    const curve = new CatmullRomCurve3(path)
-    const geo = new TubeGeometry(curve, 320, 0.05, 8, false)
-    // Where each stop ACTUALLY falls along the curve. The legs are different
-    // lengths (ER→ICU climbs four tiers, Cath→OR one) and each bows out by a
-    // different amount, so `i / TOTAL` lands the thread short of — or past —
-    // its dot. CatmullRom and TubeGeometry are both arc-length parameterised,
-    // so measure against evenly-spaced samples and the tube ends on the node.
-    const N = 600
-    const samples = curve.getSpacedPoints(N)
-    const uAt = stops.map((s) => {
-      let best = 0
-      let bd = Infinity
-      for (let i = 0; i <= N; i++) {
-        const d = samples[i].distanceToSquared(s)
-        if (d < bd) { bd = d; best = i }
-      }
-      return best / N
-    })
-    return { curve, geo, stops, uAt }
-  }, [])
+  const { curve, geo, stops, uAt } = THREAD
 
   const rootRef = useRef<Group>(null)
   const fadeRef = useRef(1)
@@ -520,7 +538,11 @@ function JourneyThread({ upto, labels = true, handedOff = false }: { upto: numbe
   useFrame(({ clock }, dt) => {
     // ease toward the caller's stop — the leg animates when he moves, then stops
     const target = uAt[Math.max(0, Math.min(TOTAL, upto))]
-    const u = (uRef.current += (target - uRef.current) * Math.min(1, dt * 1.7))
+    // dt is CLAMPED before it scales the ease. Any stall — a beat change, a
+    // texture upload, the tab regaining focus — otherwise arrives as one huge
+    // dt and the damp resolves the whole remaining distance in that one frame,
+    // which is exactly what made the thread snap instead of draw.
+    const u = (uRef.current += (target - uRef.current) * Math.min(1, Math.min(dt, 0.05) * 1.7))
     if (tubeRef.current) tubeRef.current.geometry.setDrawRange(0, Math.max(0, Math.floor(idxCount * u)))
     if (headRef.current) {
       const p = curve.getPointAt(Math.min(0.999, Math.max(0.001, u)))
@@ -654,18 +676,19 @@ export function OntologyLegend({ show }: { show: boolean }) {
         ...cardStyle,
         display: 'grid',
         gridTemplateColumns: 'auto auto',
-        gap: '5px 16px',
+        gap: '8px 22px',
+        padding: '12px 18px',
         opacity: show ? 1 : 0,
         transform: show ? 'translateY(0)' : 'translateY(6px)',
       }}
     >
-      <div style={{ gridColumn: '1 / -1', font: '700 8.5px ui-monospace, monospace', color: 'rgba(150,215,235,.6)', letterSpacing: '.22em', marginBottom: 1 }}>
+      <div style={{ gridColumn: '1 / -1', font: '700 10px ui-monospace, monospace', color: 'rgba(150,215,235,.62)', letterSpacing: '.22em', marginBottom: 3 }}>
         OBJECT CLASSES
       </div>
       {CENSUS_KINDS.map((k) => (
-        <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <MarkGlyph shape={KIND_STYLE[k].shape} color={KIND_STYLE[k].color} />
-          <em style={{ font: '600 9px ui-monospace, monospace', fontStyle: 'normal', color: 'rgba(205,238,248,.85)' }}>
+          <em style={{ font: '600 11px ui-monospace, monospace', fontStyle: 'normal', color: 'rgba(205,238,248,.85)' }}>
             {KIND_STYLE[k].label}
           </em>
         </span>
@@ -687,68 +710,276 @@ export function OntologyPanels({
   showTotals,
   showTags,
   showJourney,
+  scope = null,
 }: {
   showTotals: boolean
   /** the floor-tag column — only while the building is STATIC (the read beat),
    *  never during the orbit or the dive */
   showTags: boolean
   showJourney: boolean
+  /** Which ontology is on screen: a floorId once the thread reaches a room,
+   *  null while the view is still the whole building. */
+  scope?: string | null
 }) {
   return (
     <>
       <FloorHUD show={showTags} />
+      {/* The whole left edge is the read-out side: totals stacked in the
+          middle, the key under them in the corner. The ward billboards and the
+          journey cards share the right and alternate, so nothing on the left
+          ever has to move to make room. */}
       <div
         style={{
-          position: 'fixed', right: 22, bottom: 22, zIndex: 40,
-          display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8,
-          pointerEvents: 'none',
+          // a band, not an edge: the tower keeps to the right, so ATLAS is
+          // centred in the space actually free rather than shoved against the
+          // frame with all the emptiness pooled on its right
+          // the floor matters: below ~1210px the band would be narrower than the
+          // 400px read-out, and centring inside it would push the panel off the
+          // left edge instead of pulling it in
+          position: 'fixed', left: 0, width: 'max(38vw, 460px)', top: 0, bottom: 0,
+          // the last nudge off centre, in px rather than by narrowing the band:
+          // shrinking the band moves the panel by a fraction of the viewport, so
+          // the same "little left" lands differently on every screen
+          transform: 'translate(-20px, 8px)',
+          zIndex: 40, pointerEvents: 'none',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
         }}
       >
-        <OntologyLegend show={showTotals} />
-        <OntologyReadout show={showTotals} showJourney={showJourney} />
+        <FitToHeight pad={40}>
+          <OntologyReadout show={showTotals} scope={scope} />
+        </FitToHeight>
       </div>
+      {/* The patient's own line belongs beside the thread it labels, so it sits
+          on the right where the journey draws — not buried under the census. */}
+      <JourneyCaption show={showJourney} />
+      {/* No separate key: every census row above already pairs its mark with
+          its label, so a legend beside it repeated the same six lines. */}
     </>
   )
 }
 
-function OntologyReadout({ show, showJourney }: { show: boolean; showJourney: boolean }) {
-  const total = CENSUS_KINDS.reduce((s, k) => s + TOTALS[k], 0)
+/** Scales its child down (never up) so a tall read-out still fits a short
+ *  viewport — the deck runs this scene in an iframe whose height we do not
+ *  control, and centring alone would just crop the panel at both ends. */
+function FitToHeight({ pad = 0, children }: { pad?: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [k, setK] = useState(1)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const fit = () => {
+      const h = el.scrollHeight
+      setK(h ? Math.min(1, (window.innerHeight - pad) / h) : 1)
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    window.addEventListener('resize', fit)
+    return () => { ro.disconnect(); window.removeEventListener('resize', fit) }
+  }, [pad])
   return (
-    <div
-      style={{
-        ...cardStyle,
-        textAlign: 'right',
-        opacity: show ? 1 : 0,
-        transform: show ? 'translateY(0)' : 'translateY(6px)',
-      }}
-    >
-      <div style={{ font: '700 11px ui-monospace, monospace', color: '#dffaff', letterSpacing: '.24em' }}>CLINICAL ONTOLOGY · LIVE</div>
-      <div style={{ display: 'flex', gap: 14, marginTop: 7, justifyContent: 'flex-end' }}>
-        {CENSUS_KINDS.map((k) => (
-          <span key={k} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <i style={{ width: 7, height: 7, borderRadius: 1, background: KIND_STYLE[k].color, display: 'inline-block' }} />
-            <b style={{ font: '700 14px ui-monospace, monospace', color: '#eafcff' }}>{TOTALS[k]}</b>
-            <em style={{ font: '600 8.5px ui-monospace, monospace', fontStyle: 'normal', color: 'rgba(150,215,235,.62)' }}>{KIND_STYLE[k].label}</em>
-          </span>
-        ))}
-      </div>
-      <div style={{ font: '600 8px ui-monospace, monospace', color: 'rgba(150,215,235,.55)', marginTop: 7, letterSpacing: '.07em' }}>
-        {total} CLASSIFIED OBJECTS · {TOTAL_PROVENANCE.A}% SENSED / {TOTAL_PROVENANCE.B}% INFERRED / {TOTAL_PROVENANCE.C}% ASSERTED · SIMULATED CENSUS
-      </div>
-      {showJourney && (
-        <div style={{ font: '700 8.5px ui-monospace, monospace', color: '#ffd58a', marginTop: 6, letterSpacing: '.1em' }}>
-          ── CHANDRABABU · SH-2891 · 5 ROOMS, ONE THREAD ──
-        </div>
-      )}
+    <div style={{ transform: `scale(${k})`, transformOrigin: 'left center' }}>
+      <div ref={ref}>{children}</div>
     </div>
   )
 }
 
 /**
- * `journey` = how many stops Chandrababu has reached (0 = he hasn't moved, so no
- * thread at all). The inter-scene transitions drive it: 1 on arrival in the ER,
- * 2 when he lands in the ICU, and so on. It is deliberately NOT self-animating.
+ * The ATLAS mark, ported from the deck's title card so the same object appears
+ * in both places — corner registration ticks instead of a closed box (a full
+ * rectangle at this weight reads as a button), a faint coordinate grid, and the
+ * census's own six shapes located on the plate, each breathing with a locating
+ * ring behind it. Violet is kept rather than recoloured to the scene's cyan:
+ * the point of repeating the mark is that the room recognises it.
+ *
+ * 6s loop, offsets 1s apart, each ring alive 1.6s — so a ring is always already
+ * going before the last one dies. Never still, never a crowd.
  */
+function AtlasSigil({ size = 96 }: { size?: number }) {
+  const V = '#a78bfa'
+  const OBJECTS: { s: MarkShape; x: number; y: number; t: number }[] = [
+    { s: 'sphere', x: 7.6, y: 8.4, t: 0 },
+    { s: 'cone', x: 15.8, y: 6.9, t: 1 },
+    { s: 'octa', x: 17.2, y: 14.8, t: 2 },
+    { s: 'plate', x: 7.2, y: 16.4, t: 3 },
+    { s: 'cube', x: 12.4, y: 12.2, t: 4 },
+    { s: 'coneLow', x: 11.2, y: 18.4, t: 5 },
+  ]
+  const shape = (kind: MarkShape, x: number, y: number) => {
+    if (kind === 'sphere') return <circle cx={x} cy={y} r="1" fill={V} />
+    if (kind === 'cone') return <path d={`M${x} ${y - 1.1}l1.15 2.1h-2.3z`} fill={V} />
+    if (kind === 'coneLow') return <path d={`M${x} ${y - 0.6}l1.05 1.6h-2.1z`} fill={V} />
+    if (kind === 'cube') return <rect x={x - 0.95} y={y - 0.95} width="1.9" height="1.9" rx="0.3" fill={V} />
+    if (kind === 'plate') return <rect x={x - 1.25} y={y - 0.42} width="2.5" height="0.84" rx="0.42" fill={V} />
+    return <path d={`M${x} ${y - 1.25}l1.25 1.25-1.25 1.25-1.25-1.25z`} fill={V} />
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ display: 'block', overflow: 'visible' }}>
+      {/* names prefixed: scene-1 injects other keyframes into the same document */}
+      <style>{`
+        @keyframes atlasSigilBreathe { 0%, 100% { opacity: 0.32; } 8%, 24% { opacity: 1; } }
+        @keyframes atlasSigilRing { 0% { r: 0.9; opacity: 0.5; } 27% { r: 3.4; opacity: 0; } 100% { r: 3.4; opacity: 0; } }
+      `}</style>
+      {[[3, 3, 1, 1], [21, 3, -1, 1], [3, 21, 1, -1], [21, 21, -1, -1]].map(([x, y, dx, dy]) => (
+        <path key={`${x}${y}`} d={`M${x} ${y + dy * 3.4}V${y}H${x + dx * 3.4}`}
+          fill="none" stroke={V} strokeWidth="1" strokeLinecap="round" opacity="0.75" />
+      ))}
+      <g stroke={V} strokeWidth="0.5" opacity="0.16">
+        <path d="M12 3.6V20.4M3.6 12h16.8" />
+        <path d="M7.8 4.6v14.8M16.2 4.6v14.8M4.6 7.8h14.8M4.6 16.2h14.8" opacity="0.6" />
+      </g>
+      {OBJECTS.map((o) => (
+        <g key={o.s}>
+          <g style={{ animation: `atlasSigilBreathe 6s ease-in-out ${o.t}s infinite` }}>{shape(o.s, o.x, o.y)}</g>
+          <circle cx={o.x} cy={o.y} fill="none" stroke={V} strokeWidth="0.55"
+            style={{ animation: `atlasSigilRing 6s ease-out ${o.t}s infinite` }} />
+        </g>
+      ))}
+    </svg>
+  )
+}
+
+function OntologyReadout({ show, scope }: { show: boolean; scope: string | null }) {
+  // Same panel, narrower subject. When the patient's thread reaches a room the
+  // ontology stops describing the building and starts describing THAT room —
+  // identical rows, identical grammar, different numbers. Keeping the layout
+  // fixed is the point: the room is not a different kind of thing, it is the
+  // same model at another scale.
+  const floor = scope ? censusFor(scope) : null
+  const counts = floor ? floor.counts : TOTALS
+  const prov = floor ? floor.provenance : TOTAL_PROVENANCE
+  const title = floor ? (FLOOR_TITLE[scope!] ?? scope!.toUpperCase()) : 'HOSPITAL'
+  const total = CENSUS_KINDS.reduce((s, k) => s + counts[k], 0)
+  // Provenance is the real claim — in a record system SENSED would be ~0%,
+  // because a human typed every value — so each band gets a row that says in
+  // plain words what it means, not a bare percentage the room has to decode.
+  const PROV: [string, number, string, string][] = [
+    ['SENSED', prov.A, '#3fe0c0', 'a device measured it'],
+    ['INFERRED', prov.B, '#f5a25d', 'a model derived it'],
+    ['ASSERTED', prov.C, '#9a8f7a', 'a human typed it'],
+  ]
+  const W = 400
+  const Rule = ({ gap = 20 }: { gap?: number }) => (
+    <div style={{ width: W, height: 1, background: 'rgba(150,215,235,.17)', margin: `${gap}px 0` }} />
+  )
+  const cap: CSSProperties = { font: '600 10px ui-monospace, monospace', color: 'rgba(150,215,235,.5)', letterSpacing: '.26em' }
+  // Every tabular row is padded to one identical width, so centring the column
+  // still leaves the numerals stacked instead of stepping with label length.
+  const row: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center' }
+  return (
+    <div
+      style={{
+        pointerEvents: 'none',
+        width: W,
+        textAlign: 'center',
+        opacity: show ? 1 : 0,
+        transform: show ? 'translateY(0)' : 'translateY(6px)',
+        transition: 'opacity .34s ease, transform .34s ease',
+        textShadow: '0 1px 14px rgba(0,0,0,.9)',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'center' }}><AtlasSigil size={96} /></div>
+
+      {/* Mono, like every other line in this read-out. Copperplate was the
+          reach for the title card's face, but neither Copperplate name resolves
+          on macOS — the deck is drawing its serif fallback — so matching it here
+          meant inheriting a fallback rather than choosing a font. The panel is
+          an instrument; the instrument's own typeface is the honest answer. */}
+      <div
+        style={{
+          font: '200 62px ui-monospace, SFMono-Regular, Menlo, monospace',
+          color: '#eefcff',
+          letterSpacing: '.26em', paddingLeft: '.26em',
+          lineHeight: 1, marginTop: 24,
+        }}
+      >
+        ATLAS
+      </div>
+      <div style={{ ...cap, marginTop: 16, color: 'rgba(143,227,255,.62)' }}>
+        ACTOR · TIME · LOCATION · ASSET · STATE
+      </div>
+      <div style={{ ...row, gap: 7, marginTop: 12 }}>
+        <i style={{ width: 6, height: 6, borderRadius: 9, background: '#3fe0c0', display: 'block', boxShadow: '0 0 10px #3fe0c0' }} />
+        <em style={{ font: '700 10px ui-monospace, monospace', fontStyle: 'normal', color: 'rgba(63,224,192,.92)', letterSpacing: '.2em' }}>LIVE</em>
+      </div>
+
+      <Rule />
+
+      <div style={{ ...cap, marginBottom: 12 }}>ONTOLOGY IN VIEW</div>
+      <div style={{ font: '300 30px ui-monospace, monospace', color: '#d7f0fa', letterSpacing: '.16em', paddingLeft: '.16em', lineHeight: 1.1 }}>
+        {title}
+      </div>
+
+      <Rule />
+
+      <div style={{ ...cap, marginBottom: 16 }}>WHAT IT HOLDS</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+        {CENSUS_KINDS.map((k) => (
+          <span key={k} style={{ ...row, gap: 15 }}>
+            <MarkGlyph shape={KIND_STYLE[k].shape} color={KIND_STYLE[k].color} />
+            <b style={{ font: '200 27px ui-monospace, monospace', color: '#eafcff', minWidth: 58, textAlign: 'right', lineHeight: 1 }}>{counts[k]}</b>
+            <em style={{ font: '500 13px ui-monospace, monospace', fontStyle: 'normal', color: 'rgba(185,228,244,.76)', letterSpacing: '.1em', minWidth: 108, textAlign: 'left' }}>
+              {KIND_STYLE[k].label}
+            </em>
+          </span>
+        ))}
+      </div>
+
+      <div style={{ width: W, height: 1, background: 'rgba(150,215,235,.17)', margin: '18px 0 14px' }} />
+      <div style={{ ...row, alignItems: 'baseline', gap: 12 }}>
+        <b style={{ font: '200 27px ui-monospace, monospace', color: '#eafcff', lineHeight: 1 }}>{total}</b>
+        <em style={{ ...cap, fontStyle: 'normal' }}>OBJECTS CLASSIFIED</em>
+      </div>
+
+      <Rule />
+
+      <div style={{ ...cap, marginBottom: 14 }}>HOW IT KNOWS</div>
+      <div style={{ display: 'flex', width: W, height: 6, gap: 3, marginBottom: 16 }}>
+        {PROV.map(([label, pct, col]) => (
+          <i key={label} style={{ flex: pct, background: col, display: 'block' }} />
+        ))}
+      </div>
+      {/* rows, not a label strip under the bar: proportional columns let the
+          11% band's word run into its neighbour's */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+        {PROV.map(([label, pct, col, gloss]) => (
+          <span key={label} style={{ ...row, alignItems: 'baseline', gap: 13 }}>
+            <i style={{ width: 9, height: 9, background: col, display: 'block', alignSelf: 'center', flexShrink: 0 }} />
+            <b style={{ font: '600 16px ui-monospace, monospace', color: col, minWidth: 46, textAlign: 'right' }}>{pct}%</b>
+            <em style={{ font: '700 11px ui-monospace, monospace', fontStyle: 'normal', color: 'rgba(215,240,250,.8)', letterSpacing: '.16em', minWidth: 92, textAlign: 'left' }}>{label}</em>
+            <em style={{ font: '400 12px ui-monospace, monospace', fontStyle: 'normal', color: 'rgba(150,215,235,.46)', letterSpacing: '.04em', minWidth: 160, textAlign: 'left' }}>{gloss}</em>
+          </span>
+        ))}
+      </div>
+      <div style={{ ...cap, marginTop: 18, opacity: 0.62 }}>SIMULATED CENSUS</div>
+    </div>
+  )
+}
+
+/** The one patient the thread belongs to, set against the journey on the right. */
+function JourneyCaption({ show }: { show: boolean }) {
+  return (
+    <div
+      style={{
+        position: 'fixed', right: 34, bottom: 34, zIndex: 40, pointerEvents: 'none',
+        textAlign: 'right',
+        opacity: show ? 1 : 0,
+        transform: show ? 'translateY(0)' : 'translateY(6px)',
+        transition: 'opacity .34s ease, transform .34s ease',
+        textShadow: '0 1px 14px rgba(0,0,0,.9)',
+      }}
+    >
+      <div style={{ font: '600 15px ui-monospace, monospace', color: '#ffd58a', letterSpacing: '.14em' }}>
+        CHANDRABABU · SH-2891
+      </div>
+      <div style={{ font: '600 10px ui-monospace, monospace', color: 'rgba(255,213,138,.6)', letterSpacing: '.18em', marginTop: 8 }}>
+        5 ROOMS · ONE THREAD
+      </div>
+    </div>
+  )
+}
+
 export function OntologyTower({ journey = 0, focus, open = false, handedOff = false, tags = false, labels = true }: {
   journey?: number
   /** the floor (and the room on it) this view is aimed at: highlighted always,
