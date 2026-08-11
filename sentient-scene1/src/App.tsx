@@ -502,7 +502,12 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
 //  ICU RETURN — after the ER story ends (TARS→ICU), pull back out of the ER to
 //  reveal the whole tower, then dive into the ICU drum and hand off to Scene-2.
 // ---------------------------------------------------------------------------
-type IcuPhase = 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
+// 'erplot' is the first stop coming out of the ER: the tower focused on the
+// ER tier, its own assets plotted. It used to live in IntroView, which the
+// ride no longer visits now that it opens inside the ER — so without this
+// the pull-out jumped straight to the solid building and the ER's own
+// ontology beat was lost.
+type IcuPhase = 'erplot' | 'reveal' | 'onto' | 'hold' | 'target' | 'fly'
 
 /** Reveal the building, then dive into the ICU; calls onArrived at the cut. */
 function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }) {
@@ -510,7 +515,10 @@ function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }
   const done = useRef(false)
   useFrame((state, dt) => {
     const cam = state.camera as any
-    if (phase === 'reveal' || phase === 'onto') {
+    if (phase === 'erplot') {
+      // the ER's own plot, framed off the ER block rather than the ICU's
+      dampTo(cam, HOLD.er, dt)
+    } else if (phase === 'reveal' || phase === 'onto') {
       cam.position.x = MathUtils.damp(cam.position.x, FRONT_VIEW_POS[0], 1.5, dt)
       cam.position.y = MathUtils.damp(cam.position.y, FRONT_VIEW_POS[1], 1.5, dt)
       cam.position.z = MathUtils.damp(cam.position.z, FRONT_VIEW_POS[2], 1.5, dt)
@@ -548,16 +556,20 @@ function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }
 }
 
 function IcuReturnView({ onDone }: { onDone: () => void }) {
-  const [phase, setPhase] = useState<IcuPhase>('reveal')
+  const [phase, setPhase] = useState<IcuPhase>('erplot')
   const { onto, strike, toggle: toggleOnto, setOnto } = useOntologyMode()
-  const phaseRef = useRef<IcuPhase>('reveal')
+  const phaseRef = useRef<IcuPhase>('erplot')
   phaseRef.current = phase
+  // the view opens already in ontology mode — the ER plot IS the first beat
+  useEffect(() => { setOnto(true) }, [])
   // → / Space: (once the building is revealed) dive into the ICU
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'ArrowRight' && e.code !== 'Space') return
       e.preventDefault()
       const p = phaseRef.current
+      // ER plot -> the solid building -> the blueprint with the thread
+      if (p === 'erplot') { setOnto(false); setPhase('reveal'); return }
       if (p === 'reveal') { setOnto(true); setPhase('onto'); return }
       // hold close on the tier first — it individuates into care units — and
       // only then lock the reticle and plunge
@@ -578,12 +590,17 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
       camera={{ position: ICU_RETURN_START, fov: 40 }}
     >
       <SceneEnvironment orb={false} dark onto={onto} />
-      {onto ? <OntologyTower journey={1} focus={FOCUS.icu} open={phase === 'hold'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} />}
+      {onto ? <OntologyTower
+          // 0 at the ER plot — he has only just arrived, so the leg up to
+          // the ICU has not happened yet and drawing it gives away the
+          // next beat. It advances to 1 the moment the building appears.
+          journey={phase === 'erplot' ? 0 : 1}
+          focus={phase === 'erplot' ? FOCUS.er : FOCUS.icu} open={phase === 'hold' || phase === 'erplot'} tags={phase === 'onto'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly'} /> : <BuildingStack showPills={phase === 'reveal'} />}
       <IcuRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
     <OntologyChrome strike={strike} />
-    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
+    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'erplot' && phase !== 'fly'} showTags={onto && phase === 'onto'} showJourney />
     </>
   )
 }
