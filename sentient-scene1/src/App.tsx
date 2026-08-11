@@ -918,8 +918,11 @@ function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued' | '
   )
 }
 
-// The whole ride, one app, one port — transitions are in-app view swaps:
-//   intro → er → icu-return(dive) → icu-story(workup) → cath-return(dive)
+// The whole ride, one app, one port — transitions are in-app view swaps.
+// It OPENS INSIDE THE ER: the deck's ATLAS card has already done the
+// "here is the ontology" job, and the tower arrives properly a beat later
+// as the pull-out, so leading with `intro` showed it twice.
+//   er → icu-return(dive) → icu-story(workup) → cath-return(dive)
 //         → cath-lab → icu-continued(decision) → or-return(dive) → or-room
 //         → icu-postop(Scene 4 · PODs 0-3) → step-return(the transfer flight)
 //         → icu-stepdown(POD 4 · terminus)
@@ -931,7 +934,9 @@ const DEV_START = import.meta.env.DEV
   ? (new URLSearchParams(window.location.search).get('start') as View | null)
   : null
 export function App() {
-  const [view, setView] = useState<View>(DEV_START ?? 'intro')
+  // 'er', not 'intro' — the ride starts inside the emergency room. `intro`
+  // is still reachable by stepping back off the ER's first beat.
+  const [view, setView] = useState<View>(DEV_START ?? 'er')
   if (view === 'intro') return <IntroView onEnter={() => setView('er')} />
   if (view === 'er')
     return (
