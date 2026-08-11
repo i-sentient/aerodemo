@@ -4,51 +4,91 @@
     {
       "name": "tars-app",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "tars-app", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "tars-app",
+        "run",
+        "dev"
+      ],
       "port": 5180
     },
     {
       "name": "sentient-scene1",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "sentient-scene1", "run", "dev", "--", "--port", "5210", "--strictPort"],
+      "runtimeArgs": [
+        "--prefix",
+        "sentient-scene1",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5210",
+        "--strictPort"
+      ],
       "port": 5210
     },
     {
       "name": "sentient-ward",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "sentient-ward", "run", "dev", "--", "--port", "5300", "--strictPort"],
+      "runtimeArgs": [
+        "--prefix",
+        "sentient-ward",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5300",
+        "--strictPort"
+      ],
       "port": 5300
     },
     {
       "name": "sentient-scene1-view",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "sentient-scene1", "run", "dev", "--", "--port", "5211", "--strictPort"],
+      "runtimeArgs": [
+        "--prefix",
+        "sentient-scene1",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5211",
+        "--strictPort"
+      ],
       "port": 5211
     },
     {
+      "//": "5500 is the LIVE deck and is always already running. url-only =",
+      "//2": "attach, never spawn, so a preview can never fight it for the port.",
       "name": "presentationAlpha",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/xmaiselphx/presentationAlpha", "run", "dev", "--", "--port", "5500", "--strictPort"],
+      "url": "http://localhost:5500/",
       "port": 5500
     },
     {
       "name": "presentationAlpha-view",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/xmaiselphx/presentationAlpha", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/xmaiselphx/presentationAlpha",
+        "run",
+        "dev"
+      ],
       "port": 5501,
       "autoPort": true
     },
     {
-      "name": "ccu",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "/Users/xmaiselphx/presentationAlpha", "run", "dev", "--", "--port", "5502", "--strictPort"],
-      "url": "http://localhost:5502",
-      "port": 5502
-    },
-    {
       "name": "sentient-castle",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "sentient-castle", "run", "dev", "--", "--port", "5400", "--strictPort"],
+      "runtimeArgs": [
+        "--prefix",
+        "sentient-castle",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5400",
+        "--strictPort"
+      ],
       "port": 5400
     }
   ]
