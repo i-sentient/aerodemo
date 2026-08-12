@@ -6,9 +6,18 @@
    ============================================================ */
 
 /* the sliding dock: far-right corner, real Panel-B dimensions (30% × full height) */
-.ward-agent-dock{position:fixed;top:0;right:0;bottom:0;width:30vw;z-index:10;
+.ward-agent-dock{position:fixed;top:0;right:0;bottom:0;width:30vw;z-index:41;
   transform:translateX(108%);transition:transform 1s cubic-bezier(.65,0,.35,1),right 1s cubic-bezier(.65,0,.35,1);pointer-events:none}
 .ward-agent-dock.in{transform:none;pointer-events:auto}
+/* LEFT variant — the transit dock. It takes ATLAS's side rather than the
+   journey's: the journey caption is the one readout that is about this patient
+   MOVING, which is the whole beat, while ATLAS is a room census and there is no
+   room during a transfer. Slides in from the other edge and flips the seam. */
+.ward-agent-dock.side-left{right:auto;left:0;transform:translateX(-108%)}
+/* MUST outrank .ward-agent-dock.in — equal specificity and a later position in
+   the file meant the off-screen transform above won and the panel never slid in */
+.ward-agent-dock.side-left.in{transform:none}
+.ward-agent-dock.side-left #panelB{border-left:0;border-right:1px solid rgba(40,70,110,.28)}
 /* #panelB must FILL the dock. NOTE: #panelB.p2{position:relative} (in the shared
    panelb.css) has equal specificity, so target #panelB.p2 here to outrank it and
    keep the panel stretched to the dock's full height. */

@@ -9,6 +9,7 @@ import { CathLabScene } from './lab/CathLabScene'
 import { ORScene } from './lab/ORScene'
 import { BuildingStack, ER_INFO, ICU_INFO, CATH_INFO, OR_INFO, STEPDOWN_INFO, STACK_TOP, roomVol } from './scene/BuildingStack'
 import { OntologyTower, OntologyPanels } from './scene/OntologyTower'
+import { TransitAgentPanel } from './icu/TransitAgentPanel'
 import { TarsTitle } from './scene/TarsTitle'
 import { Postprocessing } from './scene/Postprocessing'
 import { PatientLayer } from './components/PatientLayer'
@@ -378,8 +379,12 @@ function TargetReticle() {
 //  The switch is a fluorescent tube striking — the building swaps during the
 //  first dark, so it reads as a fixture powering on, not a cut.
 // ---------------------------------------------------------------------------
-function useOntologyMode() {
-  const [onto, setOnto] = useState(false)
+/** `initial` matters: a view that opens ALREADY in ontology mode must say so
+ *  at construction, not in an effect. Setting it post-mount let the very
+ *  first frame render the solid BuildingStack before the swap — a one-frame
+ *  flash of the solid tower on the way out of the ER. */
+function useOntologyMode(initial = false) {
+  const [onto, setOnto] = useState(initial)
   const [strike, setStrike] = useState(0)
   const switching = useRef(false)
   const run = useRef((next: boolean) => {})
@@ -661,14 +666,37 @@ function IcuRig({ phase, onArrived }: { phase: IcuPhase; onArrived: () => void }
   return null
 }
 
-function IcuReturnView({ onDone }: { onDone: () => void }) {
-  const [phase, setPhase] = useState<IcuPhase>('erplot')
-  const { onto, strike, toggle: toggleOnto, setOnto } = useOntologyMode()
+function IcuReturnView({ onDone, segment = 'full' }: { onDone: () => void; segment?: 'atlas' | 'transfer' | 'full' }) {
+  // 'atlas'    · ER plot → building → blueprint/ATLAS → the TARS card, then
+  //              onDone — the story goes BACK to the ER before any thread
+  // 'transfer' · opens on the thread (journey to the ICU) → lock → dive
+  // 'full'     · the original ride, kept for dev deep links
+  const [phase, setPhase] = useState<IcuPhase>(segment === 'transfer' ? 'onto' : 'erplot')
+  const { onto, strike, toggle: toggleOnto, setOnto } = useOntologyMode(true)
   const phaseRef = useRef<IcuPhase>('erplot')
   phaseRef.current = phase
-  // Everything before the thread exists. Held as one flag because three phases
-  // share the answer and the journey prop reads better than a chain of !==.
-  const preThread = phase === 'erplot' || phase === 'plan' || phase === 'tars' || phase === 'tarsx'
+  // The SOLID-BUILDING beats. `onto` does go false for these, but not
+  // instantly: useOntologyMode's setter routes through the strike animation
+  // and only flips 70 ms later. In that window the phase has already changed
+  // while `onto` is still true — long enough for the ATLAS panel and the
+  // journey caption to begin their fade-in and be snatched back, which is the
+  // flash on every pull-back. Gating on the PHASE too makes the race invisible.
+  const solidBeat = phase === 'orbit' || phase === 'reveal'
+  // While TARS has the left side, ATLAS steps off it. Introducing the agent
+  // panel against a hospital census competes for the same read, and a census is
+  // the wrong thing to be looking at during a transfer anyway — nobody is in a
+  // room. The journey caption on the right stays: it is the patient moving,
+  // which is the one thing this beat IS.
+  // The panel waits for the DOT. It arrives on his arrival, not on the beat's:
+  // sliding in while the thread was still drawing meant TARS was reporting a
+  // bed held for a patient who had not got there yet, and it read as a caption
+  // over the animation rather than as something happening because of it.
+  const [threadSettled, setThreadSettled] = useState(false)
+  useEffect(() => { if (phase !== 'onto') setThreadSettled(false) }, [phase])
+  const transit = segment === 'transfer' && phase === 'onto' && threadSettled
+  // Everything before the thread exists — now including the pull-back and the
+  // reveal, so the transfer can never arm itself while the tower is solid.
+  const preThread = solidBeat || phase === 'erplot' || phase === 'plan' || phase === 'tars' || phase === 'tarsx'
   // The transfer has to draw on HIS cue. Mounting it the instant the phase
   // flips meant it drew UNDER the TARS card while that faded, so by the time
   // the tower was visible the thread had already arrived. Arm it only once the
@@ -679,8 +707,11 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
     const t = window.setTimeout(() => setThreadArmed(true), 580)   // the card's .55s fade + a frame
     return () => window.clearTimeout(t)
   }, [preThread])
-  // the view opens already in ontology mode — the ER plot IS the first beat
-  useEffect(() => { setOnto(true) }, [])
+  const segmentRef = useRef(segment)
+  segmentRef.current = segment
+  const onDoneRef = useRef(onDone)
+  onDoneRef.current = onDone
+  // (ontology mode is seeded at construction — see useOntologyMode's note)
   // → / Space: (once the building is revealed) dive into the ICU
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -697,8 +728,13 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
       // name the agent that works the building...
       if (p === 'plan') { setPhase('tars'); return }
       if (p === 'tars') { setPhase('tarsx'); return }
-      // ...and only then does the thread draw his transfer
-      if (p === 'tarsx') { setPhase('onto'); return }
+      // ...and then: in the split ride the TARS card is the ATLAS half's LAST
+      // page — the story returns to the ER for the inbound before any thread
+      if (p === 'tarsx') {
+        if (segmentRef.current === 'atlas') { queueMicrotask(() => onDoneRef.current?.()) }
+        else setPhase('onto')
+        return
+      }
       // hold close on the tier first — it individuates into care units — and
       // only then lock the reticle and plunge
       if (p === 'onto') { setPhase('hold'); return }
@@ -723,13 +759,17 @@ function IcuReturnView({ onDone }: { onDone: () => void }) {
           // the ICU has not happened yet and drawing it gives away the
           // next beat. It advances to 1 the moment the building appears.
           journey={preThread || !threadArmed ? 0 : 1}
+          onJourneySettled={() => setThreadSettled(true)}
           focus={phase === 'erplot' ? FOCUS.er : FOCUS.icu} open={phase === 'hold' || phase === 'erplot'} tags={phase === 'plan'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly' && phase !== 'target'} /> : <BuildingStack showPills={phase === 'reveal'} />}
       <IcuRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
     </Canvas>
     <OntologyChrome strike={strike} />
     <TarsTitle show={phase === 'tars' || phase === 'tarsx'} expanded={phase === 'tarsx'} />
-    <OntologyPanels showTotals={onto && phase !== 'hold' && phase !== 'erplot' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'target' && phase !== 'fly'} showTags={onto && phase === 'plan'} showJourney={onto && phase !== 'erplot' && phase !== 'plan' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} scope={phase === 'erplot' || phase === 'plan' ? null : 'icu'} />
+    {/* the ward's own agent panel, docked over the tower while he is between
+        rooms — see TransitAgentPanel for why it is the same component */}
+    {segment === 'transfer' && <TransitAgentPanel phase={phase} armed={threadSettled} />}
+    <OntologyPanels showTotals={onto && !transit && !solidBeat && phase !== 'hold' && phase !== 'erplot' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'target' && phase !== 'fly'} showTags={onto && phase === 'plan'} showJourney={onto && !solidBeat && phase !== 'erplot' && phase !== 'plan' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} scope={phase === 'erplot' || phase === 'plan' ? null : 'icu'} />
     </>
   )
 }
@@ -1091,7 +1131,7 @@ function IcuFrame({ chapter, onFinished }: { chapter: 'workup' | 'continued' | '
 //         → icu-postop(Scene 4 · PODs 0-3) → step-return(the transfer flight)
 //         → icu-stepdown(POD 4 · terminus)
 type View =
-  | 'intro' | 'er' | 'icu-return' | 'icu-story' | 'cath-return' | 'cath-lab'
+  | 'intro' | 'er' | 'er-onto' | 'er-story' | 'icu-return' | 'icu-story' | 'cath-return' | 'cath-lab'
   | 'icu-continued' | 'or-return' | 'or-room' | 'icu-postop' | 'step-return' | 'icu-stepdown'
 // DEV-only deep link for scene work: localhost:5210/?start=or-return etc.
 const DEV_START = import.meta.env.DEV
@@ -1103,16 +1143,30 @@ export function App() {
   const [view, setView] = useState<View>(DEV_START ?? 'er')
   if (view === 'intro') return <IntroView onEnter={() => setView('er')} />
   if (view === 'er')
+    // CHAPTER 1 · the quiet ward: coverage, badge, roll call — no story
     return (
       <RoundERLab
         enterInside
+        chapter="coverage"
         onExit={() => setView('intro')}
-        onFinish={() => setView('icu-return')} // → at the last ER beat
+        onFinish={() => setView('er-onto')} // census complete → out to the plot
+      />
+    )
+  if (view === 'er-onto')
+    // CHAPTER 2+3 · the map and the actor: ER plot → building → ATLAS → TARS
+    return <IcuReturnView segment="atlas" onDone={() => setView('er-story')} />
+  if (view === 'er-story')
+    // CHAPTER 4 · the case: back in the ER — inbound, the radio, the arrival
+    return (
+      <RoundERLab
+        chapter="story"
+        onExit={() => setView('er-onto')}
+        onFinish={() => setView('icu-return')} // TARS → the ICU transfer
       />
     )
   if (view === 'icu-return')
-    // pull out of the ER → reveal tower → dive into ICU → the ICU story
-    return <IcuReturnView onDone={() => setView('icu-story')} />
+    // the transfer: the thread draws his move → lock → dive → the ICU story
+    return <IcuReturnView segment="transfer" onDone={() => setView('icu-story')} />
   if (view === 'icu-story')
     // TARS ICU workup; its last beat posts 'icu:finished' → the Cath Lab dive
     return <IcuFrame chapter="workup" onFinished={() => setView('cath-return')} />

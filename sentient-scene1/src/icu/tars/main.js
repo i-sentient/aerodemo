@@ -3,7 +3,7 @@ import { startVitals } from './ontology.js';
 import { setMode, state } from './state.js';
 import { initUI } from './ui.js';
 import { initApps } from './apps.js';
-import { initChat, seekEstablished } from './chat.js';
+import { initChat, seekEstablished, seekErBrief } from './chat.js';
 import { openApp } from './apps.js';
 import { initHud } from './hud.js';
 import { initScene } from './scene.js';
@@ -20,10 +20,28 @@ function boot() {
   initScene(document.getElementById('c'));
   startVitals(750);
 
-  // both chapters open straight on the patient: the workup chapter's ward tour
-  // already did the floor establishing before handing off (no floor briefing).
-  setMode('patient', 'ICU-08'); // fires all listeners → initial render
+  // the ER chapter lives on the FLOOR — the inbound is a ward event, not a
+  // patient view; every other chapter opens straight on the patient
+  if (state.chapter === 'er') setMode('floor')
+  else setMode('patient', 'ICU-08'); // fires all listeners → initial render
   if (import.meta.env && import.meta.env.DEV) window.__tars = { setMode }; // dev-only test hook
+
+  // ER embed: the whole brief plays at boot — clock pinned, protocols open —
+  // and the arrows belong to the host (same forwarding as the panela demo)
+  if (state.chapter === 'er') {
+    seekErBrief();
+    if (document.body.classList.contains('embed-keys')) {
+      window.addEventListener('keydown', (e) => {
+        const fwd = e.code === 'Space' || e.code === 'ArrowRight';
+        const back = e.code === 'ArrowLeft' || e.code === 'Backspace';
+        if (!fwd && !back) return;
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        e.preventDefault();
+        try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: fwd ? 'plexus:next' : 'plexus:prev' }, '*'); } catch { /* not framed */ }
+      });
+    }
+  }
 
   // deck demo (?panela=1): open POD 0 already established — see seekEstablished
   if (document.body.classList.contains('panela-only') && state.chapter === 'postop') {

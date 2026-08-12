@@ -601,7 +601,7 @@ body.theme-dark .ps-dots i.now{background:#5fd0e6;border-color:#5fd0e6;color:#06
 /* an opaque console like SCOPE — camera viewport up top, movement LOG as the
    body, day totals + the progress-note handoff at the foot */
 #hud .pa-watch{align-items:stretch;justify-content:flex-start;gap:7px;padding:44px 12px 10px}
-/* the eye, docked top-right under the LSam badge: square corners, hard 1px
+/* the eye, docked top-right under the agent badge: square corners, hard 1px
    scan grid, no blur — an instrument feed, not a rounded UI card */
 .wt-top{display:flex;gap:9px;flex:none;align-items:stretch}
 /* longitudinal feed. In light mode the dark screen would punch a hole in the
@@ -834,4 +834,20 @@ body.panela-only #panelB,body.panela-only .gutter{display:none}
 body.panela-only:not(.with-c) #panelC{display:none}
 /* &panelc=1 — A + C, still no B: display:none children leave no track, so the
    two live panels take the two columns in DOM order */
-body.panela-only.with-c #panels{grid-template-columns:minmax(0,1fr) minmax(0,440px)}
+body.panela-only.with-c #panels{grid-template-columns:minmax(0,1fr) minmax(0,540px)}
+/* The PLEXUS interface is read from across a room, not from a desk, so its
+   TYPE runs a third larger — the readouts, the device rail, the tabs, the
+   record. The 3D stage is deliberately NOT in that list: zooming the body
+   changed the canvas's box, so the scene re-framed and the twin grew with the
+   text instead of staying the picture it was composed as.
+
+   #hud keeps its inset:0 and needs no size compensation: percentages inside a
+   zoomed element already resolve in the zoomed space, so inset:0 still covers
+   the stage exactly while everything drawn inside it lays out in a third less
+   room and renders a third larger. (Measured, not assumed — sizing it to
+   1/1.33 "to compensate" made it 75% of the stage.) Panel C's 440px track is
+   untouched for the same reason: the record reads larger without the column
+   moving. */
+body.panela-only #topbar{zoom:1.33}
+body.panela-only #panelC{zoom:1.33}
+body.panela-only #hud{zoom:1.33}

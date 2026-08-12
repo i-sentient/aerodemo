@@ -1,11 +1,11 @@
 /* ============================================================
-   PANEL B — the agent-swap surface (LSam · TARS · iSAM · humans).
+   PANEL B — the agent-swap surface (TARS · iSAM · humans).
    SINGLE SOURCE OF TRUTH: imported by chat.js, so the ward-tour
    dock and the patient-hub 3-split always share these styles.
    (Container geometry stays with each host: ward-panelb.css docks
    it over the ICU; styles.css lays out the 3-split grid.)
    ============================================================ */
-/* ===================================================== PANEL B : SPLIT 2 — agent-swap surface (LSam · TARS · iSAM) */
+/* ===================================================== PANEL B : SPLIT 2 — agent-swap surface (TARS · iSAM) */
 #panelB.p2{position:relative;overflow:hidden;font-family:var(--font);
   --p2-canvas:#F2F1EF; --p2-plate:#17151d;
   --p2-text:#171717; --p2-soft:rgba(23,23,23,.5);

@@ -1,4 +1,4 @@
-import { beds, bedById, inventory, clinicians } from './ontology.js';
+import { beds, bedById, inventory, clinicians, ward } from './ontology.js';
 import { state, isPostopWorld, onModeChange, setMode } from './state.js';
 import { DISCHARGE, POD0, POD0_ORDERS, PODS, WATCH } from './postop.js';
 
@@ -42,7 +42,7 @@ export function initApps() {
     if (info) {
       info.innerHTML = mode === 'patient'
         ? patientHeaderHTML(bedById(state.focusId) || bedById(FLOOR_EMR_FOCUS))
-        : '<span class="ward">ICU — North · 8 beds</span>';
+        : `<span class="ward">${ward.name} · ${ward.bed_count} ${state.chapter === 'er' ? 'bays' : 'beds'}</span>`;
       const wb = document.getElementById('wardBack'); // ward button → back to floor
       if (wb) wb.onclick = () => setMode('floor');
     }
@@ -300,7 +300,7 @@ function emrSectionBody(sec, b) {
   if (sec === 'orders') { const ords = ordersFor(b); return tableSec(['Order', 'Type', 'Autonomy', 'Status'],
     ords.map((o, i) => `<tr id="emr-ord-${i}"><td><b>${o.label}</b></td><td>${o.type}</td><td><span class="pillbadge ${o.auto ? 'b-auto' : 'b-flag'}">${o.auto ? 'AUTONOMOUS' : 'GATED'}</span></td><td class="${o.done ? 's-done' : 's-due'}">${(o.done ? 'done' : o.status).toUpperCase()}</td></tr>`).join('')); }
   if (sec === 'notes') return `
-    <div class="note" id="emr-note-1"><div class="nh"><b>LSam · trajectory</b><span>auto · just now</span></div><p>${t.verdict}. NEWS2 ${t.news2}, ${t.trend}. Deterioration probability ${(t.detProb * 100).toFixed(0)}%. ${p.acuity === 'critical' ? 'Reperfusion pathway recommended.' : 'Continue current management.'}</p></div>
+    <div class="note" id="emr-note-1"><div class="nh"><b>iSAM · trajectory</b><span>auto · just now</span></div><p>${t.verdict}. NEWS2 ${t.news2}, ${t.trend}. Deterioration probability ${(t.detProb * 100).toFixed(0)}%. ${p.acuity === 'critical' ? 'Reperfusion pathway recommended.' : 'Continue current management.'}</p></div>
     <div class="note" id="emr-note-2"><div class="nh"><b>Nursing · N. Adeyemi</b><span>07:40</span></div><p>${p.chief}. Patient ${p.acuity === 'critical' ? 'in distress, escalated to intensivist.' : 'comfortable, observations stable.'}</p></div>`;
   if (sec === 'imaging') return `
     <div class="fld" id="emr-img-1"><div class="k">12-lead ECG</div><div class="val">${p.acuity === 'critical' ? 'Anterior ST-elevation (V1–V4)' : 'Sinus rhythm'} · <a class="lnk">open in PACS ›</a></div></div>
@@ -333,7 +333,7 @@ export function emrNavigate(section, fieldId = null, label = null) {
   requestAnimationFrame(() => focusField(fieldId, label, true));
 }
 // which agent's flag pins to a field the agent is driving — matches the speaker
-const AGENT_LABEL = { lsam: 'LSam', isam: 'iSAM', tars: 'TARS' };
+const AGENT_LABEL = { isam: 'iSAM', tars: 'TARS' };
 function focusField(fieldId, label, scroll, agent = null) {
   const v = view();
   v.querySelectorAll('.agent-focus').forEach((e) => e.classList.remove('agent-focus'));
@@ -368,7 +368,40 @@ function renderEMAR() {
 }
 function renderInventory() { const rows = inventory.map((i) => `<tr class="${i._flash ? 'flashG' : ''}"><td>${i.item}</td><td class="mono">${i.qty}</td><td>${i.reorder ? '<span class="pillbadge b-flag">REORDER</span>' : '<span class="pillbadge b-ok">OK</span>'}</td><td class="mono">${i.expiry}</td></tr>`).join(''); return shell('inventory', `<table class="tbl"><thead><tr><th>Item</th><th>Qty</th><th>Status</th><th>Expiry</th></tr></thead><tbody>${rows}</tbody></table>`); }
 function renderStaffing() { const rows = clinicians.map((c) => `<tr><td><b>${c.name}</b></td><td style="text-transform:capitalize">${c.role}</td><td>${c.shift}</td><td>${c.assigned.length ? c.assigned.join(', ') : '—'}</td><td>${c.on_call ? '<span class="pillbadge b-ok">ON-CALL</span>' : ''}</td></tr>`).join(''); return shell('staffing', `<table class="tbl"><thead><tr><th>Name</th><th>Role</th><th>Shift</th><th>Assigned</th><th></th></tr></thead><tbody>${rows}</tbody></table>`); }
-function renderProtocols() { const list = [['STEMI — primary PCI pathway', 'active', 'b-flag'], ['Sepsis 6 bundle', 'available', 'b-ok'], ['COPD exacerbation', 'available', 'b-ok'], ['DKA management', 'available', 'b-ok'], ['ICU step-down criteria', 'referenced', 'b-auto']]; const rows = list.map((p) => `<tr><td><b>${p[0]}</b></td><td><span class="pillbadge ${p[2]}">${p[1].toUpperCase()}</span></td></tr>`).join(''); return shell('protocols', `<table class="tbl"><thead><tr><th>Protocol</th><th>State</th></tr></thead><tbody>${rows}</tbody></table>`); }
+function renderProtocols() {
+  // The ER inbound beat opens THIS app with the OMI bundle live: the checklist
+  // is the star — TARS ticking the operational items, one clinical item held
+  // at the gate — with the pathway library beneath it.
+  if (state.chapter === 'er') {
+    const items = [
+      ['Bay 04 cleared & prepped', 'done'], ['Cath lab activated — team paged', 'done'],
+      ['ECG tech standing by at doors', 'done'], ['Defib pads · airway cart to bay', 'busy'],
+      ['Heparin per OMI bundle', 'gated'],
+    ];
+    const rows = items.map(([t, st]) => `<div class="omi-row"><span class="omi-tick omi-${st}">${st === 'done' ? '✓' : st === 'busy' ? '…' : ''}</span><span class="omi-t${st === 'gated' ? ' omi-dim' : ''}">${t}</span>${st === 'gated' ? '<span class="omi-gate">NEEDS SIGN-OFF</span>' : ''}</div>`).join('');
+    return shell('protocols', `
+      <style>
+        .omi-card{border:1px solid rgba(217,43,43,.35);border-left:3px solid #d92b2b;border-radius:10px;padding:10px 12px;background:var(--card,#fff);margin-bottom:12px}
+        .omi-hd{font:700 13px system-ui;color:#b71c1c}.omi-sub{font:500 10px ui-monospace,monospace;color:#7c8b96;margin:3px 0 9px}
+        .omi-row{display:flex;align-items:center;gap:8px;margin:6px 0}
+        .omi-tick{width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;font:700 9px ui-monospace,monospace;color:#fff;flex:0 0 auto}
+        .omi-done{background:#2fae72}.omi-busy{background:#e0a03a}.omi-gated{background:transparent;border:1px solid #d8e0e4}
+        .omi-t{font:500 12px system-ui;color:#22303a}.omi-dim{color:#8a99a8}
+        .omi-gate{font:700 8px ui-monospace,monospace;color:#c96a10;margin-left:auto}
+      </style>
+      <div class="omi-card">
+        <div class="omi-hd">OMI — Patient Inbound Protocol</div>
+        <div class="omi-sub">auto-opened by TARS · SH-2891 · bay 04</div>
+        ${rows}
+      </div>
+      <table class="tbl"><thead><tr><th>Protocol</th><th>State</th></tr></thead><tbody>
+        <tr><td><b>STEMI — primary PCI pathway</b></td><td><span class="pillbadge b-flag">QUEUED</span></td></tr>
+        <tr><td><b>Sepsis 6 bundle</b></td><td><span class="pillbadge b-ok">AVAILABLE</span></td></tr>
+        <tr><td><b>COPD exacerbation</b></td><td><span class="pillbadge b-ok">AVAILABLE</span></td></tr>
+      </tbody></table>`);
+  }
+  const list = [['STEMI — primary PCI pathway', 'active', 'b-flag'], ['Sepsis 6 bundle', 'available', 'b-ok'], ['COPD exacerbation', 'available', 'b-ok'], ['DKA management', 'available', 'b-ok'], ['ICU step-down criteria', 'referenced', 'b-auto']]; const rows = list.map((p) => `<tr><td><b>${p[0]}</b></td><td><span class="pillbadge ${p[2]}">${p[1].toUpperCase()}</span></td></tr>`).join(''); return shell('protocols', `<table class="tbl"><thead><tr><th>Protocol</th><th>State</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
 function renderLIS() { const b = emrBed(); if (!b) return ''; return shell('lis', `<div class="emr-body"><div class="lis-order"><button id="lisOrderBtn" ${lisOrdered ? 'disabled' : ''}>＋ Place order · STAT Troponin</button></div>${emrSectionBody('labs', b)}</div>`); }
 function placeLisOrder() { const b = bedById(state.focusId); lisOrdered = true; b.labs.unshift({ test: 'Troponin I (STAT)', value: 'pending', ref: '<0.04 ng/mL', flag: '', status: 'ordered', _flash: true }); openApp('lis'); setTimeout(() => { const l = b.labs[0]; l.value = '8.4'; l.flag = 'high'; l.status = 'resulted'; l._flash = true; if (activeApp === 'lis') openApp('lis'); }, 1900); }
 function renderPACS() {

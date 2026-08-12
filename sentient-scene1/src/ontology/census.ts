@@ -53,11 +53,16 @@ export type MarkShape = 'sphere' | 'cone' | 'coneLow' | 'cube' | 'plate' | 'octa
 /** Display grammar per class — colour, the word for it, and its mark. */
 export const KIND_STYLE: Record<CensusKind, { color: string; label: string; shape: MarkShape }> = {
   patient: { color: '#ff6a54', label: 'patients', shape: 'sphere' },  // coral — the people we're here for
-  doctor:  { color: '#f2b01e', label: 'doctors',  shape: 'cone' },    // gold — the decision makers
-  nurse:   { color: '#f5a25d', label: 'nurses',   shape: 'coneLow' }, // amber — the continuous presence
-  ops:     { color: '#9a8f7a', label: 'staff',    shape: 'cube' },    // stone — porters, techs, cleaners
+  // The people-classes were retuned to the ER floor's punchy palette (the old
+  // gold/amber/stone went to mush as glowing floor marks) — one vocabulary,
+  // and the floor is the reference implementation now. Bonus: nurse-amber and
+  // ops-stone previously collided EXACTLY with the ATLAS panel's INFERRED and
+  // ASSERTED provenance hexes; these do not.
+  doctor:  { color: '#8a2bff', label: 'doctors',  shape: 'cone' },    // electric violet — the decision makers
+  nurse:   { color: '#ff2fb9', label: 'nurses',   shape: 'coneLow' }, // magenta — the continuous presence
+  ops:     { color: '#ff8a00', label: 'staff',    shape: 'cube' },    // blazing orange — porters, techs, cleaners
   bed:     { color: '#12c2b0', label: 'beds',     shape: 'plate' },   // teal — capacity
-  device:  { color: '#2e86e6', label: 'devices',  shape: 'octa' },    // blue — sensing (LSam's domain)
+  device:  { color: '#2e86e6', label: 'devices',  shape: 'octa' },    // blue — sensing (PLEXUS's domain)
 }
 
 export interface FloorCensus {
@@ -82,7 +87,9 @@ export interface FloorCensus {
 // of them are visible to the humans working there. Nurses outnumber doctors on
 // every clinical floor, which is also the point.
 export const CENSUS: FloorCensus[] = [
-  { floorId: 'er',       counts: { patient: 14, doctor: 4, nurse: 6, ops: 1, bed: 18, device: 63 }, provenance: { A: 61, B: 22, C: 17 }, occupancy: [14, 18], supplies: [412, 640] },
+  // beds/patients match the drum EXACTLY — 16 bays are built, 15 occupied,
+  // bay 4 held for the inbound. The census and the geometry are one claim.
+  { floorId: 'er',       counts: { patient: 15, doctor: 4, nurse: 6, ops: 1, bed: 16, device: 63 }, provenance: { A: 61, B: 22, C: 17 }, occupancy: [15, 16], supplies: [412, 640] },
   { floorId: 'imgcath',  counts: { patient: 3,  doctor: 4, nurse: 4, ops: 1, bed: 6,  device: 41 }, provenance: { A: 78, B: 16, C: 6  }, occupancy: [3, 6],   supplies: [188, 240] },
   { floorId: 'theatres', counts: { patient: 2,  doctor: 5, nurse: 7, ops: 2, bed: 2,  device: 52 }, provenance: { A: 83, B: 13, C: 4  }, occupancy: [2, 2],   supplies: [96, 180] },
   { floorId: 'icu',      counts: { patient: 8,  doctor: 3, nurse: 8, ops: 1, bed: 8,  device: 96 }, provenance: { A: 88, B: 9,  C: 3  }, occupancy: [8, 8],   supplies: [305, 420] },

@@ -225,7 +225,7 @@ function renderWatch() {
   stopWatch();
   const d = wDay();
   el.innerHTML = `
-    <div class="sc-hd"><span class="sc-t">WATCH</span><span class="sc-sub">continuous observation</span><span class="sc-live"><i></i>LSam</span></div>
+    <div class="sc-hd"><span class="sc-t">WATCH</span><span class="sc-sub">continuous observation</span><span class="sc-live"><i></i>iSAM</span></div>
     <div class="wt-top">
       <div class="wt-now">
         <div class="wt-nowh"><b>${d.state}</b><span>${d.sub}</span></div>
@@ -697,7 +697,7 @@ export function initHud(hostSel) {
     tabs.querySelectorAll('button').forEach((b) => (b.onclick = () => { scopeView = 'overview'; scopeDev = null; setWindow(b.dataset.w); }));
   }
 
-  // the LSam trajectory block only appears when the story summons it
+  // the trajectory block (iSAM's) only appears when the story summons it
   window.addEventListener('hud:trajectory', () => patientLayer.querySelector('.lsam')?.classList.add('on'));
 
   onModeChange((mode, focusId) => {

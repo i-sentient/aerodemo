@@ -2,7 +2,8 @@
 //  ONTOLOGY — TYPES
 //  The typed clinical data model that every visual renders. This is the single
 //  vocabulary shared across the three Sentient layers:
-//    LSam  — edge SENSING  (devices, observations, trajectories)
+//    PLEXUS — the SIGNAL layer (devices, feeds, LIS/PACS/EMR traffic). It
+//             carries data and never speaks; it is not an agent.
 //    TARS  — ONTOLOGY + ORCHESTRATION (holds live state, acts via the Governor)
 //    iSAM  — clinical REASONING (assess → propose → execute → read → reassess)
 //
@@ -19,7 +20,7 @@
 /**
  * PROVENANCE / STATE-TYPE — the confidence→opacity axis.
  * Philosophy: "infer-then-confirm, never manual-originate."
- *   A = sensor-driven   (device / LSam, e.g. HR from monitor OCR) → SOLID, sharp.
+ *   A = sensor-driven   (device / PLEXUS, e.g. HR from monitor OCR) → SOLID, sharp.
  *   B = inferred        (derived, e.g. "bed vacated", rising trend) → mostly solid, subtle shimmer.
  *   C = human-asserted  (paramedic radio, manual AVPU) → GHOSTED, translucent, provisional.
  * A key Scene-1 beat is a Type C→A transition (a provisional inbound patient

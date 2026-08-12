@@ -18,7 +18,31 @@ export function useShotCapture(controls: RefObject<OrbitControlsImpl | null>) {
       const shot = `{ pos: [${r(p.x)}, ${r(p.y)}, ${r(p.z)}], look: [${r(t.x)}, ${r(t.y)}, ${r(t.z)}] }`
       // eslint-disable-next-line no-console
       console.log('📷 SHOT →', shot)
-      navigator.clipboard?.writeText(shot).catch(() => {})
+      // Clipboard, belt and braces. navigator.clipboard.writeText rejects in
+      // some setups even on a user gesture (Brave's clipboard gating, or the
+      // document not counting as focused with DevTools open) — and it failed
+      // SILENTLY here, so P looked like it copied and hadn't. Fall back to the
+      // execCommand path, which works on any keydown, and say so in the toast
+      // if both refuse.
+      const legacyCopy = () => {
+        const ta = document.createElement('textarea')
+        ta.value = shot
+        ta.style.cssText = 'position:fixed;opacity:0'
+        document.body.appendChild(ta)
+        ta.select()
+        let ok = false
+        try { ok = document.execCommand('copy') } catch { /* refused */ }
+        ta.remove()
+        return ok
+      }
+      let copied = true
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(shot).catch(() => {
+          if (!legacyCopy()) copied = false
+        })
+      } else {
+        copied = legacyCopy()
+      }
 
       // on-screen toast so no DevTools needed
       let el = document.getElementById('__shot_toast')
@@ -32,7 +56,7 @@ export function useShotCapture(controls: RefObject<OrbitControlsImpl | null>) {
           'border:1px solid #334155;white-space:pre-wrap;text-align:center;pointer-events:none;'
         document.body.appendChild(el)
       }
-      el.textContent = '📷 SHOT (copied to clipboard):\n' + shot
+      el.textContent = (copied ? '📷 SHOT (copied to clipboard):\n' : '📷 SHOT (clipboard refused — copy by hand):\n') + shot
       el.style.opacity = '1'
       window.clearTimeout((el as unknown as { __t?: number }).__t)
       ;(el as unknown as { __t?: number }).__t = window.setTimeout(() => { el!.style.opacity = '0' }, 6000)

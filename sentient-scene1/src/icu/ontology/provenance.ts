@@ -11,7 +11,7 @@ import type { StateType } from './types'
 
 /** Which Sentient layer originates each provenance class. */
 export const STATE_TYPE_SOURCE: Record<StateType, string> = {
-  A: 'LSam · sensor',
+  A: 'PLEXUS · sensor',
   B: 'TARS · inferred',
   C: 'human · asserted',
 }

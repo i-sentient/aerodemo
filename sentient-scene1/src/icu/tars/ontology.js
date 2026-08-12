@@ -7,7 +7,15 @@ import { clamp, rand } from './utils.js';
 export const COL = { stable: '#5dcaa5', watch: '#f5a623', critical: '#e24b4a', empty: '#9aa6b3' };
 export const ACU_HEX = { stable: 0x5dcaa5, watch: 0xf5a623, critical: 0xe24b4a };
 
-export const ward = { id: 'WARD-N', name: 'ICU — North', bed_count: 8, command_center_status: 'online' };
+// Which world this boot serves — read from the URL DIRECTLY, not from the
+// __tarsChapter flag: part of this module's import graph is static, so we can
+// evaluate before icu/main.tsx's body has set the flag. location.search needs
+// no ordering.
+const CH = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('chapter')) || 'workup';
+export const IS_ER = CH === 'er';
+export const ward = IS_ER
+  ? { id: 'WARD-ER', name: 'ER — Main', bed_count: 16, command_center_status: 'online' }
+  : { id: 'WARD-N', name: 'ICU — North', bed_count: 8, command_center_status: 'online' };
 
 export const clinicians = [
   { id: 'C1', name: 'N. Adeyemi', role: 'nurse', shift: 'Day 07:00–19:00', assigned: ['ICU-01', 'ICU-02', 'ICU-04', 'ICU-08'], on_call: false },
@@ -65,7 +73,37 @@ function mk(id, pos, rot, acuity, p, v, t, cardiac = false) {
   };
 }
 
-export const beds = [
+// The ER floor: sixteen bays on the ring. Bay 04 is the story slot — held
+// open, flashing inbound, the anterior STEMI four minutes out.
+const erBed = (i, acuity, name, chief, dx, v, n2, verdict) => mk(
+  `ER-${String(i).padStart(2, '0')}`,
+  { x: +(Math.cos((i / 16) * Math.PI * 2) * 7).toFixed(2), z: +(3 + Math.sin((i / 16) * Math.PI * 2) * 7).toFixed(2) },
+  0, acuity,
+  { name, age: 40 + ((i * 7) % 40), sex: i % 2 ? 'F' : 'M', mrn: `MRN-4${String(1000 + i * 37).slice(1)}`, chief, dx, comorbid: [], admit: 'today' },
+  v, { news2: n2, trend: 'stable', prob: 0.1, lsam: 'stable', verdict },
+)
+const erBeds = [
+  erBed(1, 'watch', 'A. Rahman', 'Chest pain', 'Chest pain — obs', { hr: 88, spo2: 97, rr: 18, sys: 132, dia: 84, temp: 37.0 }, 3, 'OBS · SERIAL ECG'),
+  erBed(2, 'stable', 'K. Osei', 'Laceration', 'Laceration L hand', { hr: 76, spo2: 99, rr: 14, sys: 122, dia: 78, temp: 36.8 }, 1, 'SUTURE · ROUTINE'),
+  erBed(3, 'stable', 'M. Iyer', 'Wheeze', 'Asthma flare', { hr: 92, spo2: 95, rr: 20, sys: 118, dia: 74, temp: 37.1 }, 2, 'NEBS · IMPROVING'),
+  mk('ER-04', { x: 7, z: 3 }, 0, 'critical',
+    { name: '— INBOUND —', age: 58, sex: 'M', mrn: 'SH-2891', chief: 'Crushing chest pain', dx: 'Anterior STEMI · Medic 12', comorbid: ['T2DM', 'Smoker'], admit: 'ETA 4 min' },
+    { hr: 125, spo2: 91, rr: 24, sys: 104, dia: 65, temp: 37.0 }, { news2: 9, trend: 'rising', prob: 0.82, lsam: 'flagged', verdict: 'INBOUND · ETA 4 MIN' }, true),
+  erBed(5, 'stable', 'S. Njoku', 'Abdo pain', 'Abdo pain RLQ', { hr: 84, spo2: 98, rr: 16, sys: 126, dia: 80, temp: 37.4 }, 2, 'SURG REVIEW'),
+  erBed(6, 'stable', 'L. Duarte', 'Fall', 'Fall — hip pain', { hr: 78, spo2: 97, rr: 15, sys: 138, dia: 86, temp: 36.9 }, 2, 'XR PENDING'),
+  erBed(7, 'stable', 'T. Okada', 'Fever', 'Febrile illness', { hr: 96, spo2: 97, rr: 18, sys: 116, dia: 72, temp: 38.2 }, 3, 'CULTURES SENT'),
+  erBed(8, 'watch', 'R. Marsh', 'Breathless', 'COPD exacerbation', { hr: 98, spo2: 92, rr: 24, sys: 136, dia: 82, temp: 37.5 }, 5, 'COPD — WATCH'),
+  erBed(9, 'stable', 'J. Ababio', 'Flank pain', 'Renal colic', { hr: 82, spo2: 98, rr: 16, sys: 128, dia: 80, temp: 37.0 }, 1, 'ANALGESIA · CT'),
+  erBed(10, 'watch', 'P. Costa', 'Head injury', 'Head injury — GCS 15', { hr: 74, spo2: 98, rr: 14, sys: 142, dia: 88, temp: 36.8 }, 3, 'NEURO OBS'),
+  erBed(11, 'stable', 'H. Lindqvist', 'Rash, swelling', 'Allergic reaction', { hr: 90, spo2: 98, rr: 16, sys: 120, dia: 76, temp: 37.0 }, 2, 'RESPONDING'),
+  erBed(12, 'stable', 'D. Ganesh', 'Back pain', 'Back pain', { hr: 72, spo2: 99, rr: 13, sys: 124, dia: 78, temp: 36.7 }, 0, 'ROUTINE'),
+  erBed(13, 'watch', 'F. Toure', 'Palpitations', 'Palpitations — AF?', { hr: 118, spo2: 97, rr: 17, sys: 118, dia: 74, temp: 36.9 }, 3, 'ECG · MONITOR'),
+  erBed(14, 'stable', 'E. Novak', 'Ankle injury', 'Ankle fracture', { hr: 80, spo2: 99, rr: 14, sys: 122, dia: 76, temp: 36.8 }, 1, 'CAST · XR DONE'),
+  erBed(15, 'stable', 'B. Achebe', 'Thirst, fatigue', 'Hyperglycaemia', { hr: 88, spo2: 98, rr: 16, sys: 130, dia: 82, temp: 37.0 }, 2, 'INSULIN · FLUIDS'),
+  erBed(16, 'stable', 'C. Silva', 'Headache', 'Migraine', { hr: 70, spo2: 99, rr: 13, sys: 114, dia: 72, temp: 36.7 }, 0, 'ANALGESIA'),
+]
+
+const icuBeds = [
   mk('ICU-01', { x: -8, z: 2 }, Math.PI / 2, 'stable',
     { name: 'R. Boateng', age: 58, sex: 'M', mrn: 'MRN-30481', chief: 'Post-op observation', dx: 'S/P laparotomy, POD1', comorbid: ['HTN'], admit: '06:10' },
     { hr: 74, spo2: 98, rr: 14, sys: 124, dia: 78, temp: 36.8 }, { news2: 1, trend: 'stable', prob: 0.06, lsam: 'stable', verdict: 'STABLE · ROUTINE' }),
@@ -94,6 +132,8 @@ export const beds = [
     { name: 'Chandrababu', age: 58, sex: 'M', mrn: 'MRN-31890', chief: 'Crushing chest pain', dx: 'Anterior STEMI', comorbid: ['T2DM', 'Smoker'], admit: '09:12' },
     { hr: 118, spo2: 91, rr: 26, sys: 102, dia: 64, temp: 37.0 }, { news2: 8, trend: 'rising', prob: 0.82, lsam: 'flagged', verdict: 'STEMI — CRITICAL' }, true),
 ];
+
+export const beds = IS_ER ? erBeds : icuBeds;
 
 export const bedById = (id) => beds.find((b) => b.id === id);
 

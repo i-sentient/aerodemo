@@ -62,7 +62,7 @@ function labelSprite(id, acuity) {
 //  (same layout, colours and frosted-glass look — vanilla three.js).
 //  Bed-local frame: head = -z (outer wall), foot = +z (centre).
 // ============================================================
-const RING = { cx: 0, cz: 3, rZone: 9, rBed: 7.0, n: 8 };
+const RING = { cx: 0, cz: 3, rZone: 9, rBed: 7.0, n: beds.length }; // 8 ICU · 16 ER
 const WARD = {
   rest: 0x9fc4e6,      // beds at rest — pale glass blue
   restEdge: 0x9cc2e6,  // pastel outline — ALL beds (acuity shows via halo, not edges);
@@ -85,7 +85,7 @@ function icuDecalTex() {
   c.clearRect(0, 0, 640, 320);
   c.fillStyle = '#a6cbec'; c.font = '800 210px system-ui, "Segoe UI", sans-serif';
   c.textAlign = 'center'; c.textBaseline = 'middle'; c.letterSpacing = '24px';
-  c.fillText('ICU', 320 + 12, 168);
+  c.fillText(state.chapter === 'er' ? 'ER' : 'ICU', 320 + 12, 168);
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
   return tex;
 }
@@ -754,7 +754,12 @@ export function initScene(canvasEl) {
 
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
-  addEventListener('resize', resize); resize();
+  addEventListener('resize', resize);
+  // The deck demo zooms the whole app (body.panela-only), which changes the
+  // canvas's box WITHOUT firing a window resize — the renderer would keep its
+  // pre-zoom buffer and the twin would sit stretched in a stale viewport.
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(canvas.parentElement);
+  resize();
   applySceneTheme(state.dark); // dress the scenes for the current theme
   requestAnimationFrame(frame);
 }

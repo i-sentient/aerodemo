@@ -523,8 +523,14 @@ const THREAD = (() => {
   return { curve, geo, stops, uAt }
 })()
 
-function JourneyThread({ upto, labels = true, handedOff = false }: { upto: number; labels?: boolean; handedOff?: boolean }) {
+function JourneyThread({ upto, labels = true, handedOff = false, onSettled }: { upto: number; labels?: boolean; handedOff?: boolean; onSettled?: () => void }) {
   const { curve, geo, stops, uAt } = THREAD
+  // fired once the thread stops MOVING, not once it starts — the same test the
+  // head uses to hide itself, so "arrived" can never mean two different frames
+  const settled = useRef(false)
+  const onSettledRef = useRef(onSettled)
+  onSettledRef.current = onSettled
+  useEffect(() => { settled.current = false }, [upto])
 
   const rootRef = useRef<Group>(null)
   const fadeRef = useRef(1)
@@ -556,6 +562,10 @@ function JourneyThread({ upto, labels = true, handedOff = false }: { upto: numbe
     let done = 0
     for (let i = 0; i < uAt.length; i++) if (u >= uAt[i] - 0.004) done = i
     if (done !== reachedRef.current) { reachedRef.current = done; setReached(done) }
+    if (!settled.current && u > 0.004 && Math.abs(target - u) <= 0.004) {
+      settled.current = true
+      onSettledRef.current?.()
+    }
 
     // The thread's job ends the moment the floor opens and the bed names
     // itself: it got him here, the care unit takes over. Leaving it lit through
@@ -601,21 +611,54 @@ function JourneyThread({ upto, labels = true, handedOff = false }: { upto: numbe
           back in and reintroduce the swing. */}
       {labels && stops.map((p, i) => {
         const on = i <= reached && upto > 0
+        const now = i === reached && upto > 0
+        const j = JOURNEY[i]
         return (
           <SideAnchor key={`label-${i}`} side={1} dist={LABEL_COL} y={p.y}>
-            <Html position={[0, 0, 0]} distanceFactor={30} zIndexRange={[9, 0]}>
+            <Html position={[0, 0, 0]} distanceFactor={44} zIndexRange={[9, 0]}>
               <div
                 style={{
-                  pointerEvents: 'none', whiteSpace: 'nowrap', transform: 'translateY(-50%)',
-                  background: on ? 'rgba(48,33,9,.88)' : 'rgba(20,20,18,.6)',
-                  border: `1px solid ${on ? 'rgba(255,213,138,.55)' : 'rgba(140,135,120,.3)'}`,
-                  borderLeft: `2px solid ${on ? '#ffd58a' : 'rgba(140,135,120,.4)'}`,
-                  borderRadius: 3, padding: '5px 9px', transition: 'all .35s ease',
-                  opacity: on ? 1 : 0.45,
+                  pointerEvents: 'none', transform: 'translateY(-50%)',
+                  // ONE width for all five. They were sized to their own text,
+                  // so every edge landed somewhere different and the column read
+                  // as scattered rather than as a list.
+                  width: 232, display: 'flex', alignItems: 'stretch',
+                  background: on ? 'rgba(48,33,9,.9)' : 'rgba(20,20,18,.55)',
+                  border: `1px solid ${on ? 'rgba(255,213,138,.5)' : 'rgba(140,135,120,.24)'}`,
+                  borderRadius: 4, overflow: 'hidden',
+                  transition: 'all .35s ease',
+                  opacity: on ? 1 : 0.5,
+                  boxShadow: now ? '0 0 0 1px rgba(255,213,138,.45), 0 0 22px rgba(255,180,60,.28)' : 'none',
                 }}
               >
-                <span style={{ font: '700 11px ui-monospace, monospace', color: on ? '#ffe9b8' : '#8b8676', letterSpacing: '.08em' }}>{i + 1}. {JOURNEY[i].label}</span>
-                <span style={{ font: '500 8.5px ui-monospace, monospace', color: on ? 'rgba(255,220,160,.72)' : 'rgba(139,134,118,.6)', marginLeft: 7 }}>{JOURNEY[i].scene}</span>
+                {/* The STOP NUMBER, as a real badge. These cards hang at the
+                    height of the floor they name, so down the screen they run
+                    5·2·4·3·1 — which looks broken until the numeral is loud
+                    enough to be read as an itinerary index. Then the scramble
+                    becomes the point: a cardiac patient does not walk up a
+                    building floor by floor, he is thrown across it. */}
+                <div
+                  style={{
+                    flex: '0 0 30px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: on ? '#ffd58a' : 'rgba(140,135,120,.22)',
+                    color: on ? '#2a1d05' : 'rgba(200,196,180,.55)',
+                    font: '800 15px ui-monospace, monospace',
+                    transition: 'all .35s ease',
+                  }}
+                >{i + 1}</div>
+                <div style={{ padding: '6px 10px', minWidth: 0 }}>
+                  <div style={{
+                    font: '700 12.5px ui-monospace, monospace', letterSpacing: '.1em',
+                    textTransform: 'uppercase', whiteSpace: 'nowrap',
+                    color: on ? '#ffe9b8' : '#8b8676',
+                  }}>{j.label}</div>
+                  {/* on its own line, so the card's width never depends on how
+                      long the scene text happens to be */}
+                  <div style={{
+                    font: '500 9.5px ui-monospace, monospace', whiteSpace: 'nowrap', marginTop: 2,
+                    color: on ? 'rgba(255,220,160,.7)' : 'rgba(139,134,118,.55)',
+                  }}>{j.scene}</div>
+                </div>
               </div>
             </Html>
           </SideAnchor>
@@ -980,8 +1023,10 @@ function JourneyCaption({ show }: { show: boolean }) {
   )
 }
 
-export function OntologyTower({ journey = 0, focus, open = false, handedOff = false, tags = false, labels = true }: {
+export function OntologyTower({ journey = 0, focus, open = false, handedOff = false, tags = false, labels = true, onJourneySettled }: {
   journey?: number
+  /** the thread has stopped moving at its target stop */
+  onJourneySettled?: () => void
   /** the floor (and the room on it) this view is aimed at: highlighted always,
    *  and resolved into its individual objects once `open` */
   focus?: { floorId: string; room?: string }
@@ -1013,7 +1058,7 @@ export function OntologyTower({ journey = 0, focus, open = false, handedOff = fa
       {/* publishes each tier's screen point for the DOM floor-tag leaders — only
           while the building is being read, never during the orbit or the dive */}
       <LeaderProjector active={!!tags && !opened} />
-      {journey > 0 && <JourneyThread upto={journey} labels={labels && !opened} handedOff={handedOff} />}
+      {journey > 0 && <JourneyThread upto={journey} labels={labels && !opened} handedOff={handedOff} onSettled={onJourneySettled} />}
     </group>
   )
 }

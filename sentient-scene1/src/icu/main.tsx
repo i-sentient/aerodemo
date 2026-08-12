@@ -21,6 +21,9 @@ const q = new URLSearchParams(location.search)
 if (q.get('panela') === '1') document.body.classList.add('panela-only')
 // &panelc=1 widens the demo to A + C — the EMR read/write beat
 if (q.get('panelc') === '1') document.body.classList.add('with-c')
+// &embed=1 — hosted inside a scene beat: story keys stand down and the arrows
+// are forwarded to the host as beat navigation
+if (q.get('embed') === '1') document.body.classList.add('embed-keys')
 
 // dev-only handle for debugging / scripted screenshots (window.ontology)
 if (import.meta.env.DEV) {

@@ -135,7 +135,7 @@ export const devicesAtLocation = (d: OntologyData, locationId: string) =>
   byKind(d, 'device').filter((dev) => dev.locationId === locationId)
 
 /**
- * BLIND-FLAG (LSam) predicate: a location is "blind" when it has devices but
+ * BLIND-FLAG (PLEXUS) predicate: a location is "blind" when it has devices but
  * none are online — the linked object should grey out and show "no signal"
  * rather than a stale value.
  */

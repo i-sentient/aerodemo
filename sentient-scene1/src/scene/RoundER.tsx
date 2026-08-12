@@ -1,5 +1,7 @@
+import { useRef, type RefObject } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { RoundedBox } from '@react-three/drei'
-import { BackSide, DoubleSide } from 'three'
+import { BackSide, DoubleSide, MathUtils, type Mesh, type MeshStandardMaterial } from 'three'
 import { hdrCss } from './glow'
 import { emergencyTex } from '../lab/screenTex'
 
@@ -53,7 +55,61 @@ function SpokeBed({ position, rotationY }: { position: [number, number, number];
   )
 }
 
-export function RoundER() {
+/** The ward's eye — a dome camera pendant at the drum's crown. A fixture, not
+ *  a beat prop: it hangs from the first frame, and the coverage beat just looks
+ *  up at what was always there (the CCU corner cam made the same argument).
+ *  The ceiling annulus is open from r=0 to 2, so the pendant hangs off a hub
+ *  cap that closes the oculus. */
+function CeilingCam({ capRef }: { capRef: RefObject<Mesh> }) {
+  return (
+    <group position={[0, WALL_H, 0]}>
+      {/* the hub cap over the oculus */}
+      <mesh ref={capRef} rotation-x={Math.PI / 2} position={[0, 0.01, 0]}>
+        <circleGeometry args={[1.55, 64]} />
+        <meshStandardMaterial color="#dfe6ed" metalness={0.4} roughness={0.42} side={DoubleSide} envMapIntensity={0.8} transparent />
+      </mesh>
+      <mesh rotation-x={Math.PI / 2} position={[0, -0.02, 0]}>
+        <torusGeometry args={[1.49, 0.045, 12, 96]} />
+        <meshStandardMaterial color="#c4cbd1" metalness={1} roughness={0.2} envMapIntensity={1.5} />
+      </mesh>
+      {/* pendant stem */}
+      <mesh position={[0, -0.24, 0]}>
+        <cylinderGeometry args={[0.035, 0.035, 0.48, 12]} />
+        <meshStandardMaterial color="#cdd3d9" metalness={0.9} roughness={0.24} envMapIntensity={1.4} />
+      </mesh>
+      {/* housing + dark glass dome, scaled to the drum (the CCU dome is desk-scale) */}
+      <mesh position={[0, -0.52, 0]}>
+        <cylinderGeometry args={[0.17, 0.19, 0.1, 24]} />
+        <meshStandardMaterial color="#aeb7c1" metalness={0.6} roughness={0.32} envMapIntensity={1.1} />
+      </mesh>
+      <mesh position={[0, -0.57, 0]}>
+        <sphereGeometry args={[0.14, 24, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2]} />
+        <meshPhysicalMaterial color="#10151c" roughness={0.12} metalness={0.1} clearcoat={1} clearcoatRoughness={0.08} />
+      </mesh>
+      {/* the recording tick */}
+      <mesh position={[0.1, -0.5, 0.1]}>
+        <sphereGeometry args={[0.014, 10, 10]} />
+        <meshBasicMaterial color={hdrCss('#4cff88', 1.6)} toneMapped={false} />
+      </mesh>
+    </group>
+  )
+}
+
+export function RoundER({ xray = false }: { xray?: boolean } = {}) {
+  // The bird's-eye beats look straight down from ABOVE the drum, so the roof
+  // thins to a veil. It never comes back to solid: once the ATLAS chapter has
+  // opened the ceiling up, re-sealing it between beats read as the room
+  // slamming shut — and the ward is legible through a permanent 0.35 veil at
+  // every other angle anyway. Damped, so the opening still dissolves.
+  const ceilRef = useRef<Mesh>(null)
+  const capRef = useRef<Mesh>(null)
+  useFrame((_, dt) => {
+    const target = xray ? 0.1 : 0.35
+    for (const r of [ceilRef.current, capRef.current]) {
+      const m = r?.material as MeshStandardMaterial | undefined
+      if (m) m.opacity = MathUtils.damp(m.opacity, target, 3, dt)
+    }
+  })
   return (
     <group>
       {/* ── floor disc ─────────────────────────────────────────────── */}
@@ -128,14 +184,16 @@ export function RoundER() {
       })}
 
       {/* ── ceiling annulus + faint cool cove ──────────────────────── */}
-      <mesh rotation-x={Math.PI / 2} position={[0, WALL_H, 0]}>
-        <ringGeometry args={[2.0, R, 128]} />
-        <meshStandardMaterial color="#dfe6ed" metalness={0.4} roughness={0.42} side={DoubleSide} envMapIntensity={0.8} />
+      <mesh ref={ceilRef} rotation-x={Math.PI / 2} position={[0, WALL_H, 0]}>
+        <ringGeometry args={[1.5, R, 128]} />
+        <meshStandardMaterial color="#dfe6ed" metalness={0.4} roughness={0.42} side={DoubleSide} envMapIntensity={0.8} transparent />
       </mesh>
       <mesh rotation-x={Math.PI / 2} position={[0, WALL_H - 0.16, 0]}>
         <torusGeometry args={[R - 0.6, 0.05, 12, 160]} />
         <meshBasicMaterial color={hdrCss(COVE, 1.05)} toneMapped={false} />
       </mesh>
+
+      <CeilingCam capRef={capRef} />
 
       {/* ── radial spoke beds ──────────────────────────────────────── */}
       {BED_SLOTS.map((s) => (

@@ -15,7 +15,7 @@ import { TarsMount } from './TarsMount'
 //                         ward. Telemetry only. The terminus: holds at its end.
 //  Every chapter runs the TARS app with ALL its own controls intact.
 // ---------------------------------------------------------------------------
-export type IcuChapter = 'workup' | 'continued' | 'postop' | 'stepdown'
+export type IcuChapter = 'workup' | 'continued' | 'postop' | 'stepdown' | 'er'
 
 export function Root({ chapter = 'workup' }: { chapter?: IcuChapter }) {
   const [phase, setPhase] = useState<'ward' | 'tars'>(chapter === 'workup' ? 'ward' : 'tars')

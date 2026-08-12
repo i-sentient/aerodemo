@@ -107,8 +107,8 @@ export function initUI() {
       stageT.textContent = 'Body Scan · ' + focusId;
       stageS.textContent = b.patient.name + ' · ' + b.patient.dx;
     } else {
-      stageT.textContent = 'Digital State · ICU Floor';
-      stageS.textContent = 'Live spatial twin · 8 monitored beds';
+      stageT.textContent = state.chapter === 'er' ? 'Digital State · ER Floor' : 'Digital State · ICU Floor';
+      stageS.textContent = state.chapter === 'er' ? 'Live spatial twin · 16 monitored bays' : 'Live spatial twin · 8 monitored beds';
     }
   });
 }

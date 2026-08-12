@@ -6,7 +6,7 @@ import { agentUpdateEMAR, agentStopPressor, agentOrderTroponin, agentGiveMeds, a
 
 /* ============================================================
    SPLIT 2 — the agent-swap surface (ported from the React v4).
-   - top notch  = active SYSTEM agent  (LSam · TARS · iSAM), tap to swap
+   - top notch  = active SYSTEM agent  (TARS · iSAM), tap to swap
    - bottom notch = active HUMAN        (Clinician · Nurse),  tap to swap
    - notches minimise to a slim bar; caret expands the full card
    - each message washes its speaker's colour radially across the panel
@@ -16,9 +16,6 @@ import { agentUpdateEMAR, agentStopPressor, agentOrderTroponin, agentGiveMeds, a
 const MARKER = '#F4E23A';
 
 const AGENTS = {
-  lsam: { name: 'LSam', role: 'Sensing', stat: '98', unit: 'SIGNAL', gauge: 84, dot: '#3E8EF7',
-    wash: ['#3E8EF7', '#7BD4FF'],
-    blobs: [['#2E6FE0', '20%', '20%', '115%'], ['#3E8EF7', '86%', '62%', '110%'], ['#A9D6FF', '42%', '112%', '125%']] },
   tars: { name: 'TARS', role: 'Orchestration', stat: '12', unit: 'ORDERS', gauge: 62, dot: '#A9744F',
     wash: ['#A9744F', '#D9B08C'],
     blobs: [['#A9744F', '16%', '18%', '115%'], ['#8A5A3B', '86%', '64%', '105%'], ['#E2C3A2', '48%', '112%', '125%']] },
@@ -26,7 +23,12 @@ const AGENTS = {
     wash: ['#2FA96E', '#A8E8C8'],
     blobs: [['#1F7A50', '18%', '20%', '110%'], ['#2FA96E', '86%', '58%', '105%'], ['#A8E8C8', '50%', '114%', '125%']] },
 };
-const AGENT_ORDER = ['lsam', 'tars', 'isam'];
+// LSam is retired: it became PLEXUS, the signal layer, and PLEXUS does not
+// speak — it carries device feeds, LIS, PACS and EMR traffic, and its output is
+// data. Everything LSam used to SAY was sensing-with-interpretation, which is
+// reasoning, so those lines went to iSAM. Nothing here is railed to a function:
+// either agent does whatever the beat needs.
+const AGENT_ORDER = ['tars', 'isam'];
 const HUMANS = {
   clinician: { name: 'Clinician', role: 'Clinical gate', status: 'in the loop', stat: '51', unit: 'REVIEWED', label: 'Clinician · Dr. Rao' },
   nurse: { name: 'Nurse', role: 'Bedside', status: 'executing', stat: '24', unit: 'TASKS', label: 'Nurse · N. Adeyemi' },
@@ -72,7 +74,7 @@ function blobsHTML(blobs) {
   return blobs.map((b, i) => `<div class="nblob" style="left:${b[1]};top:${b[2]};width:${b[3]};height:${b[3]};background:radial-gradient(circle, ${b[0]} 0%, ${b[0]} 24%, transparent 70%);animation:bd${i % 3} ${15 + i * 3}s ease-in-out infinite"></div>`).join('');
 }
 
-/* ---------- LSam trajectory trend widget (agent chin, beat 6) ---------- */
+/* ---------- iSAM trajectory trend widget (agent chin, beat 6) ---------- */
 function trendHTML(b) {
   const news2 = (b.traj && b.traj.news2) || 8;
   const THRESH = 5; // NEWS2 >= 5 crosses into the escalation zone -> the line turns red there
@@ -102,7 +104,7 @@ function showTrend(b) {
   const slot = agentNotch && agentNotch.querySelector('#agentAction');
   if (!slot) return;
   slot.innerHTML = trendHTML(b);
-  expTop = true; // LSam's chin opens itself to show the trajectory it just built
+  expTop = true; // iSAM's chin opens itself to show the trajectory it just built
   renderAgent();
 }
 
@@ -149,7 +151,7 @@ function startEcg(cv, crit, hr) {
 function showEcgRead(b) {
   const slot = agentNotch && agentNotch.querySelector('#agentAction');
   if (!slot) return;
-  setTimeout(() => { // a beat of gap after LSam's graph closes, then the ECG opens
+  setTimeout(() => { // a beat of gap after iSAM's graph closes, then the ECG opens
     if (activeAgent !== 'isam') return;
     slot.innerHTML = `<div class="verdict"><canvas class="v-ecg"></canvas><div class="v-risk v-reading">reading…</div></div>`;
     expTop = true; renderAgent();
@@ -181,7 +183,7 @@ let chatEl, nextBtn, hintEl, panelB, statusEl;
 let washPrev, washCur, agentNotch, humanNotch;
 let steps = [], idx = 0, gated = false, ordSeq = 0, busy = false, pendingNurse = null;
 let hkCardEl = null, hkBusyIdx = -1, hkRowTimer = 0, hkLinkTimer = 0; // Scene 4 bedside-setup card
-let activeAgent = 'lsam', activeHuman = 'clinician', dark = false, expTop = false, expBottom = false;
+let activeAgent = 'isam', activeHuman = 'clinician', dark = false, expTop = false, expBottom = false;
 
 function scroll() { chatEl.scrollTop = chatEl.scrollHeight; }
 
@@ -455,12 +457,92 @@ function load(kind, bedId) {
   updateNext();
 }
 
-/* ---------- scripts (re-voiced: LSam senses · iSAM reasons · TARS orchestrates) ---------- */
+/* ---------- scripts (PLEXUS carries · iSAM reasons · TARS orchestrates) ---------- */
+/** The pinned CASE CLOCKS — the centre panel's one big thing, in two acts:
+ *
+ *   1 · MI GOLDEN HOUR lands BIG. The radio said "chest pain, forty minutes",
+ *       so on the classic 60-minute window there are 20:00 left — this is the
+ *       clock the whole case answers to, and it is why the cath lab is already
+ *       活. It holds the stage for ~2.6 s...
+ *   2 · ...then DOCKS to a strip and hands the big slot to the ARRIVAL CLOCK
+ *       (ETA 4:00) — the actionable number for the next four minutes.
+ *
+ *  One interval drives both; the golden hour keeps running after the ETA
+ *  expires, because ischaemia does not care that the ambulance arrived. */
+let arrivalTimer = 0
+function addArrivalCard() {
+  const wrap = document.createElement('div'); wrap.className = 'hkset hk-pin'
+  wrap.innerHTML = `
+    <style>
+      #ghWrap{text-align:center;padding:12px 0 4px;transition:all .6s cubic-bezier(.2,.8,.2,1)}
+      #ghWrap .gh-lb{font:700 10px ui-monospace,monospace;letter-spacing:.22em;color:#c96a10;transition:all .6s}
+      #ghClock{font:700 84px ui-monospace,monospace;color:#e0a03a;letter-spacing:.04em;line-height:1.1;transition:all .6s cubic-bezier(.2,.8,.2,1)}
+      #etaWrap{text-align:center;max-height:0;opacity:0;overflow:hidden;transition:all .65s cubic-bezier(.2,.8,.2,1) .15s}
+      #etaWrap .eta-bn{font:700 15px system-ui;color:#b71c1c;letter-spacing:.02em}
+      #arrClock{font:700 72px ui-monospace,monospace;color:#d92b2b;letter-spacing:.04em;line-height:1.15}
+      #etaWrap .eta-sub{font:700 10px ui-monospace,monospace;letter-spacing:.26em;color:#8a99a8;margin-top:6px}
+      #etaWrap .eta-case{font:600 12px system-ui;color:#44525c;background:rgba(120,150,170,.08);border-radius:9px;display:inline-block;padding:6px 14px;margin-top:10px}
+    </style>
+    <div id="arrCard">
+      <div id="ghWrap">
+        <div class="gh-lb">MI GOLDEN HOUR · PAIN ONSET 40 MIN AGO</div>
+        <div id="ghClock">20:00</div>
+      </div>
+      <div id="etaWrap">
+        <div class="eta-bn">NEW PATIENT INBOUND — ETA 4 MIN</div>
+        <div id="arrClock">4:00</div>
+        <div class="eta-sub">ARRIVAL CLOCK ACTIVATED</div>
+        <div class="eta-case">Chandrababu · 58 M · anterior STEMI · Medic 12 · BP 104/65 · HR 125</div>
+      </div>
+    </div>`
+  chatEl.appendChild(wrap); trimFeed(); scroll()
+  // One interval drives EVERYTHING — the two clocks AND the act-2 dock. A
+  // one-shot timeout kept losing a race against a feed rebuild (its styles
+  // landed on a node that was then replaced); the interval already proves it
+  // reaches the live DOM every second, so the dock is applied idempotently
+  // from second 3 onward — self-healing against any rebuild. Inline styles,
+  // not a class flip, so there is no cascade to lose either; the base rules'
+  // transitions still animate the change.
+  let gh = 1200, eta = 240, secs = 0
+  const fmt = (v) => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`
+  window.clearInterval(arrivalTimer)
+  arrivalTimer = window.setInterval(() => {
+    gh = Math.max(0, gh - 1); eta = Math.max(0, eta - 1); secs += 1
+    const g = document.getElementById('ghClock'); const a = document.getElementById('arrClock')
+    if (!g && !a) { window.clearInterval(arrivalTimer); return }
+    if (g) g.textContent = fmt(gh)
+    if (a) a.textContent = fmt(eta)
+    if (secs >= 3) {
+      const w = document.getElementById('ghWrap')
+      const e = document.getElementById('etaWrap')
+      if (w) Object.assign(w.style, { display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '10px', padding: '6px 0', borderBottom: '1px solid rgba(150,160,170,.18)' })
+      const lb = w && w.querySelector('.gh-lb'); if (lb) lb.style.letterSpacing = '.14em'
+      if (g) g.style.fontSize = '22px'
+      if (e) Object.assign(e.style, { maxHeight: '340px', opacity: '1', padding: '10px 0 6px' })
+    }
+  }, 1000)
+}
+
+/** ER embed: play the whole brief at boot — the host beat shows a finished
+ *  console, no keypresses owed. Same idea as seekEstablished. */
+export function seekErBrief() {
+  while (idx < steps.length) { steps[idx](); idx++ }
+  gated = false; busy = false; pendingNurse = null; updateNext()
+}
+
 function floorScript() {
+  if (state.chapter === 'er') return [
+    () => {
+      addMsg('tars', `Medic 12 patched through — <b>Chandrababu, 58 M, anterior STEMI</b>. BP 104/65 · HR 125 · SpO₂ 91 on air. <span class="em">Arrival clock is running — four minutes.</span>`, 'inbound')
+      addArrivalCard()
+      openApp('protocols')
+    },
+    () => addMsg('tars', `OMI inbound bundle live: <b>bay 04 cleared</b>, cath lab activated, ECG at the doors. <span class="em">Heparin is held for the clinician gate.</span>`, 'bundle running'),
+  ]
   return [
     () => addMsg('tars', `Good morning. ICU—North is <b>8 of 8 occupied</b>. Acuity: <span class="em">4 stable</span>, <b style="color:var(--amberD)">2 watch</b>, <b style="color:var(--redD)">2 critical</b> (ICU-04 · ICU-08, anterior STEMIs).`),
     () => addMsg('clinician', `What's our real capacity if cardiology needs a Level-3 bed?`),
-    () => addMsg('isam', `LSam's trajectories reviewed. <b>ICU-05</b> (A. Kristof, sepsis) is <span class="em">step-down eligible</span> — NEWS2 2, falling, lactate normalised. Stepping her down frees one Level-3 bed. Advisory — logistics can proceed autonomously.`),
+    () => addMsg('isam', `Trajectories reviewed. <b>ICU-05</b> (A. Kristof, sepsis) is <span class="em">step-down eligible</span> — NEWS2 2, falling, lactate normalised. Stepping her down frees one Level-3 bed. Advisory — logistics can proceed autonomously.`),
     () => { addMsg('tars', `Executing transfer logistics:`); addOrders([
       { label: 'Reserve step-down bed B-12', detail: 'Bed management · operational', autonomy: 'autonomous' },
       { label: 'Page portering for transfer', detail: 'Transport · operational', autonomy: 'autonomous' },
@@ -475,8 +557,8 @@ function floorScript() {
 function patientScript(b) {
   if (b.patient.acuity === 'critical') return state.chapter === 'continued' ? [
     // ── SCENE 3 (post-angio) · hero = PACS + the surgery DECISION ──────────
-    // 1 · LSam pulls the completed study — right split holds on PACS
-    () => { addMsg('lsam', `Angiogram's in — pulling the coronary study for <b>${b.id}</b>, ${b.patient.name}.`, 'imaging complete'); openApp('pacs'); },
+    // 1 · iSAM pulls the completed study it is about to read — right split holds on PACS
+    () => { addMsg('isam', `Angiogram's in — pulling the coronary study for <b>${b.id}</b>, ${b.patient.name}.`, 'imaging complete'); openApp('pacs'); },
     // 2 · iSAM reads the angio — NOT one culprit: triple-vessel disease
     () => { addMsg('isam', `Reading it now. Three vessels narrowed — <b style="color:var(--redD)">LAD 90% proximal</b> · circumflex 75% · right coronary 60%. This isn't one culprit lesion — <span class="em">it's triple-vessel disease.</span>`, 'reading study'); },
     // 3 · the radiologist's report lands — concordant
@@ -545,14 +627,14 @@ function patientScript(b) {
     () => { paWindow('scope'); addMsg('tars', `Weaned <b>SIMV → PSV</b> and ran a spontaneous breathing trial at 10:40. Tidal volumes holding, rate 18, gases fine. <span class="em">He's passed — he doesn't need the ventilator.</span>`, 'breathing trial'); },
     () => { addMsg('tars', `<b>Extubated 11:20.</b> Facemask at 28%, sats 96, chest clear, good cough. Tube and ventilator are off him.`, 'extubated'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['ett', 'vent'] } })); },
     () => { addMsg('tars', `Balloon pump weaned 1:1 → 1:2 overnight and <b>out at 13:10</b> — groin's stable, distal pulses intact. Noradrenaline off at 15:40; he's holding a MAP of 82 on his own. Warming blanket off, he's at 37.0.`, 'support withdrawn'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['iabp', 'pumps', 'warm'] } })); },
-    () => { paWindow('watch'); addMsg('lsam', `Camera's logged the rest: <b>first sit at 14:05</b>, unaided, then forty-five minutes out in the chair. Guarding the sternotomy on transfers — CPOT peaks at 4, settles to 1 at rest.`, 'movement logged'); },
+    () => { paWindow('watch'); addMsg('isam', `Camera's logged the rest: <b>first sit at 14:05</b>, unaided, then forty-five minutes out in the chair. Guarding the sternotomy on transfers — CPOT peaks at 4, settles to 1 at rest.`, 'movement logged'); },
     () => { addMsg('tars', `I've written the day up — the mobility section is straight off the camera log. <span class="em">Seven devices left on him, down from twelve.</span> Plan for tomorrow needs your name:`, 'drafting note'); window.dispatchEvent(new CustomEvent('hud:note:publish', { detail: { day: 1 } })); addOrders([
       { label: PODS[1].orders.label, items: PODS[1].orders.items, detail: 'Daily plan · requires sign-off', autonomy: 'gated', exec: () => emrNavigate('notes') }]); },
     () => { paWindow('twin'); openApp('summary'); addMsg('tars', `Signed. Beta-blocker started for rhythm prophylaxis. <span class="em">He's had a good day — off the ventilator, off support, sitting out.</span>`, 'pod 1 closed'); },
 
     // ── POD 2 · mobilising — drains out ───────────────────────────────────
     () => { podOpen(2); addMsg('tars', `Overnight quiet — sinus on the beta-blocker, drains down to a trickle. <span class="em">Post-op day 2: get him up, get the tubes out.</span>`, 'post-op day 2'); },
-    () => { paWindow('watch'); addMsg('lsam', `He <b>stood at 08:40</b> — unaided, steady — then marched on the spot with physio. Two chair transfers logged since. CPOT 3 on exertion, settling at rest.`, 'movement logged'); },
+    () => { paWindow('watch'); addMsg('isam', `He <b>stood at 08:40</b> — unaided, steady — then marched on the spot with physio. Two chair transfers logged since. CPOT 3 on exertion, settling at rest.`, 'movement logged'); },
     () => { paWindow('scope'); addMsg('tars', `Drains gave <b>40 mL over the last 8 hours</b>, serous — that clears the removal threshold. <b>Out at 10:15</b>, post-pull film's clean. Suction's stood down with them.`, 'drains out'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['drains', 'suction'] } })); },
     () => { paWindow('twin'); addMsg('tars', `PCA's off — oral analgesia is holding him through transfers. <span class="em">Five machines left at the bed, down from seven.</span>`, 'de-escalating'); },
     () => { addMsg('tars', `Day 2's written up — the mobility section is the camera log again. Tomorrow's plan needs your name:`, 'drafting note'); window.dispatchEvent(new CustomEvent('hud:note:publish', { detail: { day: 2 } })); addOrders([
@@ -561,7 +643,7 @@ function patientScript(b) {
 
     // ── POD 3 · lines out — the last invasive day ─────────────────────────
     () => { podOpen(3); addMsg('tars', `Untroubled night — telemetry quiet, not a run of ectopy. <span class="em">Post-op day 3: everything invasive comes out today.</span>`, 'post-op day 3'); },
-    () => { paWindow('watch'); addMsg('lsam', `Three corridor walks logged — <b>sixty metres each</b>, gait steady, sternal precautions held on every stand. He queues for the walk before physio arrives.`, 'movement logged'); },
+    () => { paWindow('watch'); addMsg('isam', `Three corridor walks logged — <b>sixty metres each</b>, gait steady, sternal precautions held on every stand. He queues for the walk before physio arrives.`, 'movement logged'); },
     () => { paWindow('scope'); addMsg('tars', `Arterial line <b>out 09:20</b>, central line <b>out 09:40</b> — sites clean, no ooze. The cuff agrees with everything the art line said on its way out.`, 'lines out'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['art', 'cvc'] } })); },
     () => { addMsg('tars', `Catheter <b>out at 10:00</b> — he voided at 13:30. <span class="em">Trial of void passed.</span>`, 'catheter out'); window.dispatchEvent(new CustomEvent('hud:hookup:remove', { detail: { keys: ['ucath'] } })); },
     () => { paWindow('twin'); addMsg('tars', `Two machines left on him — <b>telemetry and the calf pumps</b>. The monitor wall has gone dark tile by tile.`, 'telemetry only'); },
@@ -575,7 +657,7 @@ function patientScript(b) {
     // title card; setPod(4) behind it leaves telemetry as the only live device.
     () => { podOpen(4); addMsg('tars', `Transferred — <b>Step-Down, bay 4</b>. Calf pumps came off on the way over. <span class="em">One wire left on him: telemetry.</span>`, 'arrived · step-down'); },
     () => { paWindow('scope'); addMsg('tars', `The monitor wall is <b>one live tile</b> now — eleven dark. Sinus 74 on the beta-blocker.`, 'telemetry only'); },
-    () => { paWindow('watch'); addMsg('lsam', `Camera's logging an independent patient — <b>120 metres</b> today, stairs with physio this afternoon, most of the day in the chair.`, 'movement logged'); },
+    () => { paWindow('watch'); addMsg('isam', `Camera's logging an independent patient — <b>120 metres</b> today, stairs with physio this afternoon, most of the day in the chair.`, 'movement logged'); },
     () => { paWindow('twin'); addMsg('tars', `Wound check: sternotomy clean and dry, no click, harvest site settled. <b>Not one run of AF the whole admission</b> — the prophylaxis paid for itself.`, 'wound check'); },
     () => { addMsg('tars', `Day 4's written. What's left is the way home — the discharge planning set needs your name:`, 'discharge planning'); window.dispatchEvent(new CustomEvent('hud:note:publish', { detail: { day: 4 } })); addOrders([
       { label: PODS[4].orders.label, items: PODS[4].orders.items, detail: 'Discharge planning · requires sign-off', autonomy: 'gated', exec: () => emrNavigate('notes') }]); },
@@ -587,9 +669,9 @@ function patientScript(b) {
     () => { addMsg('tars', `Filed — his GP and the surgical clinic have it. <span class="em">Four days from a stopped heart to a staircase.</span> He goes home Thursday.`, 'record closed'); },
   ] : [
     // 1 · we're already in — the chart's up (continues straight from the ward dive)
-    () => { addMsg('lsam', `${b.patient.name}, ${b.patient.age}. His chart's up.`, 'opening record'); emrNavigate('summary'); },
+    () => { addMsg('isam', `${b.patient.name}, ${b.patient.age}. His chart's up.`, 'opening record'); emrNavigate('summary'); },
     // 2 · what the monitor + ECG show — no troponin yet
-    () => { addMsg('lsam', `Monitor's ugly — <b>HR ${b.vitals.hr} and climbing</b>, sats ${b.vitals.spo2}, and the ECG's got the whole front wall lit.`, 'reading vitals'); emrNavigate('vitals', 'emr-vit-hr', 'Heart rate'); },
+    () => { addMsg('isam', `Monitor's ugly — <b>HR ${b.vitals.hr} and climbing</b>, sats ${b.vitals.spo2}, and the ECG's got the whole front wall lit.`, 'reading vitals'); emrNavigate('vitals', 'emr-vit-hr', 'Heart rate'); },
     // 3 · iSAM — PROVISIONAL read; wants to confirm before committing
     () => { addMsg('isam', `Looks like a big anterior heart attack. I won't call it yet — <span class="em">let's confirm before we commit him.</span>`, 'provisional read'); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
     // 4 · TARS activates the workup: cath lab to STANDBY (auto) + gated diagnostics
@@ -598,8 +680,8 @@ function patientScript(b) {
       { label: 'STAT troponin + repeat 12-lead', items: ['STAT Troponin', 'Repeat Lactate', '12-lead ECG'], detail: 'Diagnostics · needs your sign-off', autonomy: 'gated', exec: () => { agentOrderTroponin(); emrNavigate('labs'); } }]); },
     // 5 · order placed → awaiting results
     () => { addMsg('tars', `Signed — samples are away. Results coming back live.`, 'awaiting results'); emrNavigate('labs'); },
-    // 6 · LSam takes the returning result and forms the trajectory
-    () => { addMsg('lsam', `Troponin's back — <b>8.4</b>, sky-high. That plus the ECG… <span class="em">it's real.</span>`, 'formulating trajectory'); showTrend(b); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
+    // 6 · iSAM takes the returning result and forms the trajectory
+    () => { addMsg('isam', `Troponin's back — <b>8.4</b>, sky-high. That plus the ECG… <span class="em">it's real.</span>`, 'formulating trajectory'); showTrend(b); emrNavigate('labs', 'emr-lab-troponin-i-stat', 'Troponin I (STAT)'); },
     // 7 · the empty seat — iSAM pulls the ECG and runs OMI (no verdict yet)
     () => { addMsg('isam', `Running the ECG through the model now.`, 'reading ECG'); showEcgRead(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
     // 8 · iSAM verdict — the risk + call land on top of the ECG it just read
@@ -614,7 +696,7 @@ function patientScript(b) {
     () => { addMsg('tars', `Done. It's all in the record, cath lab's ready, clock's running. <span class="em">He's on his way to the artery.</span>`, 'pathway live'); emrNavigate('summary'); },
   ];
   return [
-    () => { addMsg('lsam', `Scanning <b>${b.id}</b> — ${b.patient.name}. ${b.patient.dx}. Opening the chart…`); emrNavigate('summary'); },
+    () => { addMsg('isam', `Scanning <b>${b.id}</b> — ${b.patient.name}. ${b.patient.dx}. Opening the chart…`); emrNavigate('summary'); },
     () => { addMsg('isam', `NEWS2 <b>${b.traj.news2}</b>, trend <b>${b.traj.trend}</b>. Verdict: <b class="em">${b.traj.verdict}</b>.`); emrNavigate('vitals', 'emr-vit-news2', 'NEWS2'); },
     () => { addMsg('tars', `${b.patient.acuity === 'watch' ? 'Keeping this one under closer watch. ' : 'Trajectory looks reassuring. '}Reviewing the latest labs.`); emrNavigate('labs'); },
     () => { addMsg('tars', `Routine labs can be re-checked — place a repeat panel?`); addOrders([
@@ -651,7 +733,7 @@ function buildPanel2() {
       <div class="notch-inner">
         <div class="notch-dots" id="agentDots"></div>
         <div class="notch-id">
-          <div class="notch-name" id="agentName">LSam</div>
+          <div class="notch-name" id="agentName">iSAM</div>
           <div class="notch-role"><span id="agentRole">Sensing</span> · <span id="tarsStatus">live</span></div>
         </div>
         <div class="notch-action" id="agentAction"></div>
@@ -699,7 +781,7 @@ function buildPanel2() {
   const ha = panelB.querySelector('#humanAction');
   if (ha) { ha.addEventListener('click', (e) => e.stopPropagation()); ha.addEventListener('dblclick', (e) => e.stopPropagation()); }
 
-  renderAgent(); renderHuman(); fireWash('lsam', true);
+  renderAgent(); renderHuman(); fireWash('isam', true);
 }
 
 function advance() {
@@ -753,11 +835,11 @@ export function initChat() {
     if (e.code !== 'Space' && e.code !== 'ArrowRight') return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    // Deck demo (?panela=1): the story does NOT advance on keys. The arrows
-    // belong to the deck's beat navigation — main.js forwards them up to the
-    // parent — and the interface is driven by mouse. Without this, fiddling
-    // with WATCH and pressing → walked the post-op story underneath the demo.
-    if (document.body.classList.contains('panela-only')) return;
+    // Embedded demos (?panela=1 or ?embed=1): the story does NOT advance on
+    // keys. The arrows belong to the HOST's beat navigation — main.js forwards
+    // them up to the parent — and the interface is driven by mouse. Without
+    // this, pressing → walked the app's own script underneath the demo.
+    if (document.body.classList.contains('panela-only') || document.body.classList.contains('embed-keys')) return;
     e.preventDefault();
     advance();
   });
