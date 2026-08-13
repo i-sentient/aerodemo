@@ -174,7 +174,7 @@ function showVerdict(b) {
   }
   risk.classList.remove('v-reading');
   risk.innerHTML = `<div class="v-num">${dotDigitsSVG(pct, 6, 'var(--redD)')}<span class="v-pct">%</span></div><div class="v-lb">deterioration</div>`;
-  if (!slot.querySelector('.v-verdict')) { const v = document.createElement('div'); v.className = 'v-verdict'; v.innerHTML = 'OMI-positive · anterior <b>STEMI</b>'; slot.appendChild(v); }
+  if (!slot.querySelector('.v-verdict')) { const v = document.createElement('div'); v.className = 'v-verdict'; v.innerHTML = 'OMI-positive · anterior <b>de WINTER</b>'; slot.appendChild(v); }
   expTop = true; renderAgent();
 }
 
@@ -209,6 +209,23 @@ function renderHuman() {
 // The human "chin" as a prompt surface: a pending gate lights it up and it says
 // what it's waiting for; confirming resolves it. Seed of the elicitation
 // (question-with-options) widget — sign-off is the one-option version.
+/** The human acting IS the next press. They have just done the one thing the
+ *  panel was waiting for, so making them then hunt for → is pure friction — and
+ *  worse, it leaves a resolved card sitting on screen doing nothing.
+ *
+ *  advance() cannot be called blind: in the ward dock `steps` is empty, so it
+ *  would fall into the end-of-story branch and fire 'tars:finished', routing the
+ *  host somewhere it should not go. So the panel advances itself only when it
+ *  actually owns a script, and otherwise asks whoever does.
+ *
+ *  Delayed, so the ✓ state is legible before the beat moves under it. */
+function handOn() {
+  setTimeout(() => {
+    if (steps.length) { advance(); return }
+    window.dispatchEvent(new Event('tars:advance'));
+  }, 700);
+}
+
 function humanPrompt(order, onAccept) {
   activeHuman = 'clinician';
   humanNotch.classList.add('awaiting');
@@ -220,7 +237,7 @@ function humanPrompt(order, onAccept) {
     const rows = (order.items || [order.label]).map((t) => `<label class="sel"><input type="checkbox" checked /><span class="ball"></span>${t}</label>`).join('');
     slot.innerHTML = `<div class="ord gated signoff"><div class="bd">${rows}</div><button class="confirm">APPROVE</button></div>`;
     const btn = slot.querySelector('.confirm');
-    if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); onAccept(); });
+    if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); onAccept(); handOn(); });
   }
 }
 // ---- DECISION card: two real courses of action, the human picks ----------
@@ -264,7 +281,7 @@ function nursePrompt(order, onDone) {
   slot.innerHTML = `<div class="recon">${items.map((t) => `<div class="adm"><span class="adm-lb">${t}</span><button class="adm-btn">Administered</button></div>`).join('')}</div>`;
   let remaining = items.length;
   slot.querySelectorAll('.adm').forEach((row) => {
-    row.querySelector('.adm-btn').addEventListener('click', (e) => {
+    row.querySelector('.adm-btn').addEventListener('click', (e) => { handOn();
       e.stopPropagation();
       if (row.classList.contains('done')) return;
       row.classList.add('done');
@@ -492,7 +509,7 @@ function addArrivalCard() {
         <div class="eta-bn">NEW PATIENT INBOUND — ETA 4 MIN</div>
         <div id="arrClock">4:00</div>
         <div class="eta-sub">ARRIVAL CLOCK ACTIVATED</div>
-        <div class="eta-case">Chandrababu · 58 M · anterior STEMI · Medic 12 · BP 104/65 · HR 125</div>
+        <div class="eta-case">Chandrababu · 58 M · probable MI · Medic 12 · BP 104/65 · HR 125</div>
       </div>
     </div>`
   chatEl.appendChild(wrap); trimFeed(); scroll()
@@ -533,14 +550,14 @@ export function seekErBrief() {
 function floorScript() {
   if (state.chapter === 'er') return [
     () => {
-      addMsg('tars', `Medic 12 patched through — <b>Chandrababu, 58 M, anterior STEMI</b>. BP 104/65 · HR 125 · SpO₂ 91 on air. <span class="em">Arrival clock is running — four minutes.</span>`, 'inbound')
+      addMsg('tars', `Medic 12 patched through — <b>Chandrababu, 58 M, probable MI</b>. BP 104/65 · HR 125 · SpO₂ 91 on air. <span class="em">Arrival clock is running — four minutes.</span>`, 'inbound')
       addArrivalCard()
       openApp('protocols')
     },
     () => addMsg('tars', `OMI inbound bundle live: <b>bay 04 cleared</b>, cath lab activated, ECG at the doors. <span class="em">Heparin is held for the clinician gate.</span>`, 'bundle running'),
   ]
   return [
-    () => addMsg('tars', `Good morning. ICU—North is <b>8 of 8 occupied</b>. Acuity: <span class="em">4 stable</span>, <b style="color:var(--amberD)">2 watch</b>, <b style="color:var(--redD)">2 critical</b> (ICU-04 · ICU-08, anterior STEMIs).`),
+    () => addMsg('tars', `Good morning. ICU—North is <b>8 of 8 occupied</b>. Acuity: <span class="em">4 stable</span>, <b style="color:var(--amberD)">2 watch</b>, <b style="color:var(--redD)">2 critical</b> (ICU-04 anterior STEMI · ICU-08 anterior OMI).`),
     () => addMsg('clinician', `What's our real capacity if cardiology needs a Level-3 bed?`),
     () => addMsg('isam', `Trajectories reviewed. <b>ICU-05</b> (A. Kristof, sepsis) is <span class="em">step-down eligible</span> — NEWS2 2, falling, lactate normalised. Stepping her down frees one Level-3 bed. Advisory — logistics can proceed autonomously.`),
     () => { addMsg('tars', `Executing transfer logistics:`); addOrders([
@@ -685,7 +702,7 @@ function patientScript(b) {
     // 7 · the empty seat — iSAM pulls the ECG and runs OMI (no verdict yet)
     () => { addMsg('isam', `Running the ECG through the model now.`, 'reading ECG'); showEcgRead(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
     // 8 · iSAM verdict — the risk + call land on top of the ECG it just read
-    () => { addMsg('isam', `Confirmed — <b>occlusive anterior STEMI</b>. About <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b> he deteriorates without reperfusion. <b style="color:var(--redD)">Open the artery — now.</b>`, 'committing verdict'); showVerdict(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
+    () => { addMsg('isam', `Confirmed — <b>anterior OMI</b> — the LAD is shut. About <b style="color:var(--redD)">${(b.traj.detProb * 100).toFixed(0)}%</b> he deteriorates without reperfusion. <b style="color:var(--redD)">Open the artery — now.</b>`, 'committing verdict'); showVerdict(b); emrNavigate('imaging', 'emr-img-1', '12-lead ECG'); },
     // 9 · TARS commits the pathway — ONE bundle: auto operational + gated clinical
     () => { addMsg('tars', `Committing the pathway. Cath lab's live, cardiology paged, bed held for after. The loading doses are yours.`, 'activating pathway'); emrNavigate('orders'); addOrders([
       { label: 'Cath lab — ACTIVATE', detail: 'Standby → live · door-to-balloon clock started', autonomy: 'autonomous' },
@@ -859,15 +876,60 @@ export function initWardPanel(el) {
   panelB.querySelector('.p2-foot').style.display = 'none'; // stepping = the ICU's arrow keys
 }
 
-/** One agent/human line with the standard thinking → typing → message rhythm. */
-export function wardSay(who, html, delay = 520) {
-  thinking(true, 'thinking…');
-  const typing = addTyping();
-  setTimeout(() => { typing.remove(); thinking(false); addMsg(who, html); }, delay);
+/* ── beat scheduling ───────────────────────────────────────────────────────
+   A beat's entries were scheduled with bare setTimeouts and nothing cancelled
+   them, so pressing forward while one was still playing dropped the incoming
+   beat's lines into the outgoing one's gaps — the panel printed them
+   interleaved and out of order.
+
+   The fix FLUSHES rather than cancels. Dropping the pending lines would lose
+   content outright (a one-line beat pressed through fast would never print at
+   all); flushing prints them instantly, in order, and only then starts the new
+   beat. Nothing is lost, nothing arrives out of sequence, and the panel catches
+   up to wherever the room already is. */
+let beatTimers = [], beatPending = [], flushing = false;
+function schedule(fn, ms) {
+  const entry = { fn, done: false };
+  beatPending.push(entry);
+  beatTimers.push(setTimeout(() => { entry.done = true; fn(); }, ms));
+}
+function flushBeat() {
+  for (const t of beatTimers) clearTimeout(t);
+  beatTimers = [];
+  const q = beatPending.filter((e) => !e.done);
+  beatPending = [];
+  flushing = true;                       // makes wardSay print rather than re-schedule
+  for (const e of q) e.fn();
+  flushing = false;
+  // a line cancelled mid-rhythm can leave its typing bubble behind
+  if (chatEl) chatEl.querySelectorAll('.typing-msg').forEach((n) => n.remove());
+  thinking(false);
 }
 
-/** A beat = a list of {who, html} played in sequence (one ICU step's chatter). */
+/** One agent/human line with the standard thinking → typing → message rhythm.
+ *  `status` is the notch's doing-word — 'reserving the bed', 'reading the
+ *  overnight scan'. It shows WHILE the agent thinks and stays after the line
+ *  lands. A generic 'thinking…' on every beat is what makes two agents read as
+ *  two people chatting; naming the actual work is what makes them read as
+ *  working. The post-cath script has done this from the start ('reading study',
+ *  'committing verdict') — the ward simply never passed one. */
+export function wardSay(who, html, status, delay = 520) {
+  if (flushing) { addMsg(who, html, status); return; } // catching up — no rhythm
+  thinking(true, status || 'thinking…');
+  const typing = addTyping();
+  schedule(() => { typing.remove(); thinking(false); addMsg(who, html, status); }, delay);
+}
+
+/** A beat = a list played in sequence (one ICU step's chatter). Two kinds of
+ *  entry: {who, html, status} speaks, and {orders:[...]} fires an order block.
+ *  Actions belong in the second kind — a system that WRITES that it booked a
+ *  bed is narrating; one that shows the row spin and tick is working. */
 export function wardBeat(items) {
+  flushBeat();                           // whatever is still in the air lands NOW
   let at = 0;
-  for (const it of items) { setTimeout(() => wardSay(it.who, it.html), at); at += 1350; }
+  for (const it of items) {
+    if (it.orders) { schedule(() => addOrders(it.orders), at); at += 900; continue; }
+    schedule(() => wardSay(it.who, it.html, it.status), at);
+    at += 1350;
+  }
 }

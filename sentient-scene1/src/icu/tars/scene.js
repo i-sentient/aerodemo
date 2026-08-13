@@ -31,7 +31,7 @@ const WATCHCAM = { pos: new THREE.Vector3(-3.55, 1.18, 0.32), look: new THREE.Ve
 let renderer, composer, renderPass, bloom, camera, canvas;
 let floorScene, patientScene, human;
 let activeScene, displayMode = 'floor';
-const pickables = [], bedHalos = [];
+const pickables = [], bedHalos = [], inboundMarks = [];
 let ringGroup = null; // the bed ring + zone + decal — slowly carousels in floor mode
 const camPos = HOME.pos.clone(), camLook = HOME.look.clone();
 const raycaster = new THREE.Raycaster(), ptr = new THREE.Vector2();
@@ -136,6 +136,18 @@ function buildRingBed(b, slot, ringGroup) {
     new THREE.MeshBasicMaterial({ color: spec.color, transparent: true, opacity: 0.08, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
   halo.rotation.x = -Math.PI / 2; halo.position.y = 0.02; g.add(halo);
   bedHalos.push({ mesh: halo, amp: spec.amp, rate: spec.rate, phase: slot * 0.9 });
+
+  // THE INBOUND BAY announces itself. The acuity halos all breathe on a sine,
+  // so another sine would just be a slightly brighter neighbour among sixteen.
+  // This one is a hard square blink on the floor ring — a different KIND of
+  // motion, which is what makes it findable at a glance rather than merely
+  // brighter.
+  if (b.inbound) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.42, 1.62, 64),
+      new THREE.MeshBasicMaterial({ color: 0xff5a52, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03; g.add(ring);
+    inboundMarks.push(ring);
+  }
 
   // hover label + invisible pick target → the existing patient drill-down
   const lab = labelSprite(b.id, b.patient.acuity); lab.position.set(0, 1.6, 0); lab.visible = false; g.add(lab);
@@ -716,6 +728,10 @@ function updateFloor(dt) {
   // each bed's small acuity halo blinks at its own rate (staggered phases)
   const t = performance.now() / 1000;
   for (const h of bedHalos) h.mesh.material.opacity = 0.06 + h.amp * (0.5 + 0.5 * Math.sin(t * h.rate + h.phase));
+  // square wave, ~1.15 Hz: on hard, off hard. Deliberately NOT the sine the
+  // halos use — the eye finds a change of rhythm faster than a change of level.
+  const blink = (t * 1.15) % 1 < 0.5 ? 0.85 : 0.12;
+  for (const m of inboundMarks) m.material.opacity = blink;
 }
 function updatePatient(dt) {
   if (reveal < 1) reveal = Math.min(1, reveal + dt / 1.3);

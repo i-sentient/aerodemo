@@ -6,7 +6,7 @@ import { BED_SLOTS } from '../scene/RoundER'
 import { KIND_STYLE } from '../ontology/census'
 import { makeEcgStrip } from '../icu/ontology/ecg'
 import { hdrCss } from '../scene/glow'
-import { tableTex, inboundAlertTex, tarsConfirmTex, tarsIdentifiedTex, tarsIcuTex } from './screenTex'
+import { tableTex, inboundAlertTex, tarsConfirmTex, tarsIdentifiedTex } from './screenTex'
 
 // ===========================================================================
 //  ER POPULATION (lab mock) — everything is an abstract REPRESENTATION, nothing
@@ -111,10 +111,10 @@ function InboundChip({ step }: { step: number }) {
   useFrame((s) => {
     const m = ref.current?.material as MeshBasicMaterial | undefined
     // urgent pulse while alarming (<4); calm waiting pulse; livelier "transmitting" once talking to ICU (>=7)
-    const speed = step < 18 ? 3 : step < 21 ? 1.4 : step < 26 ? 0.9 : 2.1
+    const speed = step < 18 ? 3 : step < 21 ? 1.4 : 0.9
     if (m) m.opacity = 0.72 + 0.28 * (0.5 + 0.5 * Math.sin(s.clock.elapsedTime * speed))
   })
-  const tex = step < 18 ? inboundAlertTex : step < 21 ? tarsConfirmTex : step < 26 ? tarsIdentifiedTex : tarsIcuTex
+  const tex = step < 18 ? inboundAlertTex : step < 21 ? tarsConfirmTex : tarsIdentifiedTex
   return (
     <mesh ref={ref} position={[0, 0.09, 0.28]} rotation-x={-Math.PI / 2}>
       <planeGeometry args={[2.7, 0.63]} />
@@ -375,31 +375,56 @@ const TAG_ISAM = cvTagTex('iSAM · ANALYSING', 'rgba(47,169,110,0.94)', '#eafff4
 // to "the object in bay 4". Carrying the record up here is what lets the ID
 // block downstairs go — one statement instead of two.
 const TAG_READ = cvTagTex('iSAM · VERDICT COMMITTED — CHANDRABABU · SH-2891', 'rgba(198,40,40,0.94)', '#fff2f2', 30)
+// and then the flag changes hands. TARS bronze — #A9744F from the ICU's AGENTS
+// table — because the reasoning is finished and what happens next is somebody
+// else's job. The state machine that has run this frame since the first scan
+// ends by naming a DIFFERENT agent, which is the handoff made visible on the
+// one surface the room is already reading.
+const TAG_TARS = cvTagTex('TARS · CATH LAB ACTIVATED', 'rgba(169,116,79,0.94)', '#fff4ea', 34)
 
 /** The box's transcript. Three acts typed into the same slot, so the object is
  *  seen to reason: it measures, then it reconciles, then it is named. Baked
  *  frame-by-frame — a per-frame fillText while the sweep and snap are running
  *  showed up as a hitch. */
-const bakeTypeStrip = (lines: { t: string; c: string }[], W = 720, H = 250, step = 3) => {
+const bakeTypeStrip = (
+  lines: { t: string; c: string }[],
+  W = 720, H = 250, step = 3,
+  font = 29, centre = false, lhOverride = 0,
+) => {
+  // derived so the existing callers land on exactly the numbers they had: at
+  // font 29 these evaluate to the old hardcoded 26 and 56
+  const y0 = Math.round(font * 0.9), lh = lhOverride || Math.round(font * 1.93)
   const total = lines.reduce((n, l) => n + l.t.length, 0)
   const frames: CanvasTexture[] = []
-  for (let n = 0; n <= total; n += step) {
+  // `n < total + step`, NOT `n <= total`. Stepping 4 at a time through 109
+  // characters lands the final frame on 108 and the last letter is never drawn
+  // — every strip in this file was quietly one character short. Overshooting by
+  // one step is safe: the per-line `take` below already clamps to the line
+  // length, so the extra frame is simply the complete text with no caret.
+  for (let n = 0; n < total + step; n += step) {
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H
     const x = cv.getContext('2d')!
     x.clearRect(0, 0, W, H)
     x.textBaseline = 'middle'
-    x.font = '600 29px ui-monospace, SFMono-Regular, Menlo, monospace'
+    x.font = `600 ${font}px ui-monospace, SFMono-Regular, Menlo, monospace`
+    x.textAlign = centre ? 'center' : 'left'
     let used = 0
     lines.forEach((line, i) => {
       const take = Math.max(0, Math.min(line.t.length, n - used))
       used += line.t.length
       if (take <= 0) return
       const txt = line.t.slice(0, take)
+      const y = y0 + i * lh
       x.fillStyle = line.c
-      x.fillText(txt, 8, 26 + i * 56)
+      x.fillText(txt, centre ? W / 2 : 8, y)
       if (take < line.t.length) {
+        // the caret sat 4 px off the text and was as wide as a glyph, so at
+        // caption scale it read as printing ON the last letter. Thinner, and
+        // a full character-width clear of it.
+        const tw2 = x.measureText(txt).width
+        const cx = (centre ? W / 2 + tw2 / 2 : 8 + tw2) + font * 0.42
         x.fillStyle = 'rgba(18,184,119,0.8)'
-        x.fillRect(8 + x.measureText(txt).width + 4, 12 + i * 56, 13, 29)
+        x.fillRect(cx, y - font * 0.5, Math.max(3, font * 0.16), font)
       }
     })
     const t = new CanvasTexture(cv)
@@ -416,17 +441,31 @@ const CV_MEASURE = bakeTypeStrip([
   { t: 'ID  ——————————', c: R },
 ])
 // act 2 · what TARS reconciled it against — the ID line fills in last
-const CV_RECONCILE = bakeTypeStrip([
+const RECONCILE_LINES = [
   { t: '✓ bay 4 reserved · SH-2891', c: A },
   { t: '✓ ETA 00:00 09:12 · seen 09:12', c: A },
   { t: '✓ escort MEDIC-12 in bay', c: A },
-  { t: '→ MATCH 0.96 · awaiting clinician', c: A },
-], 720, 250, 4)
+  { t: '→ MATCH 0.96', c: A },
+  // its OWN line, and the only one that is not a corroboration — the three
+  // checks above are things the system found, this is the one thing it cannot
+  // do by itself. Brighter and uppercase so it reads as the ask, not the fifth
+  // item on a list. Tighter leading (48 rather than 56) is what fits five lines
+  // in the space four used.
+  { t: 'AWAITING NURSE CONFIRMATION', c: '#e08a00' },
+]
+const CV_RECONCILE = bakeTypeStrip(RECONCILE_LINES, 720, 250, 4, 29, false, 48)
+// She steps off when the ASK STARTS typing, not when it finishes. Waiting for
+// the full stop bought nothing — the request is already legible a character in,
+// and the 0.4 s spent staring at a finished line was dead air on top of a walk
+// that is itself the long part of this beat. Derived from the lines rather than
+// typed in, so rewriting the text moves her cue with it.
+const RECONCILE_ASK = 0.15
+  + Math.floor(RECONCILE_LINES.slice(0, -1).reduce((n, l) => n + l.t.length, 0) / 4) / 14
 // act 3 · named
 const CV_NAMED_STRIP = bakeTypeStrip([
   { t: 'ID  CHANDRABABU · 58 M', c: T },
   { t: 'DX  probable MI · pre-hospital', c: T },
-  { t: '✓ confirmed by clinician', c: T },
+  { t: '✓ confirmed by nurse', c: T },
 ])
 
 
@@ -454,7 +493,10 @@ const DOT_DIGITS: Record<string, string[]> = {
   '9': ['01110', '10001', '10001', '01111', '00001', '00010', '01100'],
 }
 const dotNumberTex = (value: string, label: string, cell = 13, color = ECG_RED) => {
-  const W = 232, H = 184, x0 = 5, y0 = 16
+  // H is sized so the plane spans the full two-trace stack beside it rather
+  // than floating centred in the gap between them — the block reads as a column
+  // that belongs to the traces, not as something dropped between them.
+  const W = 232, H = 248, x0 = 5, y0 = 52
   const adv = 5 * cell + cell * 0.9 // the ICU's advance, so the spacing matches
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H
   const x = cv.getContext('2d')!
@@ -465,19 +507,60 @@ const dotNumberTex = (value: string, label: string, cell = 13, color = ECG_RED) 
       x.arc(x0 + ci * adv + c * cell + cell / 2, y0 + r * cell + cell / 2, cell * 0.34, 0, Math.PI * 2)
       x.fillStyle = color; x.fill()
     })))
-  x.textBaseline = 'alphabetic'
-  x.font = '700 32px ui-monospace, SFMono-Regular, Menlo, monospace'
+  // the '%' sits on the digits' MIDDLE, not their baseline. Drawn on the
+  // baseline it hung off the bottom-right of the last digit and read as a
+  // subscript rather than as part of the number.
+  x.textBaseline = 'middle'
+  x.font = '700 38px ui-monospace, SFMono-Regular, Menlo, monospace'
   x.fillStyle = color
-  x.fillText('%', x0 + value.length * adv + 6, y0 + 7 * cell)
+  x.fillText('%', x0 + value.length * adv + 8, y0 + 3.5 * cell)
+  x.textBaseline = 'alphabetic'
   x.font = '600 21px ui-monospace, SFMono-Regular, Menlo, monospace'
   x.letterSpacing = '3px'
   x.fillStyle = '#5a6b74'
-  x.fillText(label, x0 + 2, y0 + 7 * cell + 40)
+  x.fillText(label, x0 + 2, y0 + 7 * cell + 44)
   const t = new CanvasTexture(cv)
   t.colorSpace = SRGBColorSpace; t.minFilter = LinearFilter
   return t
 }
 const CONF_TEX = dotNumberTex('96', 'confidence')
+
+/** DOOR-TO-BALLOON, counting up, in the slot the confidence just vacated.
+ *
+ *  That swap is the point: 96% was the number the SYSTEM was judged on, and it
+ *  is settled. This is the number the HOSPITAL is judged on, and it has just
+ *  started — before the patient has moved. Every interventional cardiologist in
+ *  the room knows what it is and what a good one looks like.
+ *
+ *  Redrawn only when the displayed second changes, so it costs one fillText a
+ *  second rather than one a frame — a per-frame redraw beside the sweeping scan
+ *  line is exactly what hitched before. */
+const CLOCK_CV = document.createElement('canvas')
+CLOCK_CV.width = 232; CLOCK_CV.height = 248
+const CLOCK_TEX = (() => {
+  const t = new CanvasTexture(CLOCK_CV)
+  t.colorSpace = SRGBColorSpace; t.minFilter = LinearFilter
+  return t
+})()
+let clockShown = -1
+const drawClock = (sec: number) => {
+  if (sec === clockShown) return false
+  clockShown = sec
+  const x = CLOCK_CV.getContext('2d')!
+  x.clearRect(0, 0, 232, 248)
+  x.textAlign = 'center'; x.textBaseline = 'middle'
+  x.font = '800 52px ui-monospace, SFMono-Regular, Menlo, monospace'
+  x.fillStyle = '#c62828'
+  const mm = String(Math.floor(sec / 60)).padStart(2, '0')
+  const ss = String(sec % 60).padStart(2, '0')
+  x.fillText(`${mm}:${ss}`, 116, 104)
+  x.font = '600 16px ui-monospace, SFMono-Regular, Menlo, monospace'
+  x.letterSpacing = '2px'
+  x.fillStyle = '#5a6b74'
+  x.fillText('door-to-balloon', 116, 156)
+  return true
+}
+drawClock(0)
 
 /** ONE heartbeat, baked wide enough to read, wrapped so it tiles. beat(t) sits
  *  exactly on baseline at both ends (P opens at 0.16, T closes by 0.64), so the
@@ -488,22 +571,98 @@ const ECG_CROSS = 3.4  // seconds for the trace to cross it, end to end
 // one unit of offset advances exactly one complex, so this works out to about
 // 106 bpm — still his tachycardia, just no longer sprinting across the card
 const ECG_BPS = ECG_BEATS / ECG_CROSS
-const ECG_LOOP = (() => {
+const bakeLoop = (pattern: 'deWinter' | 'oldInferior', stroke: string) => {
   const W = 220, H = 140
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H
   const x = cv.getContext('2d')!
-  const samples = makeEcgStrip('deWinter', 1, W) // the ICU's payload for this patient
+  const samples = makeEcgStrip(pattern, 1, W) // the ICU's own generator
   const mid = H * 0.62, amp = H * 0.4
-  x.beginPath()
-  samples.forEach((v, i) => (i ? x.lineTo(i, mid - v * amp) : x.moveTo(i, mid - v * amp)))
-  x.strokeStyle = ECG_RED; x.lineWidth = 2.6; x.lineJoin = 'round'; x.lineCap = 'round'
-  x.stroke()
+  // drawn PAST both edges by wrapping the sample index. The texture tiles, and
+  // a glow is drawn outside the stroke — so ending the path at x=0 and x=W
+  // would clip the halo flat and print a hard seam once per heartbeat.
+  const OVER = 18
+  const draw = () => {
+    x.beginPath()
+    for (let i = -OVER; i <= W + OVER; i++) {
+      const y = mid - samples[((i % W) + W) % W] * amp
+      if (i === -OVER) x.moveTo(i, y); else x.lineTo(i, y)
+    }
+    x.stroke()
+  }
+  x.strokeStyle = stroke; x.lineJoin = 'round'; x.lineCap = 'round'
+  x.shadowColor = stroke
+  // three passes, widest and faintest first, so the halo falls off instead of
+  // sitting as one flat blur — and the crisp core goes on last so the trace
+  // stays a trace rather than becoming a smear
+  x.lineWidth = 2.0; x.shadowBlur = 17; x.globalAlpha = 0.5; draw()
+  x.lineWidth = 2.3; x.shadowBlur = 8; x.globalAlpha = 0.8; draw()
+  x.lineWidth = 2.6; x.shadowBlur = 0; x.globalAlpha = 1; draw()
   const t = new CanvasTexture(cv)
   t.colorSpace = SRGBColorSpace; t.minFilter = LinearFilter
   t.wrapS = RepeatWrapping
   t.repeat.set(ECG_BEATS, 1)
   return t
-})()
+}
+// V3 · the acute occlusion, which is what everybody in the room is here for
+const ECG_LOOP = bakeLoop('deWinter', ECG_RED)
+// III · a HEALED inferior infarct, weeks old, that he never knew he had. It is
+// drawn and labelled and then completely ignored — iSAM says nothing about it,
+// because on this day it changes nothing. It is a different TERRITORY from the
+// acute event, which is the only way both can be true on one ECG: de Winter is
+// hyperacute in V2-V4 and Q waves take hours to form, so Q waves there would
+// contradict it. Inferior, old, silent — and the reason the coronaries are
+// three-vessel by the time the cath lab looks.
+const ECG_OLD = bakeLoop('oldInferior', '#8a5a62')
+
+/** A lead name, set beside its own strip. */
+const leadTagTex = (name: string, dim = false) => {
+  const cv = document.createElement('canvas'); cv.width = 128; cv.height = 56
+  const x = cv.getContext('2d')!
+  x.font = '700 34px ui-monospace, SFMono-Regular, Menlo, monospace'
+  x.textAlign = 'right'; x.textBaseline = 'middle'
+  x.letterSpacing = '2px'
+  x.fillStyle = dim ? 'rgba(90,107,116,0.85)' : '#5a6b74'
+  x.fillText(name, 122, 30)
+  const t = new CanvasTexture(cv)
+  t.colorSpace = SRGBColorSpace; t.minFilter = LinearFilter
+  return t
+}
+const TAG_V3 = leadTagTex('V3')
+const TAG_III = leadTagTex('III', true)
+
+/** What iSAM saw, set DIRECTLY UNDER the lead it saw it in.
+ *
+ *  A findings list floating below both strips made the reader carry a lead name
+ *  across the card to match a claim to a trace. Welding each line to its own
+ *  lead removes that work entirely: the claim is adjacent to its evidence, and
+ *  anyone in the room can check one against the other without moving their eye.
+ *
+ *  Left-set, like every measurement on this frame. Only the verdict is centred,
+ *  because only the verdict is a judgement.
+ *
+ *  The second line is why this exists at all. An agent that reads a 12-lead and
+ *  reports only the territory that is screaming has not read a 12-lead — and if
+ *  it silently passes over a pathological Q, it either did not look or chose not
+ *  to say. Saying it also makes the POD-3 callback stronger: an agent that MISSES
+ *  this and finds it later got lucky, while one that notes it, files it as
+ *  irrelevant, and retrieves it against a fever three days on is doing the thing
+ *  no human team does reliably — the person reading this ECG is not the person
+ *  who will see that fever.
+ */
+// CENTRED, and on the CARD's width rather than the trace's. The apparent font
+// size is bounded by the text: ~52 characters across the trace's 2.10 m caps a
+// mono glyph at about 0.067 m. Letting the caption run the card's full 2.44 m
+// and centring it lifts that to 0.072 m — and centred type under a centred
+// trace reads as deliberate in a way a left-set line of a different width does
+// not.
+const CAP_W = 1560, CAP_H = 80, CAP_ASPECT = CAP_W / CAP_H
+const CAP_SPAN = 2.44
+const CAP_V3 = bakeTypeStrip(
+  [{ t: 'V2\u2013V4   upsloping ST depression \u00b7 tall symmetric T', c: 'rgba(214,42,42,0.95)' }],
+  CAP_W, CAP_H, 3, 46, true)
+const CAP_III = bakeTypeStrip(
+  [{ t: 'II III aVF   pathological Q \u00b7 R < 25% \u00b7 no ST shift', c: '#8a5a62' }],
+  CAP_W, CAP_H, 3, 46, true)
 
 /** The verdict — CENTRED, and the only centred type on the whole frame.
  *  Everything else here is left-set telemetry: bearings, checkmarks, ID lines,
@@ -513,27 +672,28 @@ const ECG_LOOP = (() => {
  *  The pattern is deWinter, which carries NO ST elevation — it is the OMI
  *  equivalent, which is exactly why it is worth an agent catching. */
 const VERDICT_TEX = (() => {
-  const W = 1000, H = 170
+  const W = 1000, H = 212
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H
   const x = cv.getContext('2d')!
   x.textBaseline = 'middle'; x.textAlign = 'center'
   x.font = '800 50px ui-monospace, SFMono-Regular, Menlo, monospace'
   x.letterSpacing = '3px'; x.fillStyle = '#c62828'
-  x.fillText('ANTERIOR STEMI DETECTED', W / 2, 44)
+  // OMI, not STEMI. STEMI *is* ST elevation — it is a criterion, not a
+  // diagnosis — so "anterior STEMI without ST elevation" is a contradiction in
+  // terms. de Winter is an acute LAD occlusion that FAILS those criteria, which
+  // is precisely why it gets missed and precisely why an agent catching it is
+  // worth a beat. "STEMI equivalent" stays below, in its correct role.
+  x.fillText('ANTERIOR OMI · de WINTER', W / 2, 44)
   x.font = '600 27px ui-monospace, SFMono-Regular, Menlo, monospace'
   x.letterSpacing = '2px'; x.fillStyle = '#a03530'
-  x.fillText('de Winter pattern · V2–V4 · STEMI equivalent', W / 2, 104)
-  const t = new CanvasTexture(cv)
-  t.colorSpace = SRGBColorSpace; t.minFilter = LinearFilter
-  return t
-})()
-const ECG_LABEL = (() => {
-  const cv = document.createElement('canvas'); cv.width = 360; cv.height = 52
-  const x = cv.getContext('2d')!
-  x.font = '600 25px ui-monospace, SFMono-Regular, Menlo, monospace'
-  x.letterSpacing = '4px'; x.textBaseline = 'middle'
-  x.fillStyle = '#5a6b74'
-  x.fillText('ECG · LEAD II', 2, 28)
+  x.fillText('V2–V4 · LAD occlusion', W / 2, 104)
+  // The plant, stated out loud and then set aside. "Incidental" is the whole
+  // trick: it is true, it is unremarkable, and it is completely forgettable to
+  // a room watching a man have a heart attack. On POD 3 it stops being
+  // incidental, and the callback lands because iSAM said this and meant it.
+  x.font = '600 24px ui-monospace, SFMono-Regular, Menlo, monospace'
+  x.letterSpacing = '2px'; x.fillStyle = '#8a5a62'
+  x.fillText('old inferior infarct — not acute', W / 2, 162)
   const t = new CanvasTexture(cv)
   t.colorSpace = SRGBColorSpace; t.minFilter = LinearFilter
   return t
@@ -573,8 +733,12 @@ function CVScan({ stage }: { stage: number | null }) {
   const type = useRef<Mesh>(null)
   const wash = useRef<Mesh>(null)
   const head = useRef<Mesh>(null)
-  const trace = useRef<Mesh>(null)
-  const ecgLb = useRef<Mesh>(null)
+  const capV3 = useRef<Mesh>(null)   // what it saw in V3, welded under V3
+  const capIII = useRef<Mesh>(null)  // and what it saw in III, under III
+  const trace = useRef<Mesh>(null)   // V3 · the acute occlusion
+  const traceOld = useRef<Mesh>(null) // III · the healed one nobody looks at
+  const tagV3 = useRef<Mesh>(null)
+  const tagIII = useRef<Mesh>(null)
   const conf = useRef<Mesh>(null)
   const shrink = useRef(0)
   const landed = useRef(-1)
@@ -586,9 +750,15 @@ function CVScan({ stage }: { stage: number | null }) {
   useFrame((s, dt) => {
     if (!grp.current) return
     if (stage === null) { t0.current = -1; lastAct.current = -1; rise.current = 0; landed.current = -1; grp.current.visible = false; return }
-    // stages 0 and 1 are ONE act of typing — the box keeps measuring straight
-    // through the beat break rather than retyping what it already said
-    const act = stage <= 1 ? 0 : stage - 1
+    // EVERY stage gets its own clock. This used to merge 0 and 1 into one act,
+    // from when both showed the same strip and the box had to keep measuring
+    // straight through the beat break rather than retype what it had said. That
+    // stopped being true once stage 1 became RECONCILE with a strip of its own:
+    // it inherited however many seconds you had lingered on 18-19, so by the
+    // time you pressed into it the type-out was already spent and the whole
+    // block appeared at once. Stage 0 still spans beats 18-19 without resetting,
+    // because the stage itself does not change across them.
+    const act = stage
     if (act !== lastAct.current) { lastAct.current = act; t0.current = s.clock.elapsedTime }
     const t = s.clock.elapsedTime - t0.current
     grp.current.visible = true
@@ -615,7 +785,11 @@ function CVScan({ stage }: { stage: number | null }) {
 
     // THE STRETCH — clamped dt, because a mount hitch would otherwise resolve
     // the whole 1.2s ease inside a single frame and the card would just appear
-    rise.current = MathUtils.damp(rise.current, stage >= 3 ? 1 : 0, 2.6, Math.min(dt, 0.05))
+    // TWO stretches, not one. Reconcile lifts it a third of the way to make
+    // room for a five-line strip; iSAM's read takes it the rest. The frame
+    // grows as it learns more, and the big move still belongs to the beat where
+    // the box stops being a box — it is just no longer the first move.
+    rise.current = MathUtils.damp(rise.current, stage >= 3 ? 1 : stage >= 1 ? 0.35 : 0, 2.6, Math.min(dt, 0.05))
     const r = rise.current * CARD_RISE
     const open = Math.min(1, Math.max(0, (rise.current - 0.45) / 0.4)) // contents trail the stretch
     if (top.current) top.current.position.y = r
@@ -629,7 +803,9 @@ function CVScan({ stage }: { stage: number | null }) {
     // The verdict displaces it — it steps aside into a corner to make room for
     // the conclusion it produced, which is the right hierarchy the moment there
     // IS a conclusion. Damped, so the yield is visible rather than a cut.
-    shrink.current = MathUtils.damp(shrink.current, stage >= 4 ? 1 : 0, 5, Math.min(dt, 0.05))
+    // Stages 3 and 4 share a layout deliberately: the traces do NOT move when
+    // the read arrives underneath them. Only the verdict displaces them.
+    shrink.current = MathUtils.damp(shrink.current, stage >= 5 ? 1 : 0, 5, Math.min(dt, 0.05))
     const q = shrink.current
     // THE CUE. Nothing red exists until the strip has finished getting out of
     // the way: while it travels, iSAM is still only analysing and the flag
@@ -637,7 +813,7 @@ function CVScan({ stage }: { stage: number | null }) {
     // over, the verdict arrives, and the three red things alarm together.
     // Landing them mid-move would have thrown a verdict at a frame that was
     // still rearranging itself, and it reads as a transition, not a finding.
-    if (stage >= 4 && q > 0.96) { if (landed.current < 0) landed.current = s.clock.elapsedTime }
+    if (stage >= 5 && q > 0.96) { if (landed.current < 0) landed.current = s.clock.elapsedTime }
     else landed.current = -1
     const vt = landed.current < 0 ? -1 : s.clock.elapsedTime - landed.current
     const said = vt >= 0
@@ -647,12 +823,46 @@ function CVScan({ stage }: { stage: number | null }) {
     // object — blinking part of it would read as a glitch in that part rather
     // than as the frame raising its voice.
     const vb = said && vt < 0.54 ? (Math.floor(vt / 0.09) % 2 === 0 ? 1 : 0) : 1
-    const tw = 2.34 + (1.6 - 2.34) * q
-    const th = 0.72 + (0.42 - 0.72) * q
-    const tx = -0.42 * q
-    const ty = 0.24 + (0.44 - 0.24) * q
-    if (trace.current) { trace.current.scale.set(tw, th, 1); trace.current.position.set(tx, ty, 0.002) }
-    if (ecgLb.current) ecgLb.current.position.set(tx - tw / 2 + 0.33, ty + th / 2 + 0.07, 0.002)
+    // TWO leads stacked in the space one used to take: V3 above, III below,
+    // each half height with a gap, and 0.24 reserved at the left for the names.
+    // Splitting rather than adding keeps the whole block inside the footprint
+    // that was already solved against the EMERGENCY signage behind the card.
+    // He is PROPPED UP on a raised backrest — head crown at world y 1.50 and
+    // 0.8 m nearer the camera than the card plane, which throws it to screen
+    // centre. Anything on the card below world y 1.59 projects behind his head.
+    // The usable band is 1.59 → 2.87 (the top Ls), and there was 0.40 m of dead
+    // air above the top trace that nothing was using, so the whole block moved
+    // up into it rather than the card growing.
+    const tw = (2.34 + (1.84 - 2.34) * q) - 0.24
+    // the strips take the slack that was sitting under them — 0.40 m tall while
+    // reading (was 0.30) and 0.29 at the verdict (was 0.19). The texture tiles
+    // six beats across a fixed width, so taller means a taller COMPLEX rather
+    // than a stretched one: the waveform gets its amplitude back.
+    const th = 0.889 + (0.644 - 0.889) * q
+    // The TRACE sits on the card's axis, and the lead tag overhangs into the
+    // left margin. Reserving that margin inside the trace's own width instead
+    // pushed the waveform 0.13 right of centre — and the waveform is what the
+    // eye tracks, so the whole card read as shoved over.
+    //
+    // At the verdict the row cannot be centred on the trace, because the
+    // confidence readout sits beside it and nothing balances it on the left.
+    // So it squares up a different way: the lead tag's left edge and the
+    // confidence's right edge land on ±1.22, exactly the verdict's own extents,
+    // and the trace is centred in the gap between them. The card reads as
+    // composed even though its top row is not itself symmetric.
+    const tx = -0.19 * q
+    // the leads sit FURTHER apart while reading, because each one is carrying a
+    // caption underneath it; once the verdict lands the captions go and they
+    // close back up to make room for it
+    const ty = 0.4675 + (0.66 - 0.4675) * q
+    const dy2 = 0.3025 + (0.165 - 0.3025) * q
+    const sh = th * 0.45   // each strip
+    const dy = dy2         // and its offset from centre
+    if (trace.current) { trace.current.scale.set(tw, sh, 1); trace.current.position.set(tx, ty + dy, 0.002) }
+    if (traceOld.current) { traceOld.current.scale.set(tw, sh, 1); traceOld.current.position.set(tx, ty - dy, 0.002) }
+    const tagX = tx - tw / 2 - 0.13
+    if (tagV3.current) tagV3.current.position.set(tagX, ty + dy, 0.002)
+    if (tagIII.current) tagIII.current.position.set(tagX, ty - dy, 0.002)
 
     // the read pass runs only while vision is still measuring
     const sT = Math.max(0, t - 0.45)
@@ -675,7 +885,8 @@ function CVScan({ stage }: { stage: number | null }) {
       const flag = stage === 0
         ? (sT < 0.05 ? TAG_SCAN : t < 3.4 ? TAG_FOUND : TAG_UNKNOWN)
         : stage === 1 ? TAG_RECON : stage === 2 ? TAG_NAMED
-          : said ? TAG_READ : TAG_ISAM
+          : stage >= 6 ? TAG_TARS
+            : said ? TAG_READ : TAG_ISAM
       tm.map = flag.t
       tm.opacity = fadeIn * vb
       tm.needsUpdate = true
@@ -695,26 +906,70 @@ function CVScan({ stage }: { stage: number | null }) {
       const f = stage >= 3 ? strip.length - 1
         : Math.floor(Math.max(0, t - (stage === 0 ? 0.6 : 0.15)) * 14)
       ym.map = strip[Math.min(strip.length - 1, f)]
-      ym.opacity = said ? 0
-        : (stage < 3 && t < (stage === 0 ? 0.6 : 0.15) ? 0 : fadeIn) * (1 - 0.55 * open)
+      // It carries his name only while the BOX is the thing establishing it.
+      // Once iSAM takes the flag the flag says it — and better, with his MRN —
+      // so this hands over rather than competing, fading out on the same ramp
+      // that opens the card.
+      const base = (stage < 3 && t < (stage === 0 ? 0.6 : 0.15) ? 0 : fadeIn)
+      ym.opacity = stage >= 3 ? base * (1 - open) : base
       ym.needsUpdate = true
     }
     // it slides down onto him rather than vanishing: the flag stopped carrying
     // his name the moment iSAM took it, and a diagnosis delivered over an
     // anonymous body is exactly the thing this whole scene argues against
-    if (type.current) type.current.position.y = H / 2 - 0.46 - open * 0.55
+    // pinned just under the box's top edge and RIDING the stretch, so the strip
+    // gains exactly the room the frame gains and never has to be re-tuned
+    // against the patient's crown at each stage
+    if (type.current) type.current.position.y = H / 2 - 0.32 + r - open * 0.55
 
     // --- the card's own contents, which live above the box, not in it -------
     if (card.current) card.current.visible = open > 0.01
+    // the captions type while iSAM reads — V3 first, then III, so it reads as
+    // working down the leads — and clear the moment it commits, freeing the air
+    // the verdict takes
+    const capH = CAP_SPAN / CAP_ASPECT
+    const cap = (r: typeof capV3, strip: CanvasTexture[], centreY: number, delay: number) => {
+      const m = r.current?.material as MeshBasicMaterial | undefined
+      if (!m) return
+      if (stage !== 4) { m.opacity = 0; return }
+      const f = Math.floor(Math.max(0, t - delay) * 14)
+      m.map = strip[Math.min(strip.length - 1, f)]
+      m.opacity = t < delay ? 0 : open
+      m.needsUpdate = true
+      r.current!.scale.set(CAP_SPAN, capH, 1)
+      r.current!.position.set(0, centreY, 0.002)
+    }
+    const under = (traceCentre: number) => traceCentre - sh / 2 - 0.03 - capH / 2
+    cap(capV3, CAP_V3, under(ty + dy), 0.25)
+    cap(capIII, CAP_III, under(ty - dy), 1.6)
     const hm = head.current?.material as MeshBasicMaterial | undefined
     if (hm) hm.opacity = said ? open * vb : 0
     const trm = trace.current?.material as MeshBasicMaterial | undefined
     if (trm) trm.opacity = open
+    const tom = traceOld.current?.material as MeshBasicMaterial | undefined
+    if (tom) tom.opacity = open * 0.9 // a shade back: it is not today's problem
+    for (const r of [tagV3, tagIII]) {
+      const m = r.current?.material as MeshBasicMaterial | undefined
+      if (m) m.opacity = open
+    }
     // runs from the moment the card opens and never stops. A trace that pauses
     // while it is being read is a screenshot; this one is a patient.
-    if (stage >= 3) ECG_LOOP.offset.x += Math.min(dt, 0.05) * ECG_BPS
+    if (stage >= 3) {
+      const step = Math.min(dt, 0.05) * ECG_BPS
+      ECG_LOOP.offset.x += step
+      ECG_OLD.offset.x += step // same heart, so the two leads cannot desynchronise
+    }
     const cm = conf.current?.material as MeshBasicMaterial | undefined
-    if (cm) cm.opacity = said ? open * vb : 0
+    if (cm) {
+      // the confidence hands its slot to the clock — same place, same size, one
+      // number replaced by another
+      if (stage >= 6) {
+        if (drawClock(Math.floor(Math.max(0, t)))) CLOCK_TEX.needsUpdate = true
+        cm.map = CLOCK_TEX
+      } else cm.map = CONF_TEX
+      cm.opacity = said ? open * vb : 0
+      cm.needsUpdate = true
+    }
   })
 
   const tick = (key: string, pos: [number, number, number], rotZ: number, len: number) => (
@@ -744,7 +999,7 @@ function CVScan({ stage }: { stage: number | null }) {
         <meshBasicMaterial color={hdrCss(CV_LINE, 1.9)} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
       </mesh>
       {/* the transcript, INSIDE the box — upper air, clear of the body */}
-      <mesh ref={type} position={[-W / 2 + 0.95, H / 2 - 0.46, 0.002]}>
+      <mesh ref={type} position={[-W / 2 + 0.95, H / 2 - 0.32, 0.002]}>
         <planeGeometry args={[1.72, 0.6]} />
         <meshBasicMaterial map={CV_MEASURE[0]} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
       </mesh>
@@ -759,23 +1014,44 @@ function CVScan({ stage }: { stage: number | null }) {
           <meshBasicMaterial map={TAG_SCAN.t} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
         </mesh>
         <group ref={card} visible={false}>
-          {/* the flag says who is reading; this is what they are reading. Both
-              are driven from the frame loop — see the shrink damp above. */}
-          <mesh ref={ecgLb} position={[-0.84, 0.67, 0.002]}>
-            <planeGeometry args={[0.66, 0.095]} />
-            <meshBasicMaterial map={ECG_LABEL} toneMapped={false} transparent opacity={1} depthWrite={false} side={DoubleSide} />
+          {/* the flag says who is reading; these are what they are reading. All
+              four are placed from the frame loop — see the shrink damp above. */}
+          <mesh ref={tagV3} position={[-1.05, 0.44, 0.002]}>
+            <planeGeometry args={[0.2, 0.0875]} />
+            <meshBasicMaterial map={TAG_V3} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
           </mesh>
-          <mesh ref={trace} position={[0, 0.24, 0.002]} scale={[2.34, 0.72, 1]}>
+          <mesh ref={tagIII} position={[-1.05, 0.04, 0.002]}>
+            <planeGeometry args={[0.2, 0.0875]} />
+            <meshBasicMaterial map={TAG_III} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
+          </mesh>
+          <mesh ref={trace} position={[0.13, 0.44, 0.002]} scale={[2.1, 0.324, 1]}>
             <planeGeometry args={[1, 1]} />
             <meshBasicMaterial map={ECG_LOOP} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
           </mesh>
-          <mesh ref={conf} position={[0.88, 0.44, 0.002]}>
-            <planeGeometry args={[0.78, 0.619]} />
+          <mesh ref={traceOld} position={[0.13, 0.04, 0.002]} scale={[2.1, 0.324, 1]}>
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial map={ECG_OLD} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
+          </mesh>
+          {/* nudged right and down off the flush-with-the-traces position. Down
+              is nearly spent here: the verdict's top edge is 0.03 below this
+              block, and the patient's crown is right under that. */}
+          <mesh ref={conf} position={[1, 0.64, 0.002]}>
+            <planeGeometry args={[0.58, 0.62]} />
             <meshBasicMaterial map={CONF_TEX} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
           </mesh>
+          {/* each finding welded under the lead it came from — placed from the
+              frame loop so it tracks its trace through the shrink */}
+          <mesh ref={capV3} position={[0, 0.61, 0.002]} scale={[CAP_SPAN, 0.125, 1]}>
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial map={CAP_V3[0]} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
+          </mesh>
+          <mesh ref={capIII} position={[0, 0.1, 0.002]} scale={[CAP_SPAN, 0.125, 1]}>
+            <planeGeometry args={[1, 1]} />
+            <meshBasicMaterial map={CAP_III[0]} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
+          </mesh>
           {/* and the conclusion lands under both, across the full width */}
-          <mesh ref={head} position={[0, -0.12, 0.002]}>
-            <planeGeometry args={[2.44, 0.415]} />
+          <mesh ref={head} position={[0, 0.04, 0.002]}>
+            <planeGeometry args={[2.44, 0.517]} />
             <meshBasicMaterial map={VERDICT_TEX} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
           </mesh>
         </group>
@@ -1316,6 +1592,28 @@ const NURSE_PATH = new CatmullRomCurve3(
   false, 'centripetal', 0.5,
 )
 
+/** Her SECOND walk: mid-floor to bay 4, once the box has asked for her.
+ *
+ *  She stops OUTSIDE the inbound ring — its outer radius is 2.25 (see
+ *  InboundRing), and she stands at 2.56 from the bay's centre. That is the
+ *  number that keeps her clear of both things worth seeing: the ring bounds the
+ *  patient, and the CV card is only ±1.35 wide, so anything beyond the ring is
+ *  beyond the card too. She approaches from +x rather than from the camera's
+ *  side, so she never crosses between the lens and the bed.
+ *
+ *  Bows outward at the midpoint so she walks a floor route rather than a
+ *  ruler-straight line at the bed. */
+const NURSE_TO_BED = new CatmullRomCurve3(
+  [
+    new Vector3(1.7, 0, 7.0),     // where the first walk left her
+    new Vector3(2.9, 0, 11.2),    // out and around
+    new Vector3(2.55, 0, 15.05),  // bedside, 2.56 from bay 4 — ring is 2.25
+  ],
+  false, 'centripetal', 0.5,
+)
+// facing the bed once she is there
+const BEDSIDE_RY = Math.atan2(0 - 2.55, 15.3 - 15.05)
+
 
 
 // ---------------------------------------------------------------------------
@@ -1542,7 +1840,7 @@ function StaffFigure({ kind }: { kind: 'nurse' | 'doctor' | 'ops' }) {
   )
 }
 
-function WalkingNurse({ step }: { step: number }) {
+function WalkingNurse({ step, onArrived }: { step: number; onArrived?: () => void }) {
   const grp = useRef<Group>(null)
   const prog = useRef(0)
   const heading = useRef(0)
@@ -1555,6 +1853,12 @@ function WalkingNurse({ step }: { step: number }) {
   // parked somewhere else in orbit mode.
   const armed = useRef(false)
   const waited = useRef(0)
+  // the second walk — armed by the card, not by the beat
+  const bedT0 = useRef(-1)
+  const bedProg = useRef(0)
+  const told = useRef(false)
+  const arrivedRef = useRef(onArrived)
+  arrivedRef.current = onArrived
   // The story chapter MOUNTS mid-strip (beat 12), after her walk has already
   // "happened" in chapter 1 — she must be standing at her spot from the first
   // frame, not replaying the walk. Seeded once, at mount.
@@ -1569,17 +1873,38 @@ function WalkingNurse({ step }: { step: number }) {
       if (s.camera.position.distanceTo(NURSE_HERO_POS) < 2.2 || waited.current > 5) armed.current = true
     }
     if (armed.current && step >= 5) prog.current = Math.min(1, prog.current + dt / 6)
-    const t = prog.current
+
+    // THE CARD CALLS HER. It types "awaiting nurse" and then one arrives —
+    // which is the whole point of the line. Cued off the strip finishing rather
+    // than off the beat starting, so the request and the answer are in order.
+    // Latched: pressing on mid-walk carries her through instead of resetting.
+    if (step >= 20) {
+      if (bedT0.current < 0) bedT0.current = s.clock.elapsedTime
+      if (s.clock.elapsedTime - bedT0.current > RECONCILE_ASK) {
+        // 3.6 s over ~8.4 m — 2.3 m/s, which is hurrying rather than strolling.
+        // Right for the beat: the box has just told the room it is waiting on
+        // her, and the whole beat is held open until she gets there.
+        bedProg.current = Math.min(1, bedProg.current + dt / 3.6)
+        // she reaching the bed IS the cue to move on — the beat was only ever
+        // waiting for her, so it should not also wait for a keypress
+        if (bedProg.current >= 1 && !told.current) { told.current = true; arrivedRef.current?.() }
+      }
+    } else { bedT0.current = -1; bedProg.current = 0; told.current = false }
+
+    const onSecond = bedProg.current > 0
+    const t = onSecond ? bedProg.current : prog.current
     const e = t * t * (3 - 2 * t)
-    const pos = NURSE_PATH.getPointAt(Math.min(0.999, Math.max(0.001, e)))
-    const walking = step >= 4 && t < 1
+    const u = Math.min(0.999, Math.max(0.001, e))
+    const curve = onSecond ? NURSE_TO_BED : NURSE_PATH
+    const pos = curve.getPointAt(u)
+    const walking = (onSecond || step >= 4) && t < 1
     const bob = walking ? Math.abs(Math.sin(s.clock.elapsedTime * 5.2)) * 0.035 : 0
     if (grp.current) grp.current.position.set(pos.x, bob, pos.z)
-    // face where she is going while she walks; at her spot she settles facing
-    // the badge camera (pos 1.27,1.28,7.58 → look at her) — one rest heading
-    // for every arrived beat, so there is no separate turn to choreograph
-    const tan = NURSE_PATH.getTangentAt(Math.min(0.999, Math.max(0.001, e)))
-    const want = walking ? Math.atan2(tan.x, tan.z) : REST_RY
+    // face where she is going while she walks; at rest she settles facing the
+    // badge camera, and at the bedside she turns to the patient — one rest
+    // heading per destination, so there is no separate turn to choreograph
+    const tan = curve.getTangentAt(u)
+    const want = walking ? Math.atan2(tan.x, tan.z) : onSecond ? BEDSIDE_RY : REST_RY
     heading.current = MathUtils.damp(heading.current, want, 4, dt)
     if (grp.current) grp.current.rotation.y = heading.current
   })
@@ -1708,12 +2033,12 @@ function BedMarks({ step }: { step: number }) {
   )
 }
 
-export function ERPopulation({ step = 0 }: { step?: number }) {
+export function ERPopulation({ step = 0, onNurseArrived }: { step?: number; onNurseArrived?: () => void }) {
   return (
     <group>
       <WardCoverage on={(step >= 3 && step <= 8) || (step >= 10 && step <= 14)} />
       <RadarFace step={step} />
-      <WalkingNurse step={step} />
+      <WalkingNurse step={step} onArrived={onNurseArrived} />
       {/* nurse marks light with hers (both-perimeters beat), the rest join on
           the census sweep */}
       {ROAMERS.map((r, i) => (
@@ -1727,11 +2052,13 @@ export function ERPopulation({ step = 0 }: { step?: number }) {
       {step >= 17 && step < 19 && <GhostPresence step={step} />}
       {step >= 18 && <SolidPatient />}
       {/* one frame, the whole arc: detect (18-19) · reconcile (20) · named (21)
-          · HELD behind iSAM's title card (22-23) · the card opens and iSAM
-          reads (24) · iSAM commits (25+). The box does not act while the card
-          is up — it is the thing the card fades through. */}
+          · HELD behind iSAM's title card (22-23) · the card opens on the raw
+          traces alone (24) · iSAM's read lands under each lead (25) · iSAM
+          commits (26+). The box does not act while the card is up — it is the
+          thing the card fades through. */}
       <CVScan stage={step === 18 || step === 19 ? 0 : step === 20 ? 1
-        : step >= 21 && step <= 23 ? 2 : step === 24 ? 3 : step >= 25 ? 4 : null} />
+        : step >= 21 && step <= 23 ? 2 : step === 24 ? 3 : step === 25 ? 4
+        : step === 26 ? 5 : step >= 27 ? 6 : null} />
       {/* named means TRACKED: the unknown object joins the ontology with his own
           census dot, the same coral mark every other patient here already carries */}
       <group position={BED_SLOTS[4].position} rotation-y={BED_SLOTS[4].rotationY}>

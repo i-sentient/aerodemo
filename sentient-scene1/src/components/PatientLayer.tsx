@@ -20,7 +20,7 @@ import { addV, patientNodePosition, CARD_OFFSET, ECG_OFFSET } from '../scene/anc
 
 // ---------------------------------------------------------------------------
 //  PATIENT LAYER — maps ontology patients to glass nodes.
-//  DETAIL-ON-FOCUS: only the hero (focus, default = inbound STEMI) shows full
+//  DETAIL-ON-FOCUS: only the hero (focus, default = inbound OMI) shows full
 //  cards + the expensive transmission material. Ambient patients render just
 //  their node + a small severity dot (declutter). Click any node to focus it.
 // ---------------------------------------------------------------------------

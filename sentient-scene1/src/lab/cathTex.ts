@@ -111,7 +111,7 @@ export const angioTex = make(720, 720, (c) => {
   c.fillStyle = '#c8d4de'
   c.fillText('CHANDRABABU · ICU-08', 22, h - 46)
   c.fillStyle = '#9fb0bd'
-  c.fillText('ANT STEMI · DIAGNOSTIC', 22, h - 22)
+  c.fillText('ANT OMI · DIAGNOSTIC', 22, h - 22)
   c.textAlign = 'right'
   c.fillText('DAP 42 Gy·cm²', w - 22, 34)
   c.fillText('CINE', w - 22, 58)
@@ -181,7 +181,7 @@ export const hemoTex = make(640, 400, (c) => {
   // patient line — whose strip this is
   c.fillStyle = '#94a4b0'
   c.font = '15px ui-monospace, monospace'
-  c.fillText('CHANDRABABU · ICU-08 · ANT STEMI', 16, 24)
+  c.fillText('CHANDRABABU · ICU-08 · ANT OMI', 16, 24)
 
   // numeric column — his numbers on the table (stabilised, still stressed)
   const nx = traceW + 20

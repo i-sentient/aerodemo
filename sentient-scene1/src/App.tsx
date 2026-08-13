@@ -122,7 +122,7 @@ function Overlay() {
           SENTIENT · SCENE 1
         </div>
         <div style={{ fontSize: 11, color: AERO.inkDim, marginTop: 2 }}>
-          STEMI arrival · live ontology
+          OMI arrival · live ontology
         </div>
 
         <div style={{ marginTop: 12, fontSize: 12 }}>
@@ -532,6 +532,17 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
 // building has to have been shown before the thing that acts on it is named.
 type IcuPhase = 'erplot' | 'orbit' | 'reveal' | 'plan' | 'tars' | 'tarsx' | 'onto' | 'hold' | 'target' | 'fly'
 
+/** Which beats ATLAS reads as the ICU rather than the whole hospital.
+ *
+ *  Stated as a WHITELIST of the phases that are actually about the ICU, not as
+ *  "everything except erplot and plan". The old form flipped to 'icu' the
+ *  instant the TARS card was called — but `showTotals` only starts the panel's
+ *  ~340 ms fade on that same frame, so the panel spent its entire exit showing
+ *  ICU numbers under a hospital heading. Same race as the pull-back flash: the
+ *  content has to be gated on the phase the panel is IN, never on the one it is
+ *  leaving for. */
+const ICU_SCOPE = new Set<IcuPhase>(['onto', 'hold', 'target', 'fly'])
+
 /**
  * The resumed walk-around, shared by every rig that shows the whole tower.
  *
@@ -671,7 +682,7 @@ function IcuReturnView({ onDone, segment = 'full' }: { onDone: () => void; segme
   //              onDone — the story goes BACK to the ER before any thread
   // 'transfer' · opens on the thread (journey to the ICU) → lock → dive
   // 'full'     · the original ride, kept for dev deep links
-  const [phase, setPhase] = useState<IcuPhase>(segment === 'transfer' ? 'onto' : 'erplot')
+  const [phase, setPhase] = useState<IcuPhase>('erplot')
   const { onto, strike, toggle: toggleOnto, setOnto } = useOntologyMode(true)
   const phaseRef = useRef<IcuPhase>('erplot')
   phaseRef.current = phase
@@ -681,7 +692,11 @@ function IcuReturnView({ onDone, segment = 'full' }: { onDone: () => void; segme
   // while `onto` is still true — long enough for the ATLAS panel and the
   // journey caption to begin their fade-in and be snatched back, which is the
   // flash on every pull-back. Gating on the PHASE too makes the race invisible.
-  const solidBeat = phase === 'orbit' || phase === 'reveal'
+  // Chapter 2's pull-back turns the tower SOLID — it is introducing a building.
+  // The transfer borrows the very same camera move (see IcuRig's 'orbit') but
+  // must stay in blueprint, because the thread is about to draw on it. Same
+  // move, different dress.
+  const solidBeat = (phase === 'orbit' || phase === 'reveal') && segment !== 'transfer'
   // While TARS has the left side, ATLAS steps off it. Introducing the agent
   // panel against a hospital census competes for the same read, and a census is
   // the wrong thing to be looking at during a transfer anyway — nobody is in a
@@ -694,9 +709,17 @@ function IcuReturnView({ onDone, segment = 'full' }: { onDone: () => void; segme
   const [threadSettled, setThreadSettled] = useState(false)
   useEffect(() => { if (phase !== 'onto') setThreadSettled(false) }, [phase])
   const transit = segment === 'transfer' && phase === 'onto' && threadSettled
+  // the transfer's pull-back: the whole tower is back, and ATLAS reads the room
+  // he is LEAVING. It swaps to the ICU on the next press, as the thread starts —
+  // so the content change and the journey start are the same gesture.
+  const erScope = segment === 'transfer' && phase === 'orbit'
   // Everything before the thread exists — now including the pull-back and the
   // reveal, so the transfer can never arm itself while the tower is solid.
-  const preThread = solidBeat || phase === 'erplot' || phase === 'plan' || phase === 'tars' || phase === 'tarsx'
+  // 'orbit' is named explicitly, not left to solidBeat. It used to be covered
+  // for free because orbit was ALWAYS solid — but the transfer now borrows that
+  // camera move in blueprint, and without this the thread would start drawing
+  // on the pull-back, a whole press before it is meant to.
+  const preThread = solidBeat || phase === 'orbit' || phase === 'erplot' || phase === 'plan' || phase === 'tars' || phase === 'tarsx'
   // The transfer has to draw on HIS cue. Mounting it the instant the phase
   // flips meant it drew UNDER the TARS card while that faded, so by the time
   // the tower was visible the thread had already arrived. Arm it only once the
@@ -720,9 +743,18 @@ function IcuReturnView({ onDone, segment = 'full' }: { onDone: () => void; segme
       const p = phaseRef.current
       // ER plot -> the solid building -> the blueprint with the thread
       // solid again, pulled back to the whole building, slowly turning
-      if (p === 'erplot') { setOnto(false); setPhase('orbit'); return }
+      // the transfer's erplot is the RETURN to the ER's plot, now that he is
+      // in it — it goes straight on to the thread rather than back out to the
+      // solid building, which chapter 2 already did
+      if (p === 'erplot') {
+        // the transfer pulls back WITHOUT going solid — the tower it is backing
+        // out to is the one the thread will travel
+        if (segmentRef.current === 'transfer') { setPhase('orbit'); return }
+        setOnto(false); setPhase('orbit'); return
+      }
       // the turn settles onto the front and the floor pills come up
-      if (p === 'orbit') { setPhase('reveal'); return }
+      // chapter 2 goes on to name the floors; the transfer starts the journey
+      if (p === 'orbit') { setPhase(segmentRef.current === 'transfer' ? 'onto' : 'reveal'); return }
       // the solid building converts to blueprint...
       if (p === 'reveal') { setOnto(true); setPhase('plan'); return }
       // name the agent that works the building...
@@ -760,6 +792,14 @@ function IcuReturnView({ onDone, segment = 'full' }: { onDone: () => void; segme
           // next beat. It advances to 1 the moment the building appears.
           journey={preThread || !threadArmed ? 0 : 1}
           onJourneySettled={() => setThreadSettled(true)}
+          // The ER's plot is the FIRST stop out of the ER and runs before the
+          // case does — he has not arrived, so the callout naming him and his
+          // diagnosis is a spoiler. Everywhere later is on the way to the ICU,
+          // where the diagnosis genuinely is established, so it stays as-is.
+          // Every erplot is pre-arrival EXCEPT the transfer's, which is the
+          // second showing: same plot, and his bed now full. Nothing has to
+          // say the ontology is live — the room watches a hole fill.
+          arrived={phase !== 'erplot' || segment === 'transfer'}
           focus={phase === 'erplot' ? FOCUS.er : FOCUS.icu} open={phase === 'hold' || phase === 'erplot'} tags={phase === 'plan'} handedOff={phase === 'hold' || phase === 'target' || phase === 'fly'} labels={phase !== 'fly' && phase !== 'target'} /> : <BuildingStack showPills={phase === 'reveal'} />}
       <IcuRig phase={phase} onArrived={onDone} />
       <Postprocessing dark />
@@ -769,7 +809,7 @@ function IcuReturnView({ onDone, segment = 'full' }: { onDone: () => void; segme
     {/* the ward's own agent panel, docked over the tower while he is between
         rooms — see TransitAgentPanel for why it is the same component */}
     {segment === 'transfer' && <TransitAgentPanel phase={phase} armed={threadSettled} />}
-    <OntologyPanels showTotals={onto && !transit && !solidBeat && phase !== 'hold' && phase !== 'erplot' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'target' && phase !== 'fly'} showTags={onto && phase === 'plan'} showJourney={onto && !solidBeat && phase !== 'erplot' && phase !== 'plan' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} scope={phase === 'erplot' || phase === 'plan' ? null : 'icu'} />
+    <OntologyPanels showTotals={onto && !transit && !solidBeat && phase !== 'hold' && phase !== 'erplot' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'target' && phase !== 'fly'} showTags={onto && phase === 'plan'} showJourney={onto && !solidBeat && phase !== 'erplot' && phase !== 'plan' && phase !== 'tars' && phase !== 'tarsx' && phase !== 'hold' && phase !== 'target' && phase !== 'fly'} scope={ICU_SCOPE.has(phase) ? 'icu' : erScope ? 'er' : null} />
     </>
   )
 }

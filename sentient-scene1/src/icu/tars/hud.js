@@ -139,7 +139,7 @@ function setPod(day) {
   for (let i = 0; i <= podDay; i++) (PODS[i].off || []).forEach((k) => gone.add(k));
   HOOKUP.forEach((d) => { if (!gone.has(d.key)) live.add(d.key); });
   // move the BASELINE too, not just the reading — ontology's random walk clamps
-  // to b.base (the admission STEMI numbers), so assigning vitals alone gets
+  // to b.base (the admission OMI numbers), so assigning vitals alone gets
   // dragged straight back to HR 118.
   const v = PODS[podDay].vitals;
   const b = bedById(state.focusId);

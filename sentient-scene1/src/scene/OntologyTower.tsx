@@ -1023,8 +1023,10 @@ function JourneyCaption({ show }: { show: boolean }) {
   )
 }
 
-export function OntologyTower({ journey = 0, focus, open = false, handedOff = false, tags = false, labels = true, onJourneySettled }: {
+export function OntologyTower({ journey = 0, focus, open = false, handedOff = false, tags = false, labels = true, arrived = true, onJourneySettled }: {
   journey?: number
+  /** false while the patient has not reached this floor — see FloorExplode */
+  arrived?: boolean
   /** the thread has stopped moving at its target stop */
   onJourneySettled?: () => void
   /** the floor (and the room on it) this view is aimed at: highlighted always,
@@ -1054,7 +1056,7 @@ export function OntologyTower({ journey = 0, focus, open = false, handedOff = fa
       {/* mounted as soon as there's a focus, but collapsed and fully
           transparent until the hold — so the explode eases in rather than
           popping into existence the frame the camera arrives */}
-      {focusVol && <FloorExplode v={focusVol} room={focus?.room} open={opened} />}
+      {focusVol && <FloorExplode v={focusVol} room={focus?.room} open={opened} arrived={arrived} />}
       {/* publishes each tier's screen point for the DOM floor-tag leaders — only
           while the building is being read, never during the orbit or the dive */}
       <LeaderProjector active={!!tags && !opened} />

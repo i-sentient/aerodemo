@@ -116,7 +116,7 @@ export function HandoffLayer() {
         key: 'physician-inbound',
         target: addV(locationPosition('physician-view'), [0, 0, 0.2]),
         title: inbound.label,
-        sub: 'STEMI · to physician view',
+        sub: 'OMI · to physician view',
         accent: CText.coral,
         glide: false,
       })

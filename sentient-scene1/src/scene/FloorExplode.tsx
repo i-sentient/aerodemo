@@ -102,8 +102,16 @@ export function FloorExplode({
   v,
   room,
   open,
+  arrived = true,
 }: {
   v: FloorVol
+  /** Has the patient reached this floor yet? False on the ER's own plot before
+   *  the case starts. It is ONE flag on purpose: it empties his bed, clears the
+   *  devices off it, and withholds the ring, the leader and the callout that
+   *  names him — all downstream of the hero marking in individuateFloor, so
+   *  they cannot fall out of step with each other. The room still highlights
+   *  and the census still resolves; there is simply a hole where he will land. */
+  arrived?: boolean
   /** the room the journey passes through — its frontmost bed becomes the hero */
   room?: string
   open: boolean
@@ -113,7 +121,7 @@ export function FloorExplode({
       room: b.room,
       footprint: (b.shape === 'drum' || b.shape === 'crown' || b.shape === 'hex' ? 'round' : 'rect') as 'round' | 'rect',
     }))
-    const objects = individuateFloor(v.id, blocks, room ? { room } : undefined)
+    const objects = individuateFloor(v.id, blocks, room ? { room, arrived } : undefined)
     const floorY = -v.h / 2 + 0.09
     const patientLift = v.h * 0.26
     const deviceBase = v.h * 0.4
@@ -156,7 +164,7 @@ export function FloorExplode({
     const heroBed = placed.find((p) => p.o.hero && p.o.kind === 'bed')
     const journey = JOURNEY.find((j) => j.floorId === v.id && j.room === room)
     return { placed, byKind, tally: tallyByKind(objects), heroBed, journey }
-  }, [v, room])
+  }, [v, room, arrived])
 
   // --- instanced marks, one draw call per class ----------------------------
   // One bag of callback refs rather than a useRef per class: the class list is

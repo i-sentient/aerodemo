@@ -18,7 +18,7 @@ const APPMETA = {
 };
 // Floor state leads with the full sectioned EMR (like the ward's Panel C), with
 // the workspace apps still reachable in the dock. Patient state = clinical apps.
-const FLOOR_EMR_FOCUS = 'ICU-08'; // default patient the floor EMR opens on (the new STEMI admission)
+const FLOOR_EMR_FOCUS = 'ICU-08'; // default patient the floor EMR opens on (the new OMI admission)
 const dockApps = () => (state.mode === 'patient'
   ? ['summary', 'vitals', 'lis', 'emar', 'referrals', 'pacs', 'notes', 'case'] // clinical systems (no EMR container)
   : ['staffing', 'inventory', 'protocols']); // ward/floor operational apps

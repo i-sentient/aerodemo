@@ -156,8 +156,8 @@ export const CLINICAL_FLOORS = CENSUS.filter((c) => c.floorId !== 'command').len
 // Cath Lab is the +x hexagon, OR-1 the −x slab, Step-Down the +x ward slab —
 // the thread has to cross the building, not just rise through its middle.
 export const JOURNEY: { floorId: string; room: string; label: string; scene: string }[] = [
-  { floorId: 'er',       room: 'Emergency', label: 'Arrival',   scene: 'anterior STEMI · door' },
-  { floorId: 'icu',      room: 'ICU',       label: 'ICU-08',    scene: 'admission · POD 0-3' },
+  { floorId: 'er',       room: 'Emergency', label: 'Arrival',   scene: 'anterior OMI · door' },
+  { floorId: 'icu',      room: 'ICU',       label: 'ICU-08',    scene: 'admission' },
   { floorId: 'imgcath',  room: 'Cath Lab',  label: 'Cath Lab',  scene: 'angiography · 3-vessel' },
   { floorId: 'theatres', room: 'OR1',       label: 'OR 1',      scene: 'CABG ×3' },
   { floorId: 'wards',    room: 'Step-Down', label: 'Step-Down', scene: 'POD 4 · telemetry only' },

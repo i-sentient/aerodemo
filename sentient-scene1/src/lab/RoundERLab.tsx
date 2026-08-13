@@ -153,6 +153,11 @@ const SHOTS: Shot[] = [
   // rendered as a smudge.)
   { pos: [-0.06, 1.94, 8.2], look: [-0.5, 1.2, 14.9] },
   // 11 · the CARD shot — shot 10's bearing exactly, moved in to 5.2 m and
+  // used from RECONCILE onward, not just for the card: at shot 10's 7.08 m the
+  // box's own transcript rendered 26% smaller purely from distance, which read
+  // as small type rather than as a far camera. Detection keeps shot 10 — it
+  // wants the room around the find — and the push-in lands on the beat the
+  // system stops looking and starts reasoning.
   // lifted to 2.2 so the grown frame clears the EMERGENCY signage behind it.
   // The eye height is doing real work: the card is 5.2 m out and the sign 8.1,
   // so raising the camera drops the sign's underside faster than the card's
@@ -168,7 +173,7 @@ const SHOTS: Shot[] = [
 // speaker glows, the handoff lands lower-left) · THE REPLY (mic pressed, the
 // nurse answers lower-right) · then the story (2 holds through alert/ghost/
 // solidify; the two bed shots zoom in; the last pulls back)
-const STEP_SHOT = [0, 1, 4, 5, 9, 6, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 2, 2, 10, 10, 10, 10, 10, 10, 11, 11, 2]
+const STEP_SHOT = [0, 1, 4, 5, 9, 6, 8, 7, 5, 5, 5, 5, 5, 5, 5, 5, 2, 2, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11]
 
 // interior fly-in start when arriving from the tower dive: already INSIDE the
 // drum, low + behind, looking the SAME way as the overhead (SHOT 1) so it just
@@ -589,15 +594,16 @@ function TarsERFrame({ mounted, shown }: { mounted: boolean; shown: boolean }) {
   )
 }
 
-// 27 beats.
+// 28 beats.
 // coverage · outside · hub · CAMERA (specs land when the shot settles) · bird's
 //   eye · BED HERO (ward alive) · nurse · BADGE (specs on settle) · her ring ·
 //   both perimeters · RADAR · census + legend
 // story · the room alone · badge slides in · medic 12 · the reply · ARRIVAL
 //   CLOCK (console takeover) · dive · ghost · DETECT · unidentified ·
 //   reconcile · NAMED (ring retires, bay goes green) · iSAM CARD · iSAM CARD
-//   EXPANDED · iSAM reads the ECG · the verdict · TARS→ICU
-const N_BEATS = 27
+//   EXPANDED · the traces alone · iSAM's read under each lead · the verdict ·
+//   TARS→ICU
+const N_BEATS = 28
 
 /** Where each chapter of the ER lives in the one beat list. 'coverage' is the
  *  quiet ward (through the census roll call); 'story' opens on the inbound and
@@ -731,7 +737,15 @@ export function RoundERLab({
         <ERStudio scan={step === 9} />
 
         <RoundER xray={step === 3 || (step >= 8 && step <= 14)} />
-        <ERPopulation step={step} />
+        <ERPopulation
+          step={step}
+          // Beat 20 asks for a nurse and then waits for one. When she reaches
+          // the bed the wait is over, so the beat advances itself rather than
+          // sitting on a finished picture until someone presses. Guarded to
+          // beat 20 alone — pressing on during her walk must not be undone by
+          // her arriving a second later.
+          onNurseArrived={() => setStep((s) => (s === 20 ? 21 : s))}
+        />
 
         <Postprocessing dark />
       </Canvas>

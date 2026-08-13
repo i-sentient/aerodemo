@@ -174,8 +174,18 @@ export function WardApp({ onEnterICU }: { onEnterICU: () => void }) {
         setStep((s) => Math.max(s - 1, 0))
       }
     }
+    // the agent panel asks for the same advance when a human signs something —
+    // approving IS the press, so it should not also need one
+    const onPanel = () => {
+      if (stepRef.current >= LAST) setLeaving(true)
+      else setStep((s) => Math.min(s + 1, LAST))
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('tars:advance', onPanel)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('tars:advance', onPanel)
+    }
   }, [LAST])
 
   // once the ward tour is on screen, tell the host shell to drop its loader cover

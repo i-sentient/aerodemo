@@ -249,7 +249,7 @@ export const useOntologyStore = create<OntologyStore>()(
 //  SCENE-1 BASELINE SEED  (ER-only, single-patient focus)
 //  The world *before* the episode plays: a single Emergency room with 8 bays.
 //  Seven are occupied by quiet ambient patients; ER Bay 3 is left CLEAN — the
-//  open bay the inbound patient will land in. The inbound STEMI ghost is NOT
+//  open bay the inbound patient will land in. The inbound OMI ghost is NOT
 //  seeded here — the EpisodePlayer spawns it at beat B1, exactly as a live feed
 //  would.
 // ===========================================================================

@@ -74,7 +74,7 @@ function mk(id, pos, rot, acuity, p, v, t, cardiac = false) {
 }
 
 // The ER floor: sixteen bays on the ring. Bay 04 is the story slot — held
-// open, flashing inbound, the anterior STEMI four minutes out.
+// open, flashing inbound, the probable MI four minutes out.
 const erBed = (i, acuity, name, chief, dx, v, n2, verdict) => mk(
   `ER-${String(i).padStart(2, '0')}`,
   { x: +(Math.cos((i / 16) * Math.PI * 2) * 7).toFixed(2), z: +(3 + Math.sin((i / 16) * Math.PI * 2) * 7).toFixed(2) },
@@ -86,9 +86,15 @@ const erBeds = [
   erBed(1, 'watch', 'A. Rahman', 'Chest pain', 'Chest pain — obs', { hr: 88, spo2: 97, rr: 18, sys: 132, dia: 84, temp: 37.0 }, 3, 'OBS · SERIAL ECG'),
   erBed(2, 'stable', 'K. Osei', 'Laceration', 'Laceration L hand', { hr: 76, spo2: 99, rr: 14, sys: 122, dia: 78, temp: 36.8 }, 1, 'SUTURE · ROUTINE'),
   erBed(3, 'stable', 'M. Iyer', 'Wheeze', 'Asthma flare', { hr: 92, spo2: 95, rr: 20, sys: 118, dia: 74, temp: 37.1 }, 2, 'NEBS · IMPROVING'),
-  mk('ER-04', { x: 7, z: 3 }, 0, 'critical',
-    { name: '— INBOUND —', age: 58, sex: 'M', mrn: 'SH-2891', chief: 'Crushing chest pain', dx: 'Anterior STEMI · Medic 12', comorbid: ['T2DM', 'Smoker'], admit: 'ETA 4 min' },
-    { hr: 125, spo2: 91, rr: 24, sys: 104, dia: 65, temp: 37.0 }, { news2: 9, trend: 'rising', prob: 0.82, lsam: 'flagged', verdict: 'INBOUND · ETA 4 MIN' }, true),
+  // `inbound` is carried as data rather than inferred from the name string —
+  // the ring reads it to blink this bay, so the room can see at a glance which
+  // of sixteen the conversation is actually about.
+  {
+    ...mk('ER-04', { x: 7, z: 3 }, 0, 'critical',
+      { name: '— INBOUND —', age: 58, sex: 'M', mrn: 'SH-2891', chief: 'Crushing chest pain', dx: 'Probable MI · Medic 12', comorbid: ['T2DM', 'Smoker'], admit: 'ETA 4 min' },
+      { hr: 125, spo2: 91, rr: 24, sys: 104, dia: 65, temp: 37.0 }, { news2: 9, trend: 'rising', prob: 0.82, lsam: 'flagged', verdict: 'INBOUND · ETA 4 MIN' }, true),
+    inbound: true,
+  },
   erBed(5, 'stable', 'S. Njoku', 'Abdo pain', 'Abdo pain RLQ', { hr: 84, spo2: 98, rr: 16, sys: 126, dia: 80, temp: 37.4 }, 2, 'SURG REVIEW'),
   erBed(6, 'stable', 'L. Duarte', 'Fall', 'Fall — hip pain', { hr: 78, spo2: 97, rr: 15, sys: 138, dia: 86, temp: 36.9 }, 2, 'XR PENDING'),
   erBed(7, 'stable', 'T. Okada', 'Fever', 'Febrile illness', { hr: 96, spo2: 97, rr: 18, sys: 116, dia: 72, temp: 38.2 }, 3, 'CULTURES SENT'),
@@ -126,11 +132,11 @@ const icuBeds = [
     { name: 'P. Almeida', age: 39, sex: 'F', mrn: 'MRN-31544', chief: 'Severe asthma', dx: 'Asthma — stabilised', comorbid: ['Asthma'], admit: '03:30' },
     { hr: 80, spo2: 97, rr: 17, sys: 116, dia: 74, temp: 36.9 }, { news2: 1, trend: 'stable', prob: 0.05, lsam: 'stable', verdict: 'STABLE · ROUTINE' }),
   // Bed 8 — the ward story's admission: stepped-down bed turned over, then the
-  // inbound STEMI (Chandrababu) arrives and deteriorates. The interface picks the
+  // the inbound OMI (Chandrababu) arrives and deteriorates. The interface picks the
   // story up from exactly here.
   mk('ICU-08', { x: 4, z: 6 }, Math.PI, 'critical',
-    { name: 'Chandrababu', age: 58, sex: 'M', mrn: 'MRN-31890', chief: 'Crushing chest pain', dx: 'Anterior STEMI', comorbid: ['T2DM', 'Smoker'], admit: '09:12' },
-    { hr: 118, spo2: 91, rr: 26, sys: 102, dia: 64, temp: 37.0 }, { news2: 8, trend: 'rising', prob: 0.82, lsam: 'flagged', verdict: 'STEMI — CRITICAL' }, true),
+    { name: 'Chandrababu', age: 58, sex: 'M', mrn: 'MRN-31890', chief: 'Crushing chest pain', dx: 'Anterior OMI', comorbid: ['T2DM', 'Smoker'], admit: '09:12' },
+    { hr: 118, spo2: 91, rr: 26, sys: 102, dia: 64, temp: 37.0 }, { news2: 8, trend: 'rising', prob: 0.82, lsam: 'flagged', verdict: 'OMI — CRITICAL' }, true),
 ];
 
 export const beds = IS_ER ? erBeds : icuBeds;

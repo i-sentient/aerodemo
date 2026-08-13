@@ -167,12 +167,17 @@ function assignProvenance(objects: FloorObject[], mix: Record<StateType, number>
 export function individuateFloor(
   floorId: string,
   blocks: BlockSpec[],
-  hero?: { room: string },
+  hero?: { room: string; arrived?: boolean },
 ): FloorObject[] {
   const c = censusFor(floorId)
   if (!c || !blocks.length) return []
   const rand = rng(hashStr(floorId))
   const out: FloorObject[] = []
+  // default true so every caller that never mentions the patient keeps the
+  // behaviour it always had — only the ER's own plot, before he is wheeled in,
+  // asks for the hole
+  const arrived = hero?.arrived !== false
+  let heroBedIdx = -1
 
   blocks.forEach((blk, bi) => {
     const nBeds = share(c.counts.bed, bi, blocks.length)
@@ -187,10 +192,26 @@ export function individuateFloor(
       out.push({ id: `${floorId}-${bi}-bed-${i}`, kind: 'bed', block: bi, u, v, stateType: 'A' })
     })
 
+    // 1b. WHICH bed the journey lands on — decided here, before the deal,
+    //     rather than after it. Step 5 used to pick it by geometry once the
+    //     patients were already dealt to the first N beds, and those two never
+    //     spoke: the bed the whole story is about got a patient, while some
+    //     unrelated bed stood empty. Choosing it first lets the vacancy land
+    //     where the story needs it.
+    let heroLocal = -1
+    if (hero && blk.room === hero.room) {
+      bedPos.forEach(([, vv], i) => { if (heroLocal < 0 || vv > bedPos[heroLocal][1]) heroLocal = i })
+      if (heroLocal >= 0) heroBedIdx = bedIdx[heroLocal]
+    }
+
     // 2. patients — one per occupied bed. The census always states these two in
     //    agreement (patients === occupancy[0]), so occupancy needs no separate
     //    handling; a patient simply IS an occupied bed.
-    const occupied = bedIdx.slice(0, Math.min(nPatients, bedIdx.length))
+    //    BEFORE HE ARRIVES the journey's bed is skipped, so the floor reads
+    //    15-in-16 with the hole exactly where he is about to land. The census
+    //    is untouched — the same fifteen patients, dealt one bed further along.
+    const deal = arrived || heroLocal < 0 ? bedIdx : bedIdx.filter((_, i) => i !== heroLocal)
+    const occupied = deal.slice(0, Math.min(nPatients, deal.length))
     occupied.forEach((bed, i) => {
       out.push({
         id: `${floorId}-${bi}-pt-${i}`, kind: 'patient', block: bi,
@@ -243,22 +264,14 @@ export function individuateFloor(
 
   assignProvenance(out, c.provenance, rand)
 
-  // 5. the hero bed — the frontmost bed of the room the journey passes through,
-  //    so the callout faces camera and the dive lands on the bed it named.
-  if (hero) {
-    const bi = blocks.findIndex((b) => b.room === hero.room)
-    if (bi >= 0) {
-      let heroBed = -1
-      for (let i = 0; i < out.length; i++) {
-        const o = out[i]
-        if (o.kind !== 'bed' || o.block !== bi) continue
-        if (heroBed < 0 || o.v > out[heroBed].v) heroBed = i
-      }
-      if (heroBed >= 0) {
-        out[heroBed].hero = true
-        for (const o of out) if (o.bedOf === heroBed) o.hero = true
-      }
-    }
+  // 5. the hero bed — marked only once he is actually IN it. Everything the
+  //    marking drives (the ring, the leader, the callout that names him) is
+  //    downstream of this flag, so leaving it unset before he arrives empties
+  //    the bed and clears its furniture in one move — no second switch to
+  //    fall out of step with.
+  if (hero && arrived && heroBedIdx >= 0) {
+    out[heroBedIdx].hero = true
+    for (const o of out) if (o.bedOf === heroBedIdx) o.hero = true
   }
 
   return out

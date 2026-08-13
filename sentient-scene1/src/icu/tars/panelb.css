@@ -12,12 +12,16 @@
   --p2-hbg:#1A1A1A; --p2-hink:rgba(255,255,255,.95); --p2-hinksoft:rgba(255,255,255,.6); --p2-hdot:#1A1A1A;
   --p2-nw0:rgba(23,23,23,.22); --p2-nw1:rgba(23,23,23,.08);
   --p2-em:#1f7a6a; --redD:#b3122a; --amberD:#8a5a00; --greenD:#0d6b45;
+  --ord-glass:rgba(255,255,255,.55); --ord-line:rgba(23,23,23,.15);
+  --ord-green:16,120,80; --ord-amber:170,110,10;
   background:var(--p2-canvas);transition:background .5s ease}
 #panelB.p2.dark{--p2-canvas:#121114; --p2-plate:#191720;
   --p2-text:rgba(255,255,255,.92); --p2-soft:rgba(255,255,255,.45);
   --p2-hbg:#F5F4F2; --p2-hink:#171717; --p2-hinksoft:rgba(23,23,23,.55); --p2-hdot:#F5F4F2;
   --p2-nw0:rgba(255,255,255,.30); --p2-nw1:rgba(255,255,255,.12);
-  --p2-em:#8fe6d4; --redD:#ff8a8a; --amberD:#ffcf6a; --greenD:#7fe0b0}
+  --p2-em:#8fe6d4; --redD:#ff8a8a; --amberD:#ffcf6a; --greenD:#7fe0b0;
+  --ord-glass:rgba(255,255,255,.055); --ord-line:rgba(255,255,255,.17);
+  --ord-green:127,224,176; --ord-amber:255,207,106}
 
 /* per-speaker radial washes */
 .p2-wash{position:absolute;inset:0;z-index:0;pointer-events:none}
@@ -68,12 +72,27 @@
 .v-verdict{margin-top:9px;font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.92);text-align:center}
 .v-verdict b{color:var(--redD)}
 .v-reading{font-size:9px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.6);white-space:nowrap}
-.ord.signoff{align-items:center;border-radius:8px}
+/* The CLINICIAN's card. It sits in the chin, which INVERTS against the panel —
+   dark chin under a light panel and vice versa — so nothing here may hardcode a
+   colour. The ink rides --p2-hink/--p2-hinksoft, which are defined per mode and
+   are always the contrasting pair; the tint and the rail ride the amber triple,
+   which is bright in dark mode and deep in light, so it carries on either chin.
+   It was inheriting .ord's white-on-nothing and coming out as a washed cream
+   plate with an invisible white ball. */
+.ord.gated.signoff{
+  align-items:center; border-radius:5px; padding-left:15px;
+  --ord-rgb:var(--ord-amber);
+  color:var(--p2-hink);
+  background:linear-gradient(148deg, rgba(var(--ord-rgb),.22), rgba(var(--ord-rgb),.07) 62%);
+  border:1px solid rgba(var(--ord-rgb),.5);
+  box-shadow:none;
+  animation:ordLive 2.1s ease-in-out infinite}
+.ord.gated.signoff::before{display:none}
 .ord.signoff .bd{display:flex;flex-direction:column;gap:8px}
-.ord.signoff .sel{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;font-weight:600;color:#fff;line-height:1.2;user-select:none}
+.ord.signoff .sel{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;font-weight:600;color:var(--p2-hink);line-height:1.2;user-select:none}
 .ord.signoff .sel input{position:absolute;opacity:0;width:0;height:0}
-.ord.signoff .ball{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.7);background:transparent;flex:0 0 auto;transition:all .15s}
-.ord.signoff .sel input:checked + .ball{background:#fff;border-color:#fff}
+.ord.signoff .ball{width:16px;height:16px;border-radius:4px;border:2px solid var(--p2-hinksoft);background:transparent;flex:0 0 auto;transition:all .15s}
+.ord.signoff .sel input:checked + .ball{background:var(--p2-hink);border-color:var(--p2-hink)}
 .ord.signoff .sel:has(input:not(:checked)){opacity:.5}
 /* DECISION card — two real courses of action; the doctor picks (iSAM's lean is ringed) */
 .ord.decide{display:flex;flex-direction:column;gap:8px;align-items:stretch;border-radius:8px}
@@ -131,17 +150,89 @@
 @keyframes msgIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 
 /* ---- order cards (autonomy firewall) ---- */
-.orders{display:flex;flex-direction:column;gap:9px;align-self:flex-start;max-width:94%;margin-top:2px;animation:msgIn .5s ease both}
+/* CENTRED, not hung off the agent's side. Messages take a side because they
+   have a speaker; an order has no speaker — it is a thing the system did, and
+   sitting it centre stops it reading as one more turn in a conversation. */
+.orders{display:flex;flex-direction:column;gap:9px;align-self:center;width:94%;margin-top:2px;animation:msgIn .5s ease both}
 .ord{position:relative;border-radius:18px;padding:11px 13px;display:flex;align-items:center;gap:11px;font-size:12.5px;overflow:hidden;color:#fff;
   border:1px solid rgba(255,255,255,.28);box-shadow:0 10px 26px rgba(40,30,20,.2)}
 .ord::before{content:"";position:absolute;left:0;right:0;top:0;height:46%;pointer-events:none;background:linear-gradient(to bottom,rgba(255,255,255,.14),transparent)}
 .ord .ic{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto;color:#fff;background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.4)}
 .ord .bd{flex:1;min-width:0}.ord .bd .lb{font-weight:600;color:#fff}.ord .bd .dt{font-size:10.5px;color:rgba(255,255,255,.74);margin-top:1px}
 .ord .tag{font-size:8px;font-weight:700;letter-spacing:.12em;padding:3px 8px;border-radius:8px;text-transform:uppercase;white-space:nowrap;background:rgba(255,255,255,.26);color:#fff;border:1px solid rgba(255,255,255,.32)}
-.ord.autonomous{background:linear-gradient(150deg,#1F7A50,#2FA96E)}
-.ord.gated{background:linear-gradient(145deg,#E0627A,#F0945E)}
-.ord .confirm{cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.04em;padding:8px 15px;border-radius:16px;border:1px solid rgba(255,255,255,.25);background:rgba(28,30,36,.92);color:#fff;animation:gpulse 1.6s infinite}
-@keyframes gpulse{0%,100%{box-shadow:0 5px 14px rgba(20,22,28,.4)}50%{box-shadow:0 5px 20px rgba(20,22,28,.5),0 0 0 5px rgba(255,255,255,.14)}}
+/* ── GLASS + HAIRLINE ──────────────────────────────────────────────────────
+   These were solid, fully saturated gradient pills with white ink on a light
+   cream panel — the loudest thing on screen, louder than the verdict they were
+   supposed to support, and made of a different material from everything around
+   them. The ER's CV card is the OTHER surface where this system speaks, and it
+   is glass and hairlines; matching it makes the two read as one product.
+
+   Colour survives only where it carries meaning: a 2 px rail, the icon's
+   outline, the AUTO/GATED tag and the status word. Everything else is the
+   panel's own ink, so the card reads as cut from the panel rather than laid on
+   top of it. Both keys are existing theme vars, so the dark variant follows for
+   free.
+
+   Scoped to .autonomous/.gated — the two classes addOrders creates — because
+   the post-op signoff and decide cards are white-on-colour by design and would
+   go invisible on glass. */
+.ord.autonomous{--ord-key:var(--greenD); --ord-rgb:var(--ord-green)}
+.ord.gated{--ord-key:var(--amberD); --ord-rgb:var(--ord-amber)}
+.ord.autonomous, .ord.gated{
+  border-radius:5px; padding-left:15px; color:var(--p2-text);
+  /* TINTED glass, not white glass. The fill was rgba(255,255,255,.55) on an
+     off-white canvas — no hue and almost no value difference, which is what
+     made it read as a flat plate. A diagonal wash of the state colour at 14%
+     down to 4% gives the card a light source and picks up the warmth of the
+     panel's own agent washes, which pure white was fighting.
+     Dark ink is what buys this: the solid version was loud because of WHITE
+     TEXT ON FULL SATURATION, not because it had a gradient. At 14% with the
+     panel's own ink it stays quiet and reads as material rather than paint. */
+  background:
+    linear-gradient(148deg, rgba(var(--ord-rgb), .14), rgba(var(--ord-rgb), .04) 62%),
+    var(--ord-glass);
+  backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px);
+  border:1px solid var(--ord-line); box-shadow:none;
+  transition:box-shadow .5s ease, opacity .5s ease}
+
+/* ...and only the LIVE one breathes. Every card looked identical whether it was
+   working or finished, so the block sat there static — which is most of what
+   read as dull. The bloom fades on .done, so the row you should be watching is
+   the one that is moving. */
+.ord.autonomous:not(.done), .ord.gated:not(.done){
+  box-shadow:0 0 0 1px rgba(var(--ord-rgb), .22), 0 6px 22px rgba(var(--ord-rgb), .20);
+  animation:ordLive 2.1s ease-in-out infinite}
+@keyframes ordLive{
+  0%,100%{box-shadow:0 0 0 1px rgba(var(--ord-rgb), .18), 0 6px 20px rgba(var(--ord-rgb), .16)}
+  50%    {box-shadow:0 0 0 1px rgba(var(--ord-rgb), .30), 0 8px 28px rgba(var(--ord-rgb), .28)}}
+/* the top sheen is a solid-surface affordance — glass has nothing to catch */
+.ord.autonomous::before, .ord.gated::before{display:none}
+.ord.autonomous::after, .ord.gated::after, .ord.gated.signoff::after{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:2px;
+  background:linear-gradient(to bottom, rgba(var(--ord-rgb),1), rgba(var(--ord-rgb),.22))}
+.ord.autonomous .ic, .ord.gated .ic{
+  width:24px;height:24px;border-radius:4px;background:transparent;border:1px solid var(--ord-key)}
+.ord.autonomous .bd .lb, .ord.gated .bd .lb{color:var(--p2-text)}
+.ord.autonomous .bd .dt, .ord.gated .bd .dt{color:var(--p2-soft)}
+.ord.autonomous .tag, .ord.gated .tag{
+  background:transparent;color:var(--ord-key);border:1px solid var(--ord-key);border-radius:3px}
+.ord.autonomous .state, .ord.gated .state{color:var(--ord-key)}
+.ord.autonomous .spin, .ord.gated .spin{border-color:var(--ord-line);border-top-color:var(--ord-key)}
+/* a finished order recedes further than it used to — on glass the live one has
+   to be the one you look at */
+.ord.autonomous.done, .ord.gated.done{opacity:.66}
+/* Solid CHIN INK, inverted — a light pill on a dark chin, a dark pill on a
+   light one, so it is the highest-contrast thing in the panel in either mode.
+   It was a fixed near-black lozenge: a heavy blot on a light chin and nearly
+   invisible on a dark one. Not amber, deliberately — the card around it is
+   amber, and the one control that must be unmistakable should not share its
+   colour. No pulse either: the card already breathes, and two things pulsing
+   next to each other is noise. */
+.ord .confirm{cursor:pointer;font-size:9.5px;font-weight:800;letter-spacing:.06em;
+  padding:6px 13px;border-radius:4px;border:1px solid transparent;
+  background:var(--p2-hink);color:var(--p2-hbg);
+  transition:transform .12s ease,filter .2s ease}
+.ord .confirm:hover{transform:translateY(-1px);filter:brightness(1.08)}
 .ord .state{font-size:10px;font-weight:700;letter-spacing:.06em;color:#fff;display:flex;align-items:center;gap:6px;white-space:nowrap}.ord.done{opacity:.94}
 .spin{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}

@@ -6,7 +6,7 @@
 //  that turns time → ops; swapping it for a WebSocketPlayer that emits the same
 //  ops requires zero component changes.
 //
-//  Beats (STEMI arrival):
+//  Beats (OMI arrival):
 //   B1 inbound ghost · B2 capacity · B3 transfer-sense · B4 gate/authorize ·
 //   B5 pre-warm/transfer · B6 iSAM OMI-read · B7 arrival/solidify.
 // ============================================================================
@@ -149,7 +149,7 @@ export const EPISODE: EpisodeEvent[] = [
   {
     t: 12.5,
     beat: 'B4',
-    title: 'Autonomy Governor · TARS pre-warms Bay 3 for the STEMI (autonomous)',
+    title: 'Autonomy Governor · TARS pre-warms Bay 3 for the OMI (autonomous)',
     ops: [
       {
         op: 'upsertEntity',

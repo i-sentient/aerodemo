@@ -275,10 +275,10 @@ export const PODS = [
 // → four PODs) as the document another hospital would actually receive. TARS
 // drafts it from the notes it already wrote; the clinician's signature files it.
 export const DISCHARGE = {
-  dx: 'Acute anterior STEMI → severe triple-vessel coronary disease (SYNTAX 34)',
+  dx: 'Acute anterior OMI (de Winter) → severe triple-vessel coronary disease (SYNTAX 34)',
   proc: 'CABG ×3 (on-pump) — LIMA → LAD · SVG → OM · SVG → PDA',
   course: [
-    ['Presentation', 'Anterior STEMI at the door — occlusive ECG, troponin 8.4. Cath lab activated from the ED.'],
+    ['Presentation', 'Anterior OMI at the door — de Winter pattern, no ST elevation, troponin 8.4. Cath lab activated from the ED.'],
     ['Angiography', 'LAD 90% proximal · LCx 75% · RCA 60%. SYNTAX 34 — CABG chosen over staged PTCA.'],
     ['Surgery', 'CABG ×3 on bypass (CPB 88 min). Weaned on noradrenaline + dobutamine, IABP overnight.'],
     ['POD 1', 'Extubated 11:20. IABP and pressors off by evening; first sit 14:05.'],

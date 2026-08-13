@@ -1,7 +1,7 @@
 // ============================================================================
 //  WARD FLOOR — the 8th bed's story arc + live capacity, keyed to the ICU step.
 //  ICU-08 is the "story bed": Jagan Mohan is stepped down and transferred out,
-//  the bed turns over (dirty → clean), then Chandrababu (anterior STEMI) is
+//  the bed turns over (dirty → clean), then Chandrababu (anterior OMI) is
 //  admitted and deteriorates. Beds 1–7 come from the shared ontology and stay
 //  put — nothing here mutates that ontology, so the TARS phase is untouched.
 //  States mirror WARD_BEATS (wardScript.ts): 2 flag · 3 transfer · 4 dirty ·
@@ -20,7 +20,7 @@ export type RosterRow = {
 }
 
 const STEPDOWN = 'Jagan Mohan' // the patient being de-escalated out of Bed 8
-const INCOMING = 'Chandrababu' // the anterior-STEMI patient who takes it
+const INCOMING = 'Chandrababu' // the anterior-OMI patient who takes it
 
 // ICU-08 across the ICU states (0…8); anything past the end clamps to the last.
 export function bed8ForStep(step: number): RosterRow {
@@ -38,9 +38,9 @@ export function bed8ForStep(step: number): RosterRow {
     case 5:
       return { id: 'ICU-08', tone: 'empty', name: '', dx: 'Clean · ready', news: '—' }
     case 6:
-      return { id: 'ICU-08', tone: 'critical', name: 'Inbound', dx: 'Anterior STEMI · ETA 9m', news: 'IN', alarm: true }
+      return { id: 'ICU-08', tone: 'critical', name: 'Inbound', dx: 'Probable MI · ETA 9m', news: 'IN', alarm: true }
     case 7:
-      return { id: 'ICU-08', tone: 'critical', name: INCOMING, dx: 'Anterior STEMI · admitted', news: '8' }
+      return { id: 'ICU-08', tone: 'critical', name: INCOMING, dx: 'Anterior OMI · admitted', news: '8' }
     default:
       return { id: 'ICU-08', tone: 'critical', name: INCOMING, dx: 'Deteriorating — trajectory rising', news: '8', alarm: true }
   }
