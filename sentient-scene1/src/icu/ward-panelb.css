@@ -36,3 +36,4 @@
 .ward-drag::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:transparent;transition:background .15s,box-shadow .15s}
 .ward-drag:hover::after,.ward-drag.dragging::after{background:rgba(60,100,150,.55);box-shadow:0 0 8px rgba(90,140,200,.4)}
 body.ward-resizing{cursor:col-resize;user-select:none;-webkit-user-select:none}
+

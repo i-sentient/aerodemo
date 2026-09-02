@@ -70,7 +70,8 @@ const SHOTS: Shot[] = [
 ]
 const N_BEATS = SHOTS.length
 const LAST = N_BEATS - 1
-const DONE_AT = 3 // arriving at the "complete" beat turns the sign green
+const DONE_AT = 3  // arriving here: sign green, X-ray off, the DTB clock stops
+const ANGIO_AT = 4 // ...and only THEN the angiogram — the next chapter's problem
 
 // smooth glide between presets — same rig as the OR (position + target damped,
 // arrival re-enables orbit and reports in so the sign can flip).
@@ -108,7 +109,13 @@ export function CathLabScene({ onFinish }: { onFinish?: () => void } = {}) {
   const controls = useRef<OrbitControlsImpl>(null)
   const step = useRef(0)
   const glideGoal = useRef<Shot | null>(null)
-  const [done, setDone] = useState(false)  // the sign green + angio: settles on ARRIVAL at the complete beat
+  // Two beats, not one. DONE_AT ends the PROCEDURE — sign green, X-ray plate
+  // out, and the door-to-balloon clock the ER started stopping under the sign.
+  // ANGIO_AT is the next chapter arriving on the screens. Landing them together
+  // spent the clock as a detail on the same frame as the images, when it is the
+  // payoff of three scenes of tension and wants the room to itself first.
+  const [done, setDone] = useState(false)
+  const [angio, setAngio] = useState(false)
   const [glass, setGlass] = useState(false) // the observation glass: appears the INSTANT you click past the long shot
   const onFinishRef = useRef(onFinish)
   onFinishRef.current = onFinish
@@ -117,7 +124,8 @@ export function CathLabScene({ onFinish }: { onFinish?: () => void } = {}) {
     const go = (i: number) => {
       glideGoal.current = SHOTS[i]
       if (controls.current) controls.current.enabled = false
-      if (i < DONE_AT) setDone(false) // stepping back re-arms the red sign
+      if (i < DONE_AT) setDone(false)   // stepping back re-arms the red sign
+      if (i < ANGIO_AT) setAngio(false) // ...and takes the images back down
       setGlass(i >= DONE_AT)          // glass appears/hides the instant you click past the long shot
     }
     const onKey = (e: KeyboardEvent) => {
@@ -147,8 +155,8 @@ export function CathLabScene({ onFinish }: { onFinish?: () => void } = {}) {
         camera={{ position: SHOTS[0].pos, fov: 46 }}
       >
         <CathStudio />
-        <CathLab done={done} glass={glass} />
-        <GlideRig controls={controls} goal={glideGoal} onArrive={() => { if (step.current >= DONE_AT) setDone(true) }} />
+        <CathLab done={done} angio={angio} glass={glass} />
+        <GlideRig controls={controls} goal={glideGoal} onArrive={() => { if (step.current >= DONE_AT) setDone(true); if (step.current >= ANGIO_AT) setAngio(true) }} />
         <OrbitControls
           ref={controls}
           target={SHOTS[0].look}
@@ -160,25 +168,9 @@ export function CathLabScene({ onFinish }: { onFinish?: () => void } = {}) {
         />
         <Postprocessing dark />
       </Canvas>
-
-      <div
-        style={{
-          position: 'absolute',
-          top: 16,
-          left: 16,
-          font: '700 13px ui-sans-serif, system-ui, sans-serif',
-          letterSpacing: 1,
-          color: '#2f5f6f',
-          background: 'rgba(255,255,255,0.6)',
-          border: '1px solid rgba(120,160,180,0.4)',
-          borderRadius: 10,
-          padding: '6px 12px',
-          backdropFilter: 'blur(8px)',
-        }}
-      >
-        CATH LAB · SHELL{' '}
-        <span style={{ color: '#7a99a0', fontWeight: 500 }}>· drag to orbit · Space/→ presets</span>
-      </div>
+      {/* the "CATH LAB · SHELL · drag to orbit" badge is gone — it was scaffold
+          from when this room was built in isolation, and it named the room the
+          audience is already standing in while advertising dev controls */}
     </div>
   )
 }

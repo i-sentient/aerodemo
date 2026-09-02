@@ -546,6 +546,16 @@ function FloorKey({ show }: { show: boolean }) {
 // ---------------------------------------------------------------------------
 function TarsERFrame({ mounted, shown }: { mounted: boolean; shown: boolean }) {
   const [ready, setReady] = useState(false)
+  const frame = useRef<HTMLIFrameElement>(null)
+  const played = useRef(false)
+  // Release the brief the moment this is genuinely visible — not when it mounts.
+  // The clock start IS the beat; it has to happen in front of the room.
+  useEffect(() => {
+    if (!shown || !ready || played.current) return
+    played.current = true
+    try { frame.current?.contentWindow?.postMessage({ type: 'er:play' }, '*') } catch { /* not up */ }
+  }, [shown, ready])
+  useEffect(() => { if (!mounted) played.current = false }, [mounted])
   useEffect(() => {
     if (!mounted) { setReady(false); return }
     const onMsg = (e: MessageEvent) => { if (e.data?.type === 'icu:ready') setReady(true) }
@@ -557,7 +567,8 @@ function TarsERFrame({ mounted, shown }: { mounted: boolean; shown: boolean }) {
   return (
     <>
       <iframe
-        src="/icu.html?chapter=er&embed=1"
+        ref={frame}
+        src="/icu.html?chapter=er&embed=1&hold=1"
         title="TARS · ER inbound"
         style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none', zIndex: 7,
@@ -620,6 +631,8 @@ export function RoundERLab({
   onFinish,
   enterInside = false,
   chapter = 'full',
+  initialStep,
+  onStep,
 }: {
   /** called when ← is pressed at the first beat — e.g. go back to the tower */
   onExit?: () => void
@@ -628,6 +641,11 @@ export function RoundERLab({
   /** arrive already INSIDE the drum (skip the outside approach fly-in) */
   enterInside?: boolean
   chapter?: keyof typeof CHAPTER_RANGE
+  /** open on a specific beat instead of the chapter's first (scene bar) */
+  initialStep?: number
+  /** report the current beat upward — the deck's bar needs it to tell which
+   *  landmark inside this long chapter we have reached */
+  onStep?: (n: number) => void
 } = {}) {
   const RANGE = CHAPTER_RANGE[chapter]
   // The story chapter mounts a whole ER from scratch — drum, sixteen bays,
@@ -648,7 +666,13 @@ export function RoundERLab({
   // when we land here from the tower dive, start at the first interior beat so
   // there's no re-approach transition; ← at that beat exits to the building.
   const ENTER_STEP = Math.max(RANGE.first, enterInside ? 1 : 0)
-  const [step, setStep] = useState(ENTER_STEP)
+  // `initialStep` opens on a given beat — the scene bar jumps straight to the
+  // iSAM title card, which is a beat inside this chapter rather than a view of
+  // its own. Clamped to the chapter so a bad jump lands somewhere legal.
+  const [step, setStep] = useState(
+    initialStep == null ? ENTER_STEP : Math.min(RANGE.last, Math.max(ENTER_STEP, initialStep)),
+  )
+  useEffect(() => { onStep?.(step) }, [step, onStep])
   // DEV free-fly: O toggles orbit (the beat camera stands down), P captures the
   // current framing as a ready-to-paste SHOT line — same workflow as the cath
   // lab and the ward rig. The orbit target seeds from the CURRENT beat's look,
@@ -814,28 +838,10 @@ export function RoundERLab({
         </RadioCard>
       )}
 
-      <div
-        style={{
-          position: 'absolute',
-          top: 16,
-          left: 16,
-          font: '700 13px ui-sans-serif, system-ui, sans-serif',
-          letterSpacing: 1,
-          color: '#2f6f5e',
-          background: 'rgba(255,255,255,0.6)',
-          border: '1px solid rgba(120,180,160,0.4)',
-          borderRadius: 10,
-          padding: '6px 12px',
-          backdropFilter: 'blur(8px)',
-        }}
-      >
-        ER SHELL · LAB <span style={{ color: '#7a99a0', fontWeight: 500 }}>· architecture only</span>
-        {import.meta.env.DEV && (
-          <span style={{ color: orbit ? '#2f6f5e' : '#9ab0b6', fontWeight: 600, marginLeft: 10 }}>
-            {orbit ? 'ORBIT · drag to fly · P captures shot · O returns' : 'O · orbit'}
-          </span>
-        )}
-      </div>
+      {/* The lab badge is gone — this stopped being a scratch preview a while
+          ago and the label was printing over the scene in every screenshot.
+          Orbit still works (O to enter, drag to fly, P to capture); it simply
+          no longer announces itself. */}
     </div>
   )
 }

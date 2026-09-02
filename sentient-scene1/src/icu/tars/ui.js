@@ -19,10 +19,25 @@ function initTheme() {
 // the three splits are user-resizable: each gutter drags the boundary between
 // its two neighbouring panels (fractions live in --fA/--fB/--fC on #panels).
 const MIN_FR = 16; // no split narrower than ~16% of the row
+// chapters whose 3-split has been framed by hand (see initSplits)
+const TUNED_SPLIT = new Set(['workup', 'continued']);
 function initSplits() {
   const panels = document.getElementById('panels');
   if (!panels) return;
-  const fr = { A: 100 / 3, B: 100 / 3, C: 100 / 3 }; // equal thirds by default
+  // Pre-cath opens 37 / 35 / 27 — hand-tuned on the gutters rather than reasoned
+  // to, which is why it is not a round ratio. The patient leads by a hair, the
+  // agents sit just under it, and the record takes what is left: enough to watch
+  // TARS move through it, not enough to compete with the two panels the scene is
+  // actually about. (These are `fr` units, so they are RATIOS — they do not need
+  // to total 100, and normalising them would only change the numbers, not the
+  // layout.)
+  // Post-cath is the same three-panel scene with the same job — a body on the
+  // left, the agent reasoning in the middle, the record on the right — so it
+  // takes the same framing. A set rather than a chapter comparison: the PODs
+  // will want it too once they are looked at, and that should be one word.
+  const fr = TUNED_SPLIT.has(state.chapter)
+    ? { A: 37, B: 35, C: 27 }
+    : { A: 100 / 3, B: 100 / 3, C: 100 / 3 };
   // during a drag only the CSS fractions move (the canvas stretches); the real
   // WebGL re-fit happens ONCE on release — per-frame composer resizes flash black
   const apply = () => {
@@ -30,6 +45,12 @@ function initSplits() {
     panels.style.setProperty('--fB', fr.B + 'fr');
     panels.style.setProperty('--fC', fr.C + 'fr');
   };
+  // ...and apply it ONCE up front. `fr` used to be pure bookkeeping — nothing
+  // called apply() until a drag or the Panel C fold, so the opening layout came
+  // from styles.css's `var(--fA, 1fr)` fallback and was always equal thirds no
+  // matter what this object said. Safe here: .anim is only added by the fold,
+  // so the initial split lands rather than sliding in.
+  apply();
   const wire = (id, left, right) => {
     const g = document.getElementById(id);
     if (!g) return;

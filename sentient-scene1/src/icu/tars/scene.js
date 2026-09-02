@@ -292,8 +292,18 @@ const SYSTEM_URLS = {
   // were baked tubes with fixed cell count).
   body: new URL('./assets/systems/body.glb', import.meta.url).href,
   grid: new URL('./assets/systems/body.glb', import.meta.url).href,
+  // Post-cath: the patient's OWN reconstruction, replacing the whole-body
+  // vasculature once the heart is zoomed. Sketchfab STL export — 790k tris and
+  // 20.8 MB as delivered; welded, joined, decimated 4x and Draco'd to 548 KB
+  // with 0.01% silhouette drift. It is ONE unnamed mesh, so no vessel can be
+  // addressed by name and the lesions are marked by coordinate (CORONARY_BLOCKS).
+  coronary: new URL('./assets/systems/coronary-recon.glb', import.meta.url).href,
 };
-const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f72, body: 0x3f8fe0, grid: 0x2fd0e0 };
+const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f72, body: 0x3f8fe0, grid: 0x2fd0e0, coronary: 0xff5a52 };
+// The recon is an ORGAN, not a body: robustPlace normalises every other layer to
+// a 1.72 m figure, which would stretch a heart to the height of a person. Height
+// and lift are per-layer for this reason — it sits at chest height, at organ size.
+const LAYER_PLACE = { coronary: { h: 0.27, y: 1.19 } }; // 270 mm: leaves frame margin for the callouts
 
 // Robust placement onto the stage. The raw AABB midpoint is thrown off by
 // asymmetric limbs (a raised arm) and stray/among-scene geometry, so models from
@@ -301,7 +311,7 @@ const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f7
 // off-centre. Instead we use per-vertex statistics: MEDIAN x/z = the anatomical
 // midline (robust to outliers), and low/high percentiles = the true body height &
 // floor. Result: every system centres identically on the platform.
-function robustPlace(root, targetH = 1.72) {
+function robustPlace(root, targetH = 1.72, liftY = 0) {
   root.position.set(0, 0, 0); root.scale.setScalar(1); root.updateMatrixWorld(true);
   const xs = [], ys = [], zs = []; const v = new THREE.Vector3();
   root.traverse((o) => {
@@ -315,11 +325,23 @@ function robustPlace(root, targetH = 1.72) {
   const at = (s, p) => s[Math.min(s.length - 1, Math.max(0, Math.round(p * (s.length - 1))))];
   const cx = at(sx, 0.5), cz = at(sz, 0.5), yLo = at(sy, 0.005), yHi = at(sy, 0.995);
   const s = targetH / Math.max(1e-3, yHi - yLo);
-  root.scale.setScalar(s); root.position.set(-cx * s, -yLo * s, -cz * s); root.updateMatrixWorld(true);
+  root.scale.setScalar(s); root.position.set(-cx * s, -yLo * s + liftY, -cz * s); root.updateMatrixWorld(true);
 }
 
 function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = false, style = null } = {}) {
-  const root = gltf.scene; robustPlace(root, style === 'body' || style === 'grid' ? 1.81 : 1.72); // body reads a touch (+5%) bigger on stage
+  const root = gltf.scene;
+  const place = LAYER_PLACE[style];
+  const targetH = place ? place.h : (style === 'body' || style === 'grid' ? 1.81 : 1.72); // body reads a touch (+5%) bigger on stage
+  robustPlace(root, targetH, place ? place.y : 0);
+  // Pitch has to turn about the model's CENTRE. robustPlace leaves the group's
+  // origin on the model's FLOOR, so rotating the group in x swung the whole
+  // thing through an arc as tall as itself and threw it out of frame. An inner
+  // pivot lifted to the centre — with the root pushed down by the same amount —
+  // tips it in place and leaves every world position exactly where it was, so
+  // the reveal clip plane and the heart raycast are untouched.
+  const pivotY = (place ? place.y : 0) + targetH / 2;
+  const pivot = new THREE.Group();
+  pivot.position.y = pivotY; root.position.y -= pivotY; pivot.add(root);
   const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
   const mats = [], heartMeshes = [];
   // collect first, then process — the body/grid branch ADDS mask children, and
@@ -350,16 +372,22 @@ function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, vascular = 
       o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; mats.push(o.material);
     }
   }
-  const group = new THREE.Group(); group.add(root); group.visible = false;
+  const group = new THREE.Group(); group.add(pivot); group.visible = false;
   let hsp = null;
   if (heart) { hsp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0xff5a52, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); hsp.scale.set(0.34, 0.34, 1); hsp.position.set(0.02, 1.24, 0.14); group.add(hsp); }
   let cardiac = false, spin = 0;
   return {
-    group, clip, heartMeshes,
+    group, pivot, clip, heartMeshes,
     setHeartColor(hex, isC) { cardiac = !!isC; if (hsp) hsp.material.color.set(hex); },
     setReveal(r) { clip.constant = THREE.MathUtils.lerp(-0.05, 1.92, r); },
-    update(dt, { hr = 70, reveal = 1, spinSpeed = 0.32, freeze = false, focus = false } = {}) {
-      if (freeze) { const tgt = Math.round(spin / (Math.PI * 2)) * Math.PI * 2; spin = THREE.MathUtils.lerp(spin, tgt, 1 - Math.exp(-dt * 3.2)); } // ease to anterior (front)
+    /** `yaw` non-null hands rotation to the caller (the orbit drag). It also
+     *  writes back into `spin`, so releasing the model does not snap: the idle
+     *  spin picks up exactly where the drag left it. Without this the assignment
+     *  below fought the drag every frame and the model buzzed in place. */
+    setPitch(rx) { pivot.rotation.x = rx; },
+    update(dt, { hr = 70, reveal = 1, spinSpeed = 0.32, freeze = false, focus = false, yaw = null } = {}) {
+      if (yaw != null) spin = yaw;
+      else if (freeze) { const tgt = Math.round(spin / (Math.PI * 2)) * Math.PI * 2; spin = THREE.MathUtils.lerp(spin, tgt, 1 - Math.exp(-dt * 3.2)); } // ease to anterior (front)
       else spin += dt * spinSpeed;
       group.rotation.y = spin; this.setReveal(reveal);
       const t = performance.now() / 1000; for (const m of mats) m.userData.uTime.value = t;
@@ -385,13 +413,164 @@ function ensureLayer(name, cb) {
   if (loadingNames.has(name)) return;
   loadingNames.add(name);
   getLoader().load(SYSTEM_URLS[name], (g) => {
-    figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name], vascular: name === 'vascular', style: name });
+    // the recon is all vessel, so it wears the vascular treatment and the heart
+    // glow — `vascular` drives the material, `heart` drives the beating halo
+    const vasc = name === 'vascular' || name === 'coronary';
+    figs[name] = makeFigureFromGLTF(g, { heart: vasc, color: SYSTEM_COLORS[name], vascular: vasc, style: name });
     patientScene.add(figs[name].group); loadingNames.delete(name);
     applySceneTheme(state.dark); // dress the fresh figure for the current theme (body legibility)
     if (name === 'body' && pendingMarkers) { const d = pendingMarkers; pendingMarkers = null; applyMarkers(d); } // markers queued before the mesh landed
     cb && cb();
   }, undefined, (e) => { loadingNames.delete(name); console.warn('[TARS] layer load failed', name, e); });
 }
+/* ---- post-cath · the lesions, marked on the reconstruction -----------------
+ * The recon is ONE unnamed mesh (a Sketchfab STL export), so no vessel can be
+ * addressed by name — the lesions are marked by coordinate instead. Positions
+ * are in PIVOT space (the model's own centre), so a marker rides both the yaw
+ * and the pitch of the drag.
+ *
+ * These were seeded by anatomy, NOT measured off the model. Set them for real
+ * with the DEV picker: with the recon up, shift-click a lesion and the finished
+ * line lands on your clipboard, ready to paste over the entry below.
+ */
+const CORONARY_BLOCKS = [
+  // Chosen by projecting through the REAL camera, restricted to the MAIN BODY.
+  //
+  // Two things had to be true and each one caught a different bug. Picking by
+  // model-space +z assumed that face pointed at the viewer — it does not, so the
+  // rings sat on a turned-away surface and projected into empty space. And the
+  // mesh has 441 connected components: one body of 104,903 verts and 440 loose
+  // fragments. Picking from all vertices put the RCA ring on a stray fragment
+  // floating clear of the heart. These are the front-most vertices of the main
+  // body under a ray from the HEART camera.
+  //
+  // Still NOT established: which vessel each one is. The left and right trees
+  // are welded into that single component, so nothing in the file names them.
+  // The labels are an anatomical guess — fix them with the shift-click picker.
+  { key: 'lad', label: 'LAD · POBA', pos: [0.029, 0.014, 0.046], side: 'r', rise: 62, treated: true },
+  { key: 'lcx', label: 'LCx 75%', pos: [-0.034, -0.05, 0.07], side: 'l', rise: 116 },
+  { key: 'rca', label: 'RCA 60%', pos: [0.037, -0.09, 0.065], side: 'r', rise: 152 },
+];
+const BLOCK_RED = 0xff5347, BLOCK_TEAL = 0x4fe0b0;
+let blockGroup = null;
+/* Ring + leader + pill, drawn as ONE canvas and shown as ONE billboard.
+ *
+ * Three objects would have to be kept in agreement every frame under rotation;
+ * baked into a single sprite they are welded by construction — the leader can
+ * never miss the ring and the pill can never drift off the leader.
+ *
+ * The sprite's `center` is set to the RING, not the middle of the canvas, so
+ * the anchor lands on the lesion and everything else hangs up-and-right of it.
+ * The pill therefore stands clear of the vessel it is pointing at, which is the
+ * whole reason for a leader on a tree this dense.
+ *
+ * Same grammar as the 2D angiogram in PACS (apps.js): a ring on the lesion and
+ * a label beside it. Two views of one study should annotate the same way.
+ */
+/* A lesion marker is TWO objects, because they are two different kinds of thing.
+ *
+ *   the RING  is part of the anatomy. depthTest ON, so the heart occludes it:
+ *             when its vessel turns to the back the geometry hides it, exactly
+ *             as it would hide a mark drawn on the vessel itself. No facing
+ *             maths — the depth buffer already knows.
+ *
+ *   the PILL  is a callout ABOUT the anatomy. depthTest OFF, so it stays
+ *             readable wherever it hangs and never gets sliced in half by a
+ *             vessel passing in front of the label.
+ *
+ * They were one baked sprite so the leader could not miss the ring. That worked,
+ * but it welded them to a single depth — turn depth testing on and the pill gets
+ * tested at the lesion's depth too, so on a cage this dense the label would be
+ * chopped constantly. Split, they keep their own depth behaviour and stay
+ * aligned by sharing an anchor: both are camera-facing sprites at the same
+ * world point, so the leader's aim is a fixed offset in the pill's own texture,
+ * not a live calculation that could drift.
+ */
+const RING_PX = 128, RING_R = 46;   // the ring's own little canvas
+function ringSprite(col) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = RING_PX;
+  const x = cv.getContext('2d'); const c = RING_PX / 2;
+  // a dark liner either side: the model is bright coral in places and near-white
+  // in others, and a bare stroke vanishes on one of them
+  x.strokeStyle = 'rgba(6,12,16,.5)'; x.lineWidth = 4;
+  x.beginPath(); x.arc(c, c, RING_R + 5.5, 0, 7); x.stroke();
+  x.beginPath(); x.arc(c, c, RING_R - 5.5, 0, 7); x.stroke();
+  x.strokeStyle = col; x.lineWidth = 9;
+  x.beginPath(); x.arc(c, c, RING_R, 0, 7); x.stroke();
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  // depthTest TRUE — this is the half that belongs to the scene
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, opacity: 0, depthTest: true, depthWrite: false, toneMapped: false }));
+  sp.scale.set(0.036, 0.036, 1);
+  return sp;
+}
+
+/* The label half: leader + pill, anchored at the same lesion point. The leader
+ * starts where the ring's edge is, so the two read as one mark even though they
+ * are now separate objects at separate depths. */
+const ANNOT_W = 512, ANNOT_H = 256, ANCH_Y = 186;
+function pillSprite(text, treated, side = 'r', rise = 90) {
+  const cv = document.createElement('canvas'); cv.width = ANNOT_W; cv.height = ANNOT_H;
+  const x = cv.getContext('2d');
+  const col = treated ? '#5fe8bf' : '#ff6a5e';
+  const right = side === 'r';
+  const AX = right ? 74 : ANNOT_W - 74;                    // the anchor = where the ring is
+  const LX = right ? AX + 58 : AX - 58, LY = rise;
+  const RGAP = 30;                                          // clear the ring's radius on this canvas
+  const a = Math.atan2(LY - ANCH_Y, LX - AX);
+  x.strokeStyle = col; x.lineWidth = 3.5; x.lineCap = 'round';
+  x.beginPath();
+  x.moveTo(AX + Math.cos(a) * RGAP, ANCH_Y + Math.sin(a) * RGAP);
+  x.lineTo(LX, LY); x.stroke();
+  x.font = '700 30px ui-monospace, SFMono-Regular, monospace';
+  const pw = x.measureText(text).width + 30, ph = 42;
+  const PX = right ? LX : LX - pw;
+  x.fillStyle = 'rgba(8,14,18,.88)';
+  x.beginPath(); x.roundRect(PX, LY - ph / 2, pw, ph, 21); x.fill();
+  x.strokeStyle = col; x.lineWidth = 2; x.stroke();
+  x.fillStyle = col; x.textBaseline = 'middle'; x.textAlign = 'left';
+  x.fillText(text, PX + 15, LY + 1);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  // depthTest FALSE — a callout is never occluded by the thing it describes
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false }));
+  sp.scale.set(0.225, 0.1125, 1);
+  sp.center.set(AX / ANNOT_W, 1 - ANCH_Y / ANNOT_H);
+  return sp;
+}
+function buildBlocks(fig) {
+  if (blockGroup) { blockGroup.removeFromParent(); blockGroup = null; }
+  if (!fig || !fig.pivot) return;
+  blockGroup = new THREE.Group();
+  for (const bl of CORONARY_BLOCKS) {
+    const g = new THREE.Group(); g.position.set(bl.pos[0], bl.pos[1], bl.pos[2]);
+    const ring = ringSprite(bl.treated ? '#5fe8bf' : '#ff6a5e');
+    const pill = pillSprite(bl.label, bl.treated, bl.side, bl.rise);
+    g.add(ring); g.add(pill);
+    g.userData = { ring, pill, treated: !!bl.treated, t: Math.random() * 6.28 };
+    blockGroup.add(g);
+  }
+  fig.pivot.add(blockGroup);
+}
+function updateBlocks(dt) {
+  if (!blockGroup) return;
+  const on = activeLayer === 'coronary';
+  for (const g of blockGroup.children) {
+    const u = g.userData; u.t += dt * (u.treated ? 1.3 : 2.3);
+    const beat = 0.5 + 0.5 * Math.sin(u.t);
+    const lit = u.treated ? 0.85 : 0.72 + beat * 0.28;
+    // the RING needs no facing test — the depth buffer hides it behind the heart
+    u.ring.material.opacity += ((on ? lit : 0) - u.ring.material.opacity) * Math.min(1, dt * 7);
+    u.ring.visible = u.ring.material.opacity > 0.01;
+    // the PILL does, so a label never points at a ring the heart is covering
+    g.getWorldPosition(BLOCK_WP);
+    BLOCK_OUT.copy(BLOCK_WP).sub(blockGroup.parent.getWorldPosition(BLOCK_EYE)).normalize();
+    BLOCK_EYE.copy(camera.position).sub(BLOCK_WP).normalize();
+    const v = Math.max(0, Math.min(1, (BLOCK_OUT.dot(BLOCK_EYE) - 0.02) / 0.30));
+    const tgt = on ? lit * v * v * (3 - 2 * v) : 0;   // smoothstep, no edge at the turn
+    u.pill.material.opacity += (tgt - u.pill.material.opacity) * Math.min(1, dt * 7);
+    u.pill.visible = u.pill.material.opacity > 0.01;
+  }
+}
+
 // ---- Scene 4 · body connection markers (postop hookup) ---------------------
 // Where each device docks on the 1.81 m body figure — LOCAL coords on the
 // figure group (x right, y up, z front). TUNE HERE if a glow sits off-anatomy.
@@ -406,6 +585,14 @@ const BODY_MARKER_POS = {
   drain: [-0.10, 1.12, 0.10],  // chest drains (lower left)
   pelvis: [0.00, 0.94, 0.09],  // urinary catheter
   calf: [0.06, 0.42, 0.06],    // Flowtron cuffs
+  // ── the ACUTE bedside (pre-cath, hud.js ACUTE_DEVICES) ────────────────────
+  // Scene 4 shows twelve of these; before the lab he already has four, and the
+  // twin used to show none of them. Same sprite, same event — so the post-op
+  // hookup reads as an escalation of something the room has already seen rather
+  // than a mechanism appearing from nowhere.
+  face: [0.00, 1.63, 0.11],    // nasal cannula — nose, just above the mouth mark
+  lac: [-0.23, 1.08, 0.09],    // 18G cannula — LEFT antecubital fossa (elbow crease)
+  rarm: [0.22, 1.24, 0.06],    // NIBP cuff — right upper arm, mid-humerus
 };
 const bodyMarkers = {};
 let pendingMarkers = null;
@@ -426,6 +613,13 @@ function applyMarkers(detail) {
   }
 }
 window.addEventListener('hud:markers', (e) => applyMarkers(e.detail));
+// the script can fire the reconstruction itself — same path the double-click
+// takes, so the beat and the gesture cannot diverge
+window.addEventListener('hud:recon:show', () => {
+  if (displayMode !== 'patient') return;
+  toggleHeartZoom(true); showCoronary(true);
+});
+window.addEventListener('hud:recon:hide', () => showCoronary(false));
 // a control confirm in SCOPE pings that device's marker on the twin
 window.addEventListener('hud:marker:pulse', (e) => { const m = e.detail && e.detail.marker, s = m && bodyMarkers[m]; if (s) s.userData.ping = 1; });
 function updateMarkers(dt) {
@@ -606,7 +800,7 @@ function ensureWatchLayer(cb) {
   }, undefined, (e) => { loadingNames.delete('watch'); watchCbs.length = 0; console.warn('[TARS] watch rig failed', e); });
 }
 // DORMANT until the discharge beat. WATCH is a 2-D surveillance panel now — the
-// rig stays parked for POD 4, where the twin has to stand up off the bed and
+// rig stays parked for POD 6, where the twin has to stand up off the bed and
 // walk out, which nothing else can do. Drive it with:
 //   hud:rig {on:true, pose:'standing'|'sitting'|'supine'|'walking'}
 let watchOn = false, watchPose = 'standing';
@@ -632,10 +826,41 @@ function applyLayer() {
   human = fig; fig.group.visible = true; fig.setReveal(reveal);
   const b = bedById(state.focusId); if (b) configurePatient(b);
   // heart zoom lives on the vascular layer only (that's where the heart is)
-  if (activeLayer !== 'vascular' && zoomHeart) toggleHeartZoom(false);
+  if (activeLayer !== 'vascular' && activeLayer !== 'coronary' && zoomHeart) toggleHeartZoom(false);
 }
+/* Clicking the heart post-cath does two things, in order: the camera closes in,
+ * and then the whole-body vasculature gives way to the patient's own coronary
+ * reconstruction. The body has to LEAVE — "just the vessels be there" — so this
+ * is a layer swap, not an overlay, and it is held back ~620 ms so the close-up
+ * reads as its own move before the anatomy changes underneath it. Zooming back
+ * out restores the body vasculature.
+ *
+ * Post-cath only. In every other chapter the heart zoom is just a close-up, as
+ * it has always been — there is no reconstruction to show yet. */
 function toggleHeartZoom(force) {
   zoomHeart = force != null ? force : !zoomHeart;
+  if (!zoomHeart) orbitZoom = 1; // next close-up opens at the preset distance
+  // leaving the close-up always drops the reconstruction with it
+  if (!zoomHeart && activeLayer === 'coronary') showCoronary(false);
+}
+
+/* The reconstruction is the SECOND click, not the first.
+ *
+ *   click   → close in on the heart. Still the whole-body vasculature.
+ *   dblclick→ the body blinks out and the patient's own vessels fade in.
+ *
+ * Two gestures because they are two statements: "look at this heart" and "now
+ * look at HIS arteries". Folding them into one press meant the anatomy changed
+ * underneath a camera move that had not finished making its own point.
+ * Post-cath only — nowhere else is there a reconstruction to show. */
+function showCoronary(on) {
+  if (state.chapter !== 'continued') return;
+  if (on) {
+    if (activeLayer === 'coronary') return;
+    ensureLayer('coronary', () => { if (!zoomHeart) return; activeLayer = 'coronary'; orbitYaw = orbitPitch = orbitYawS = orbitPitchS = 0; orbitZoom = 1; applyLayer(); buildBlocks(figs.coronary); });
+  } else if (activeLayer === 'coronary') {
+    activeLayer = 'vascular'; applyLayer();
+  }
 }
 function configurePatient(b) { human.setHeartColor(b.cardiac ? 0xff5a52 : b.patient.acuity === 'watch' ? 0xffb24a : 0x9be8ff, b.cardiac); }
 
@@ -657,17 +882,64 @@ onModeChange((mode, focusId) => {
 
 function heartHit(e) {
   // raycast the vascular figure's heart meshes — the heart IS the zoom control
-  if (displayMode !== 'patient' || activeLayer !== 'vascular' || !human || !human.heartMeshes || !human.heartMeshes.length) return null;
+  if (displayMode !== 'patient' || (activeLayer !== 'vascular' && activeLayer !== 'coronary')) return null;
+  if (!human || !human.heartMeshes || !human.heartMeshes.length) return null;
   const r = canvas.getBoundingClientRect();
   ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1;
   raycaster.setFromCamera(ptr, camera);
   return raycaster.intersectObjects(human.heartMeshes, false)[0] || null;
 }
+/* Drag-to-orbit, for the reconstruction only.
+ *
+ * Not OrbitControls: the patient view drives its own camera (camPos/camLook are
+ * damped toward a preset every frame), so a controls rig would spend the whole
+ * time fighting it. Rotating the MODEL instead leaves the camera alone and is
+ * what "rotate it around" actually means for an object on a plinth.
+ *
+ * Pitch is clamped: past about a quarter turn you are looking at a heart from
+ * underneath, which tells you nothing and loses the orientation the markers
+ * will depend on. Yaw is free.
+ */
+let orbitYaw = 0, orbitPitch = 0, orbiting = null;
+let orbitYawS = 0, orbitPitchS = 0; // damped, the values actually applied
+// The recon turns itself once it is up — a still object reads as a picture, and
+// the point of a reconstruction is that it has a back. Any drag takes over
+// immediately and it picks the turn back up a beat after you let go.
+const AUTO_SPIN = 0.20, AUTO_RESUME = 1.4; // rad/s (~31 s a turn) · s after a drag
+let lastDragAt = 0;
+const BLOCK_WP = new THREE.Vector3(), BLOCK_OUT = new THREE.Vector3(), BLOCK_EYE = new THREE.Vector3();
+let orbitZoom = 1;                       // 1 = the HEART preset distance
+const ORBIT_PITCH_MAX = Math.PI * 0.28;
+const ZOOM_MIN = 0.34, ZOOM_MAX = 2.2;   // ~3x in, ~2x out from the preset
+const dollyV = new THREE.Vector3();      // reused — this runs every frame
 function onPointerDown(e) {
   if (displayMode === 'patient') {
     // a glow-marker click → that machine's full feed in SCOPE (hud.js listens)
     const mh = markerHit(e);
     if (mh) { window.dispatchEvent(new CustomEvent('hud:scope:open', { detail: { marker: mh.object.userData.deviceKey } })); return; }
+    // DEV: shift-click the recon to place a marker. Coordinates come back in
+    // PIVOT space — the same space CORONARY_BLOCKS is written in — so the line
+    // it copies pastes straight over an entry. Beats nudging three numbers
+    // blind against a model you can only see after a reload.
+    if (import.meta.env && import.meta.env.DEV && e.shiftKey && activeLayer === 'coronary' && human && human.pivot) {
+      const r = canvas.getBoundingClientRect();
+      ptr.x = ((e.clientX - r.left) / r.width) * 2 - 1; ptr.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+      raycaster.setFromCamera(ptr, camera);
+      const meshes = []; human.pivot.traverse((o) => { if (o.isMesh) meshes.push(o); });
+      const hit = raycaster.intersectObjects(meshes, false)[0];
+      if (hit) {
+        const p = human.pivot.worldToLocal(hit.point.clone());
+        const line = `pos: [${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)}]`;
+        navigator.clipboard && navigator.clipboard.writeText(line);
+        console.log('[recon] ' + line + '   → copied; paste over a CORONARY_BLOCKS entry');
+      }
+      return;
+    }
+    if (activeLayer === 'coronary') { // grab it
+      orbiting = { x: e.clientX, y: e.clientY, yaw: orbitYaw, pitch: orbitPitch, moved: 0 }; lastDragAt = performance.now();
+      canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+      return;
+    }
     if (heartHit(e)) toggleHeartZoom(); return;
   }
   if (displayMode !== 'floor') return;
@@ -677,8 +949,27 @@ function onPointerDown(e) {
   const hit = raycaster.intersectObjects(pickables, false)[0];
   if (hit) setMode('patient', hit.object.userData.bedId);
 }
+function onPointerUp(e) {
+  if (!orbiting) return;
+  const o = orbiting; orbiting = null;
+  canvas.releasePointerCapture && canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId) && canvas.releasePointerCapture(e.pointerId);
+  canvas.style.cursor = 'grab';
+  // a drag is not a click: only a press that barely moved should count as one,
+  // or every rotation would also fire whatever is under the cursor
+  if (o.moved < 4 && heartHit(e)) toggleHeartZoom();
+}
 function onPointerMove(e) {
+  if (orbiting) {
+    const dx = e.clientX - orbiting.x, dy = e.clientY - orbiting.y;
+    orbiting.moved = Math.max(orbiting.moved, Math.hypot(dx, dy));
+    orbitYaw = orbiting.yaw + dx * 0.011;
+    orbitPitch = Math.max(-ORBIT_PITCH_MAX, Math.min(ORBIT_PITCH_MAX, orbiting.pitch + dy * 0.009));
+    lastDragAt = performance.now();
+    canvas.style.cursor = 'grabbing';
+    return;
+  }
   if (displayMode === 'patient') {
+    if (activeLayer === 'coronary') { canvas.style.cursor = 'grab'; return; }
     // postop: hovering a body marker surfaces its compact device card (hud.js)
     const mh = markerHit(e);
     window.dispatchEvent(new CustomEvent('hud:marker:hover', { detail: mh ? { key: mh.object.userData.deviceKey, x: e.clientX, y: e.clientY } : { key: null } }));
@@ -708,7 +999,12 @@ function frame(now) {
   let dt = (now - last) / 1000; last = now; dt = Math.min(dt, 0.05); driftT += dt;
   let dp, dl;
   if (displayMode === 'floor') { dp = HOME.pos.clone(); dp.x += Math.sin(driftT * 0.16) * 0.22; dl = HOME.look.clone(); }
-  else if (zoomHeart) { dp = HEART.pos; dl = HEART.look; }
+  else if (zoomHeart) {
+    // dolly along the preset's own view axis, so scrolling moves you toward the
+    // thing you are already looking at rather than sliding the frame
+    dl = HEART.look;
+    dp = dollyV.copy(HEART.pos).sub(HEART.look).multiplyScalar(orbitZoom).add(HEART.look);
+  }
   else if (activeLayer === 'watch') { const w = watchPose === 'supine' ? BEDCAM : WATCHCAM; dp = w.pos; dl = w.look; }
   else { dp = PATIENT.pos; dl = PATIENT.look; }
   const k = damp(dt, zoomHeart ? 3.0 : 2.3); camPos.lerp(dp, k); camLook.lerp(dl, k);
@@ -739,7 +1035,16 @@ function updatePatient(dt) {
   // postop: the twin stands still, facing front — devices are being connected
   // to a patient, not to a turntable (freeze eases to the anterior view)
   const still = isPostopWorld();
-  human.update(dt, { hr: b.vitals.hr, reveal, spinSpeed: (zoomHeart || still) ? 0 : 0.38, freeze: zoomHeart || still, focus: zoomHeart });
+  // the recon is a held object: smooth the drag HERE and hand the result to
+  // update(), rather than writing rotation after it and being overwritten
+  const orbitable = activeLayer === 'coronary';
+  const kOrb = Math.min(1, dt * 14);
+  if (orbitable && !orbiting && (performance.now() - lastDragAt) / 1000 > AUTO_RESUME) orbitYaw += dt * AUTO_SPIN;
+  if (orbitable) { orbitYawS += (orbitYaw - orbitYawS) * kOrb; orbitPitchS += (orbitPitch - orbitPitchS) * kOrb; }
+  else orbitPitchS += (0 - orbitPitchS) * Math.min(1, dt * 8); // unwind pitch on the way out
+  human.update(dt, { hr: b.vitals.hr, reveal, spinSpeed: (zoomHeart || still || orbitable) ? 0 : 0.38, freeze: zoomHeart || still, focus: zoomHeart, yaw: orbitable ? orbitYawS : null });
+  if (human.setPitch) human.setPitch(orbitPitchS);
+  updateBlocks(dt);
   updateMarkers(dt);
   const ring = patientScene.userData.ring; if (ring) ring.rotation.z += dt * 0.2;
 }
@@ -770,6 +1075,24 @@ export function initScene(canvasEl) {
 
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointermove', onPointerMove);
+  // the recon is dragged, so the cursor has to say so
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
+  // wheel = zoom, but ONLY while the close-up owns the frame; anywhere else the
+  // page keeps its scroll. passive:false because we have to preventDefault.
+  canvas.addEventListener('wheel', (e) => {
+    if (displayMode !== 'patient' || !zoomHeart) return;
+    e.preventDefault();
+    // exponential, so a notch feels the same close in as far out
+    orbitZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, orbitZoom * Math.exp(e.deltaY * 0.0011)));
+  }, { passive: false });
+  // dblclick is the reconstruction gesture — on the heart going in, anywhere on
+  // the recon coming back out
+  canvas.addEventListener('dblclick', (e) => {
+    if (displayMode !== 'patient' || state.chapter !== 'continued') return;
+    if (activeLayer === 'coronary') { showCoronary(false); return; }
+    if (heartHit(e)) { toggleHeartZoom(true); showCoronary(true); }
+  });
   addEventListener('resize', resize);
   // The deck demo zooms the whole app (body.panela-only), which changes the
   // canvas's box WITHOUT firing a window resize — the renderer would keep its

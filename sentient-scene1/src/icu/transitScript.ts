@@ -29,16 +29,25 @@ export const TRANSIT_BEATS: Record<string, WardLine[]> = {
     // only it can produce: what the transfer costs him per minute.
     {
       who: 'isam',
-      html: `Read is committed — <b>anterior OMI</b>. He doesn't need a ward bed, he needs an artery opened.`,
+      // the diagnosis wears --redD wherever iSAM commits it — the ward's
+      // twelve-lead line and the Hub's "read stands" both do; this was the one
+      // place the same phrase from the same agent came out in plain bold
+      html: `Read is committed — <b style="color:var(--redD)">anterior OMI</b>. He doesn't need a ward bed, he needs an artery opened.`,
     },
+    // No figure here on purpose. iSAM has an ECG and nothing else at this point
+    // — the deterioration probability is a Hub number, produced once troponin is
+    // back, and quoting it in a lift was inventing precision it had not earned.
     {
       who: 'isam',
-      html: `Every minute of this transfer is myocardium. <b style="color:var(--redD)">86%</b> he deteriorates without reperfusion — <span class="em">and that number climbs while he's in the lift.</span>`,
+      html: `Every minute of this transfer is myocardium. <b style="color:var(--redD)">Without reperfusion he deteriorates</b> — <span class="em">and the odds worsen with every minute he's in the lift.</span>`,
     },
     // TARS answers it — not reporting to nobody, answering iSAM
     {
       who: 'tars',
-      html: `Then we don't wait for him to arrive. Level-3 bed <b>ICU-04</b> is held in his name, cath lab activated — <span class="em">door-to-balloon clock is running from now, not from the door.</span>`,
+      // ICU-08, not ICU-04 — ICU-04 is J. Okonkwo and he is in it. And the lab
+      // is PRE-ALERTED here: a pre-hospital ECG earns a pre-alert, and the
+      // activation belongs to the Hub, once the troponin is back.
+      html: `Then we don't wait for him to arrive. Level-3 bed <b>ICU-08</b> is held in his name, cath lab pre-alerted — <span class="em">door-to-balloon clock is running.</span>`,
     },
     {
       who: 'tars',

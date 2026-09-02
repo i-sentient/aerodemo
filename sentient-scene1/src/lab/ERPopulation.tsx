@@ -193,33 +193,50 @@ function InboundRing({ step }: { step: number }) {
       })
     }
   })
-  const p = BED_SLOTS[4].position
-  const B = 1.9, TH = 0.075 // half-extent and stroke, in metres on the floor
+  const slot = BED_SLOTS[4]
+  const p = slot.position
+  // The mark is a BORDER ON THE BED, so it takes the bed's own footprint:
+  // SpokeBed's base frame is 1.5 × 2.3 and the headboard pushes the head end
+  // out to 1.17 (scene/RoundER). Plus a hand's clearance. The old mark was a
+  // 3.8 m square — nearly three bed-widths across — which read as a room rather
+  // than a bay, and had nothing to do with the object it was marking.
+  const HX = 0.75 + 0.17, HY = 1.17 + 0.17
+  // ...and CORNER REGISTRATION TICKS, not a closed rectangle. Same grammar as
+  // the ATLAS mark and the CV box's own corners, for the reason AtlasSigil
+  // states: a full outline at this weight reads as a button, or here, a floor
+  // tile. Four corners say "this one" without drawing a box around the floor.
+  const ARM = 0.44, TH = 0.055
   const bar = (key: string, pos: [number, number, number], w: number, h: number) => (
     <mesh key={key} position={pos}>
       <planeGeometry args={[w, h]} />
       <meshBasicMaterial color={hdrCss(CV_LINE, 2.2)} toneMapped={false} transparent opacity={0} depthWrite={false} />
     </mesh>
   )
+  const ticks: JSX.Element[] = []
+  for (const sx of [1, -1]) for (const sy of [1, -1]) {
+    // the two arms overlap in a TH square at the corner, so the elbow is solid
+    ticks.push(bar(`h${sx}${sy}`, [sx * (HX - ARM / 2), sy * HY, 0], ARM, TH))
+    ticks.push(bar(`v${sx}${sy}`, [sx * HX, sy * (HY - ARM / 2), 0], TH, ARM))
+  }
   return (
-    <group position={[p[0], 0.055, p[2]]} rotation-x={-Math.PI / 2}>
-      <group ref={red}>
-        <mesh ref={disc} position={[0, 0, -0.004]}>
-          <circleGeometry args={[2.25, 64]} />
-          <meshBasicMaterial color={hdrCss('#ff4d4d', 1.4)} toneMapped={false} transparent opacity={0.2} depthWrite={false} />
-        </mesh>
-        <mesh ref={ring}>
-          <ringGeometry args={[1.7, 2.25, 64]} />
-          <meshBasicMaterial color={hdrCss('#ff4d4d', 2.2)} toneMapped={false} transparent opacity={0.8} depthWrite={false} />
-        </mesh>
-      </group>
-      {/* the bay, claimed — outline only. A fill here would read as another
-          wash on a floor that already carries the census marks. */}
-      <group ref={box} visible={false} position={[0, 0, 0.002]}>
-        {bar('n', [0, B, 0], 2 * B + TH, TH)}
-        {bar('s', [0, -B, 0], 2 * B + TH, TH)}
-        {bar('w', [-B, 0, 0], TH, 2 * B + TH)}
-        {bar('e', [B, 0, 0], TH, 2 * B + TH)}
+    // rotation-y is new and load-bearing: a square did not care how it sat, but
+    // a mark shaped like the bed has to lie ALONG it. The red ring inside is
+    // rotationally symmetric, so it is unaffected.
+    <group position={[p[0], 0.055, p[2]]} rotation-y={slot.rotationY}>
+      <group rotation-x={-Math.PI / 2}>
+        <group ref={red}>
+          <mesh ref={disc} position={[0, 0, -0.004]}>
+            <circleGeometry args={[2.25, 64]} />
+            <meshBasicMaterial color={hdrCss('#ff4d4d', 1.4)} toneMapped={false} transparent opacity={0.2} depthWrite={false} />
+          </mesh>
+          <mesh ref={ring}>
+            <ringGeometry args={[1.7, 2.25, 64]} />
+            <meshBasicMaterial color={hdrCss('#ff4d4d', 2.2)} toneMapped={false} transparent opacity={0.8} depthWrite={false} />
+          </mesh>
+        </group>
+        {/* the bay, claimed — outline only. A fill here would read as another
+            wash on a floor that already carries the census marks. */}
+        <group ref={box} visible={false} position={[0, 0, 0.002]}>{ticks}</group>
       </group>
     </group>
   )
@@ -380,7 +397,14 @@ const TAG_READ = cvTagTex('iSAM · VERDICT COMMITTED — CHANDRABABU · SH-2891'
 // else's job. The state machine that has run this frame since the first scan
 // ends by naming a DIFFERENT agent, which is the handoff made visible on the
 // one surface the room is already reading.
-const TAG_TARS = cvTagTex('TARS · CATH LAB ACTIVATED', 'rgba(169,116,79,0.94)', '#fff4ea', 34)
+// No "ACTIVATING" state before this one. It read as TARS booting up, and TARS
+// is always running — the thing being activated is the cath lab, not the agent.
+// PRE-ALERTED, not activated. All iSAM has read here is a PRE-HOSPITAL ECG,
+// which earns a pre-alert; the activation belongs to the Patient Hub, once the
+// troponin is back. The ladder now climbs once — pre-alert, standby, activate —
+// instead of activating, being pre-warned, dropping to standby and activating
+// again. The clock still starts here, because door-to-balloon starts at the door.
+const TAG_TARS = cvTagTex('TARS · CATH LAB PRE-ALERTED', 'rgba(169,116,79,0.94)', '#fff4ea', 34)
 
 /** The box's transcript. Three acts typed into the same slot, so the object is
  *  seen to reason: it measures, then it reconciles, then it is named. Baked
@@ -523,7 +547,14 @@ const dotNumberTex = (value: string, label: string, cell = 13, color = ECG_RED) 
   t.colorSpace = SRGBColorSpace; t.minFilter = LinearFilter
   return t
 }
-const CONF_TEX = dotNumberTex('96', 'confidence')
+// GREEN, not red — and this is the whole fix for the two numbers reading as
+// one. 96% is a statement about the MODEL and it is good news; the 86% in the
+// ward is a statement about the PATIENT and it is not. Drawn identically — big
+// red numeral, small grey word — the room compares them and sees 96 fall to 86
+// before it reads either label. iSAM's own green is already on this card (the
+// ANALYSING flag), so the number simply wears the colour of whoever produced
+// it, and red is left to mean risk to the patient.
+const CONF_TEX = dotNumberTex('96', 'confidence', 13, '#2FA96E')
 
 /** DOOR-TO-BALLOON, counting up, in the slot the confidence just vacated.
  *
@@ -536,7 +567,11 @@ const CONF_TEX = dotNumberTex('96', 'confidence')
  *  second rather than one a frame — a per-frame redraw beside the sweeping scan
  *  line is exactly what hitched before. */
 const CLOCK_CV = document.createElement('canvas')
-CLOCK_CV.width = 232; CLOCK_CV.height = 248
+// LANDSCAPE, because it inherits the whole strip band once the traces go. The
+// traces were iSAM's evidence and they leave with iSAM's flag; what replaces
+// them is the one number TARS is accountable for, at a size that says so.
+CLOCK_CV.width = 1200; CLOCK_CV.height = 315
+const CLOCK_W = 2.44, CLOCK_H = CLOCK_W * 315 / 1200
 const CLOCK_TEX = (() => {
   const t = new CanvasTexture(CLOCK_CV)
   t.colorSpace = SRGBColorSpace; t.minFilter = LinearFilter
@@ -547,17 +582,20 @@ const drawClock = (sec: number) => {
   if (sec === clockShown) return false
   clockShown = sec
   const x = CLOCK_CV.getContext('2d')!
-  x.clearRect(0, 0, 232, 248)
+  x.clearRect(0, 0, 1200, 315)
   x.textAlign = 'center'; x.textBaseline = 'middle'
-  x.font = '800 52px ui-monospace, SFMono-Regular, Menlo, monospace'
+  x.font = '800 220px ui-monospace, SFMono-Regular, Menlo, monospace'
+  x.letterSpacing = '6px'
   x.fillStyle = '#c62828'
   const mm = String(Math.floor(sec / 60)).padStart(2, '0')
   const ss = String(sec % 60).padStart(2, '0')
-  x.fillText(`${mm}:${ss}`, 116, 104)
-  x.font = '600 16px ui-monospace, SFMono-Regular, Menlo, monospace'
-  x.letterSpacing = '2px'
-  x.fillStyle = '#5a6b74'
-  x.fillText('door-to-balloon', 116, 156)
+  // the pair sits low in the box now — the dead air is above them, where the
+  // card's own top edge is, rather than trapped between the two
+  x.fillText(`${mm}:${ss}`, 600, 166)
+  x.font = '700 30px ui-monospace, SFMono-Regular, Menlo, monospace'
+  x.letterSpacing = '10px'
+  x.fillStyle = '#8a3a34'
+  x.fillText('DOOR-TO-BALLOON', 600, 272)
   return true
 }
 drawClock(0)
@@ -724,6 +762,23 @@ const VERDICT_TEX = (() => {
 // the sign does. 0.85 puts the flag's top at 3.10 and leaves ~0.11 m of clear
 // air between them on screen; 1.45 overlapped the word by 0.60 m.
 const CARD_RISE = 0.85
+// THE HANDOVER, staggered. Three things used to change on one frame — the
+// flag's text, its colour and its WIDTH (scale.x was set directly, so a longer
+// label snapped) — which is what read as a cut rather than a handover.
+// Now the pill collapses to nothing at its pinned left edge, the texture swaps
+// while it is empty so the two labels never cross, and the new one grows back
+// out of the same anchor. Then, and only then, the clock starts: iSAM finishes,
+// the flag changes hands, TARS starts the clock — causality in that order.
+const HAND_SHUT = 0.26   // the old flag closing
+const HAND_GAP = 0.10    // blank, and the texture swaps inside this
+const HAND_OPEN = 0.30   // the new one opening
+const HAND_T = HAND_SHUT + HAND_GAP + HAND_OPEN   // TARS's flag is up
+// the clock starts just behind the flag landing — the flag says the lab is
+// pre-alerted, and the door-to-balloon clock starts because HE IS THROUGH THE
+// DOOR — that is what the metric measures from, which is why it starts here and
+// not later when the lab actually goes live. The 0.22 s is only so the flag and
+// the clock do not arrive on the same frame.
+const CLOCK_AT = HAND_T + 0.22
 function CVScan({ stage }: { stage: number | null }) {
   const grp = useRef<Group>(null)
   const top = useRef<Group>(null)
@@ -887,15 +942,28 @@ function CVScan({ stage }: { stage: number | null }) {
         : stage === 1 ? TAG_RECON : stage === 2 ? TAG_NAMED
           : stage >= 6 ? TAG_TARS
             : said ? TAG_READ : TAG_ISAM
-      tm.map = flag.t
+      // collapse-and-rewrite. `k` is the width multiplier: 1 → 0 while the old
+      // flag shuts, 0 across the gap, 0 → 1 as the new one opens.
+      let k = 1
+      let show = flag
+      if (stage >= 6 && t < HAND_T) {
+        if (t < HAND_SHUT) { show = TAG_READ; k = 1 - MathUtils.smoothstep(t, 0, HAND_SHUT) }
+        else if (t < HAND_SHUT + HAND_GAP) { show = TAG_TARS; k = 0 }
+        else { show = TAG_TARS; k = MathUtils.smoothstep(t - HAND_SHUT - HAND_GAP, 0, HAND_OPEN) }
+      }
+      tm.map = show.t
       tm.opacity = fadeIn * vb
       tm.needsUpdate = true
       // the pill grows to its own label and keeps its LEFT edge on the card's,
       // so the states read as one flag rewriting itself rather than a row of
       // differently-centred badges
       if (tag.current) {
-        tag.current.scale.x = flag.w
-        tag.current.position.x = TAG_LEFT + flag.w / 2
+        // width AND position both scale, so it shuts onto its LEFT edge rather
+        // than onto its middle — the anchor is where the next label will start
+        const w = Math.max(0.0001, show.w * k)
+        tag.current.scale.x = w
+        tag.current.position.x = TAG_LEFT + w / 2
+        tag.current.visible = k > 0.002
       }
     }
     const ym = type.current?.material as MeshBasicMaterial | undefined
@@ -944,13 +1012,16 @@ function CVScan({ stage }: { stage: number | null }) {
     cap(capIII, CAP_III, under(ty - dy), 1.6)
     const hm = head.current?.material as MeshBasicMaterial | undefined
     if (hm) hm.opacity = said ? open * vb : 0
+    // iSAM's traces go out on iSAM's flag — the same 0.26 s — so the card
+    // empties in one gesture rather than shedding its parts one at a time
+    const gone = stage >= 6 ? 1 - MathUtils.smoothstep(t, 0, HAND_SHUT) : 1
     const trm = trace.current?.material as MeshBasicMaterial | undefined
-    if (trm) trm.opacity = open
+    if (trm) trm.opacity = open * gone
     const tom = traceOld.current?.material as MeshBasicMaterial | undefined
-    if (tom) tom.opacity = open * 0.9 // a shade back: it is not today's problem
+    if (tom) tom.opacity = open * 0.9 * gone // a shade back: not today's problem
     for (const r of [tagV3, tagIII]) {
       const m = r.current?.material as MeshBasicMaterial | undefined
-      if (m) m.opacity = open
+      if (m) m.opacity = open * gone
     }
     // runs from the moment the card opens and never stops. A trace that pauses
     // while it is being read is a screenshot; this one is a patient.
@@ -962,12 +1033,27 @@ function CVScan({ stage }: { stage: number | null }) {
     const cm = conf.current?.material as MeshBasicMaterial | undefined
     if (cm) {
       // the confidence hands its slot to the clock — same place, same size, one
-      // number replaced by another
+      // number replaced by another. The slot goes EMPTY in between: 96% is
+      // settled and gone before the clock exists, so they never dissolve
+      // through each other, and the gap is what makes the second number read as
+      // a new fact rather than the first one changing its mind.
       if (stage >= 6) {
-        if (drawClock(Math.floor(Math.max(0, t)))) CLOCK_TEX.needsUpdate = true
-        cm.map = CLOCK_TEX
-      } else cm.map = CONF_TEX
-      cm.opacity = said ? open * vb : 0
+        if (t < CLOCK_AT) {
+          cm.map = CONF_TEX
+          cm.opacity = said ? open * vb * gone : 0
+        } else {
+          if (drawClock(Math.max(0, Math.floor(t - CLOCK_AT)))) CLOCK_TEX.needsUpdate = true
+          cm.map = CLOCK_TEX
+          cm.opacity = said ? open * vb * MathUtils.smoothstep(t - CLOCK_AT, 0, 0.25) : 0
+          // full width, centred on the band the two traces just vacated
+          conf.current!.scale.set(CLOCK_W, CLOCK_H, 1)
+          conf.current!.position.set(0, 0.65, 0.002)
+        }
+      } else {
+        cm.map = CONF_TEX; cm.opacity = said ? open * vb : 0
+        conf.current!.scale.set(0.58, 0.62, 1)
+        conf.current!.position.set(1, 0.64, 0.002)
+      }
       cm.needsUpdate = true
     }
   })
@@ -1035,8 +1121,8 @@ function CVScan({ stage }: { stage: number | null }) {
           {/* nudged right and down off the flush-with-the-traces position. Down
               is nearly spent here: the verdict's top edge is 0.03 below this
               block, and the patient's crown is right under that. */}
-          <mesh ref={conf} position={[1, 0.64, 0.002]}>
-            <planeGeometry args={[0.58, 0.62]} />
+          <mesh ref={conf} position={[1, 0.64, 0.002]} scale={[0.58, 0.62, 1]}>
+            <planeGeometry args={[1, 1]} />
             <meshBasicMaterial map={CONF_TEX} toneMapped={false} transparent opacity={0} depthWrite={false} side={DoubleSide} />
           </mesh>
           {/* each finding welded under the lead it came from — placed from the

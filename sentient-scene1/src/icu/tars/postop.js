@@ -222,85 +222,97 @@ export const CONTROLS = {
 // `off` = devices that come off THAT day (beat 0 in reverse: the twin's markers
 // go dark one by one and SCOPE's wall empties). `vitals` is where the numbers
 // land once the day's weaning is done. Recovery you can see, not narrate.
+/* Three days, not five. The old 0-1-2-3-4 was a recovery timeline — extubate,
+ * drains out, lines out, step down — competent and unfalsifiable, because
+ * nothing ever went wrong. POD 3 now carries a DIAGNOSIS, and POD 6 carries what
+ * that diagnosis changed. The retired days' content survives as one-line history
+ * inside POD 3's note and the discharge course, which is where a reader looks
+ * for it anyway.
+ *
+ * `off` lists devices that come OFF on that day (keys from HOOKUP). POD 3 sheds
+ * everything invasive at once because three days of weaning happened between the
+ * scenes — the note says so rather than the beats acting it out.
+ */
+/* The days are 0, 3, 6 — so ARRAY INDEX IS NO LONGER THE POD NUMBER, which is
+ * an assumption hud.js and apps.js both used to make (`PODS[podDay]`). Every
+ * lookup goes through these two helpers instead; indexing PODS directly by a day
+ * is now a bug.
+ */
 export const PODS = [
   { pod: 0, title: 'Arrival', sub: 'ventilated · sedated · full support', off: [],
     vitals: { hr: POD0.hr, spo2: POD0.spo2, sys: 96, dia: 54, rr: POD0.vent.rate, temp: 36.4 } },
-  { pod: 1, title: 'Wake up and come off', sub: 'sedation off · extubated · lines coming out',
-    off: ['ett', 'vent', 'iabp', 'pumps', 'warm'],
-    vitals: { hr: 88, spo2: 96, sys: 118, dia: 70, rr: 18, temp: 37.0 },
+
+  { pod: 3, title: 'The fever', sub: 'lines out · pleuritic · pericardium',
+    off: ['ett', 'vent', 'iabp', 'pumps', 'warm', 'drains', 'suction', 'art', 'cvc', 'ucath'],
+    // temp is the point of the day. HR up with the fever, everything else settled.
+    vitals: { hr: 98, spo2: 96, sys: 124, dia: 72, rr: 22, temp: 38.4 },
+    // the live strip changes SHAPE on this day, not just its numbers — the whole
+    // scene turns on a morphology, so the monitor has to be showing it while iSAM
+    // talks about it. Absent here, a day keeps whatever the bed's own rhythm is.
+    ecg: 'pericarditis',
     note: [
-      ['Respiratory', 'Weaned SIMV → PSV overnight; spontaneous breathing trial passed 10:40. <b>Extubated 11:20</b> to facemask FiO₂ 28% — sats 96%, no stridor, chest clear with a good cough.'],
-      ['Cardiovascular', 'IABP weaned 1:1 → 1:2 and <b>removed 13:10</b>; groin site stable, distal pulses intact. Noradrenaline weaned off 15:40. Sinus 88, MAP 82 unsupported. Rewarmed to 37.0 — warming blanket off.'],
-      ['Renal &amp; fluids', 'Urine 0.8 mL/kg/hr. Balance +0.9 L. Creatinine stable at 96.'],
-      ['Drains', 'Mediastinal + left pleural 180 mL/24h, serous, no clots. Remain in.'],
-      ['Pain', 'CPOT peaks at 4 on transfers, 1 at rest. Regular paracetamol; opioid PCA started after extubation.'],
+      ['Problem', 'Second spike <b>38.4</b>. Pleuritic pain, worse supine. Pericardial rub.'],
+      ['Not infection', 'CRP <b>184 rising</b>, WCC <b>9.1 falling</b>. Cultures negative at 36 h. <b>Empiric Piptazo stopped.</b>'],
+      ['Not a graft', 'Diffuse concave ST with PR depression — not territorial. <b>The inferior Q waves were on the day-0 twelve-lead.</b>'],
+      ['Echo', 'Small circumferential effusion. No tamponade.'],
+      ['Diagnosis', '<b>Post-cardiac-injury syndrome.</b> Colchicine + ibuprofen, repeat echo 48 h.'],
     ],
-    // beta-blocker prophylaxis is the real POD 1 order — it REDUCES post-op AF
-    // without preventing it, which is what makes POD 2 honest rather than cheap
-    orders: { label: 'POD 1 → POD 2 plan', items: ['Chest physio + mobilise twice daily', 'Remove drains if < 50 mL/8h', 'Start oral beta-blocker — AF prophylaxis', 'Step down to telemetry monitoring'] } },
-  { pod: 2, title: 'Mobilising', sub: 'drains out · up and standing', off: ['drains', 'suction'],
-    vitals: { hr: 84, spo2: 96, sys: 122, dia: 72, rr: 17, temp: 36.9 },
+    orders: { label: 'Pericarditis — treatment set', items: ['Stop piperacillin–tazobactam', 'Colchicine 500 µg BD', 'Ibuprofen 400 mg TDS with PPI cover', 'Repeat echo in 48 h', 'Notify cardiothoracic surgeon'] } },
+
+  { pod: 6, title: 'Home', sub: 'telemetry off · pericardium settling · discharge',
+    off: ['flowtron', 'monitor'],
+    vitals: { hr: 72, spo2: 98, sys: 126, dia: 74, rr: 15, temp: 36.7 },
     note: [
-      ['Cardiovascular', 'Sinus 84 on the beta-blocker — <b>no AF</b>. MAP holding without support. Peripheries warm.'],
-      ['Respiratory', 'FiO₂ weaned to room air by 09:00; sats 96%. Deep-breathing exercises with physio, secretions clearing.'],
-      ['Drains', 'Combined output <b>40 mL over 8 h</b>, serous — removal criterion met. Mediastinal + pleural drains <b>out 10:15</b>; post-removal film clear, no pneumothorax. Suction standby stood down.'],
-      ['Pain', 'PCA stopped overnight — oral analgesia holding CPOT ≤ 3 on exertion. Guarding the sternotomy on transfers only.'],
-      ['Renal &amp; fluids', 'Balance −0.4 L today. Creatinine 92 — back to baseline.'],
+      ['Pericardium', 'Afebrile <b>72 h</b>. Rub gone. CRP <b>184 to 41</b>. Effusion reduced, non-circumferential.'],
+      ['Cardiovascular', 'Sinus 72. <b>No AF the whole admission.</b> Telemetry off this morning.'],
+      ['Wound', 'Sternotomy clean and dry, no click. Harvest site settled.'],
+      ['Function', 'Stairs with physio completed. 140 m yesterday. Independent.'],
+      ['Disposition', 'Fit for discharge. <b>The pericarditis shapes the follow-up, not the date.</b>'],
     ],
-    orders: { label: 'POD 2 → POD 3 plan', items: ['Remove arterial + central lines', 'Urinary catheter out — trial of void', 'Mobilise to the corridor with physio', 'Daily ECG · continue beta-blocker'] } },
-  { pod: 3, title: 'Lines out', sub: 'invasive monitoring off · walking the corridor',
-    off: ['art', 'cvc', 'ucath'],
-    vitals: { hr: 78, spo2: 97, sys: 126, dia: 74, rr: 16, temp: 36.8 },
-    note: [
-      ['Lines', 'Arterial line <b>out 09:20</b>, CVC <b>out 09:40</b> — sites clean, no ooze. One peripheral cannula stays for 24 h of IV access.'],
-      ['Renal', 'Urinary catheter <b>out 10:00</b>; voided 13:30 — <b>trial of void passed</b>. Output self-reported hourly.'],
-      ['Cardiovascular', 'Sinus 78. NIBP 126/74 — cuff readings concordant with the art line before removal.'],
-      ['Respiratory', 'Room air, sats 97%. Cough strong, chest clear to the bases.'],
-      ['Disposition', 'Down to <b>telemetry + calf pumps</b>. Step-down bed requested for the morning transfer.'],
-    ],
-    orders: { label: 'POD 3 → POD 4 plan', items: ['Transfer to Step-Down — telemetry', 'Calf pumps off on transfer', 'Stairs assessment with physio', 'Discharge review POD 6'] } },
-  { pod: 4, title: 'Step-down', sub: 'telemetry only · ready for the ward', off: ['flowtron'],
-    vitals: { hr: 74, spo2: 98, sys: 128, dia: 76, rr: 15, temp: 36.7 },
-    note: [
-      ['Transfer', 'Moved to <b>Step-Down · bay 4</b> this morning. Calf pumps off on transfer — mobilising well enough without them.'],
-      ['Cardiovascular', 'Telemetry only — sinus 74, <b>no AF for the whole admission</b>. Beta-blocker continues.'],
-      ['Wound', 'Sternotomy clean and dry, edges apposed, no click. Leg harvest site settled.'],
-      ['Function', 'Independent around the bay; <b>stairs with physio</b> completed. Sats 98% on air throughout.'],
-    ],
-    orders: { label: 'Discharge pathway', items: ['Echo before discharge', 'Cardiac rehab referral', 'Surgical + GP letters drafted', 'Review POD 6 — home if wound clean'] } },
+    orders: { label: 'Discharge set', items: ['Cardiac rehabilitation referral', 'Repeat TTE at 2 weeks — effusion', 'GP + cardiothoracic clinic letters', 'Discharge medication reconciliation'] } },
 ];
+
+export const podByDay = (day) => PODS.find((p) => p.pod === (day | 0)) || PODS[0];
+export const podsUpTo = (day) => PODS.filter((p) => p.pod <= (day | 0));
+
 
 // ---- the DISCHARGE SUMMARY — the admission compressed into one document -----
 // This is the record's closing artifact: the whole demo (door → cath → theatre
 // → four PODs) as the document another hospital would actually receive. TARS
 // drafts it from the notes it already wrote; the clinician's signature files it.
+/* The closing artefact — and the one most at risk of becoming a case sheet.
+ * FOUR course entries, not eight: door, cath, theatre, the complication. Each is
+ * one line. A reader who wants the detail opens the progress notes; a reader
+ * looking at this wants the shape of the admission in a glance.
+ * No SYNTAX score — it described three untreated vessels and stopped describing
+ * anything the moment the LAD was opened.
+ */
 export const DISCHARGE = {
-  dx: 'Acute anterior OMI (de Winter) → severe triple-vessel coronary disease (SYNTAX 34)',
-  proc: 'CABG ×3 (on-pump) — LIMA → LAD · SVG → OM · SVG → PDA',
+  dx: 'Anterior OMI (de Winter) -> three-vessel disease -> post-cardiac-injury syndrome',
+  proc: 'CABG x3 (on-pump) — LIMA -> LAD · SVG -> OM · SVG -> PDA',
   course: [
-    ['Presentation', 'Anterior OMI at the door — de Winter pattern, no ST elevation, troponin 8.4. Cath lab activated from the ED.'],
-    ['Angiography', 'LAD 90% proximal · LCx 75% · RCA 60%. SYNTAX 34 — CABG chosen over staged PTCA.'],
-    ['Surgery', 'CABG ×3 on bypass (CPB 88 min). Weaned on noradrenaline + dobutamine, IABP overnight.'],
-    ['POD 1', 'Extubated 11:20. IABP and pressors off by evening; first sit 14:05.'],
-    ['POD 2', 'Drains out — standing and transferring unaided. PCA off, oral analgesia.'],
-    ['POD 3', 'All invasive lines out; walking the corridor. Trial of void passed.'],
-    ['POD 4', 'Stepped down — telemetry only. No AF at any point in the admission.'],
+    ['Door', 'de Winter OMI, troponin 8.4. <b>P2Y12 withheld</b> pending anatomy.'],
+    ['Cath', 'LAD reperfused by <b>balloon alone, no stent</b>. Door-to-balloon <b>47 min</b>.'],
+    ['Theatre', '<b>Same-day CABG x3</b> — no antiplatelet washout to wait out.'],
+    ['POD 3', '<b>Post-cardiac-injury syndrome.</b> Graft failure excluded on the day-0 ECG.'],
   ],
-  echo: 'Pre-discharge TTE: LVEF 50% (40% intra-op), grafts flowing, no pericardial effusion.',
+  echo: 'LVEF 50% (40% intra-op), all three grafts flowing. Effusion reduced, no tamponade.',
   meds: [
     ['Aspirin 75 mg', 'OD · lifelong'],
-    ['Bisoprolol 2.5 mg', 'OD · continue 12 weeks, then review'],
+    ['Bisoprolol 2.5 mg', 'OD · 12 weeks'],
     ['Atorvastatin 80 mg', 'nocte'],
     ['Ramipril 2.5 mg', 'OD · GP to titrate'],
-    ['Paracetamol 1 g', 'QDS PRN · sternal pain'],
+    // the two that exist because of POD 3 — the diagnosis leaves with him
+    ['Colchicine 500 mcg', 'BD · 3 months'],
+    ['Ibuprofen 400 mg', 'TDS · tapering, PPI cover'],
   ],
   followup: [
-    ['POD 6', 'Ward review — home if wound clean'],
-    ['Week 1', 'GP — wound check, BP, ramipril titration'],
-    ['Week 4', 'Cardiac rehabilitation programme'],
-    ['Week 6', 'Cardiothoracic clinic + repeat TTE'],
+    ['Week 2', '<b>Repeat TTE — the effusion</b>'],
+    ['Week 4', 'Cardiac rehabilitation'],
+    ['Week 6', 'Cardiothoracic clinic'],
+    ['Safety-net', '<b>Breathlessness or the pain returning -> same-day.</b>'],
   ],
-  functional: 'Independent around the ward, stairs with supervision, 120 m walked on POD 4. Sternal precautions taught and observed.',
+  functional: 'Independent, one flight of stairs supervised, 140 m on POD 6. Sternal precautions observed.',
 };
 
 // --- WATCH · the surveillance record (Panel A) --------------------------------
@@ -325,48 +337,33 @@ export const WATCH = {
       ],
       ledger: [['Out of bed', '0 m'], ['Turns', '3'], ['Walked', '—'], ['CPOT max', '3']],
       note: 'Sedated and ventilated throughout. Turned 2-hourly for pressure care. No spontaneous movement; CPOT 3 on suctioning only, settling between cares.' },
-    { pod: 1, pose: 'sitting', state: 'SITTING', sub: 'edge of bed · unaided', cpot: 4, cl: 'on movement',
-      g: 'Alert and following commands. Leaning forward, guarding the sternotomy.',
+    /* POD 3 — the earliest signal in the whole scene, and nobody charted it.
+     * Yesterday: three corridor walks. Today: none, and he will not lie flat.
+     * The camera scores CPOT by WATCHING — face, guarding, muscle tension — so
+     * it can see pleuritic pain in a patient who has not yet complained of it. */
+    { pod: 3, pose: 'sitting', state: 'GUARDING', sub: 'will not lie flat · pleuritic', cpot: 5, cl: 'on inspiration',
+      g: 'Sitting forward, both hands braced. Grimace on deep breath, not on movement.',
       log: [
-        ['16:40', 'Sat out in chair', '45 min', 'cam'],
-        ['14:05', 'First sit — edge of bed', 'unaided', 'cam'],
-        ['11:20', 'Extubated', 'spontaneous movement returns', 'cam'],
-        ['09:15', 'Obeys commands', 'grip + toe wiggle', 'cam'],
-        ['07:30', 'Sedation off — eyes open', '', 'cam'],
+        ['15:40', 'Declined corridor walk', 'physio · second refusal', 'cam'],
+        ['15:05', 'CPOT 5 on inspiration', 'grimace + bracing', 'cam'],
+        ['14:20', 'Sat forward, has not reclined since', 'relief posture', 'cam'],
+        ['11:30', 'Out of bed to chair — 4 m only', 'slowed, guarding', 'cam'],
+        ['08:15', 'Refused first walk', 'physio', 'cam'],
       ],
-      ledger: [['Out of bed', '45 m'], ['First sit', '14:05'], ['Walked', '—'], ['CPOT max', '4']],
-      note: 'Woke to command, extubated 11:20. First sat at the edge of the bed unaided at 14:05, then 45 minutes out in the chair. Guarding the sternotomy on movement; CPOT peaks at 4 on transfers.' },
-    { pod: 2, pose: 'standing', state: 'STANDING', sub: 'unaided · steady', cpot: 3, cl: 'on exertion',
-      g: 'Steady on standing, one hand on the rail. Gait slow but even.',
+      ledger: [['Out of bed', '4 m'], ['Walks', '0 · was 3'], ['Time upright', '38 min'], ['CPOT max', '5']],
+      note: 'Mobility has collapsed against yesterday: three corridor walks then, none today, 4 m to the chair and back. Sits forward and has not reclined since 14:20. CPOT peaks at 5 on inspiration rather than on movement — the pain is pleuritic, not sternal.' },
+
+    { pod: 6, pose: 'walking', state: 'INDEPENDENT', sub: 'stairs completed · unaided', cpot: 1, cl: 'at rest',
+      g: 'Upright and steady, arms free. No guarding on inspiration.',
       log: [
-        ['14:22', 'Stood, unaided', '3 min', 'cam'],
-        ['13:40', 'Walked 14 m', 'with frame', 'cam'],
-        ['11:05', 'Sat out in chair', '2h 10m', 'cam'],
-        ['09:30', 'Stood with assist', '×2', 'cam'],
-        ['08:14', 'First sit of the day', 'unaided', 'cam'],
+        ['16:10', 'Stairs with physio — one flight', 'completed, unaided', 'cam'],
+        ['13:45', 'Corridor walk 60 m', 'steady, no stops', 'cam'],
+        ['11:20', 'Reclined flat for echo', 'no relief posture', 'cam'],
+        ['09:30', 'Corridor walk 80 m', 'unaided', 'cam'],
+        ['07:50', 'Out of bed to wash', 'independent', 'cam'],
       ],
-      ledger: [['Out of bed', '4h 20m'], ['Stood', '×3'], ['Walked', '14 m'], ['CPOT max', '3']],
-      note: 'Mobilising well. Stood unaided, walked 14 m with a frame, and spent 4h 20m out of bed. Pain controlled — CPOT 3 on exertion, 1 at rest.' },
-    { pod: 3, pose: 'walking', state: 'WALKING', sub: 'corridor · unaided', cpot: 2, cl: 'on exertion',
-      g: 'Walking the corridor unaided. Slight stoop, still guarding, gait steady.',
-      log: [
-        ['15:10', 'Walked 60 m — corridor', 'unaided', 'cam'],
-        ['12:30', 'Stairs assessment', '4 steps', 'cam'],
-        ['10:00', 'Sat out in chair', '3h', 'cam'],
-        ['08:00', 'Independent transfer', 'bed → chair', 'cam'],
-      ],
-      ledger: [['Out of bed', '6h 05m'], ['Stood', '×6'], ['Walked', '60 m'], ['CPOT max', '2']],
-      note: 'Independent bed-to-chair transfers. Walked 60 m in the corridor unaided and managed 4 steps on stairs assessment. 6h 05m out of bed; pain well controlled.' },
-    { pod: 4, pose: 'walking', state: 'WALKING', sub: 'independent · 120 m', cpot: 2, cl: 'settled',
-      g: 'Independent for washing, dressing and walking. Ready for step-down.',
-      log: [
-        ['14:00', 'Walked 120 m', 'unaided', 'cam'],
-        ['11:15', 'Full stair flight', 'independent', 'cam'],
-        ['09:20', 'Washed and dressed', 'independent', 'cam'],
-        ['07:45', 'Up for breakfast', 'unaided', 'cam'],
-      ],
-      ledger: [['Out of bed', '8h 30m'], ['Stood', '×9'], ['Walked', '120 m'], ['CPOT max', '2']],
-      note: 'Independent with washing, dressing and mobility. Walked 120 m and completed a full flight of stairs. Meets mobility criteria for step-down and cardiac rehab referral.' },
+      ledger: [['Out of bed', '140 m'], ['Walks', '2 + stairs'], ['Time upright', '5 h 20 m'], ['CPOT max', '1']],
+      note: '140 m walked across two corridor walks and one flight of stairs with physio, all unaided. Lay flat for the repeat echo without adopting a relief posture — the pleuritic guarding has gone. Sternal precautions observed on every transfer.' },
   ],
 };
 

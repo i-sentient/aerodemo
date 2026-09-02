@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { RoundedBox } from '@react-three/drei'
 import { Color, DoubleSide, MathUtils, type MeshBasicMaterial, type PointLight, type Texture } from 'three'
 import { hdrCss } from '../scene/glow'
-import { angioTex, hemoTex, xrayOnTex, cathInUseTex, cathCompletedTex, standbyTex } from './cathTex'
+import { angioTex, hemoTex, xrayOnTex, cathInUseTex, cathCompletedTex, standbyTex, dtbTex } from './cathTex'
 
 // ===========================================================================
 //  CATH LAB — architecture shell + signature equipment (no patients, no story).
@@ -279,7 +279,7 @@ function CArmBase() {
 //  gone). Hemo lives on one; the other idles on standby and lights up with the
 //  completed angiogram when the sign goes green.
 // ---------------------------------------------------------------------------
-function CathMonitors({ done }: { done: boolean }) {
+function CathMonitors({ angio }: { angio: boolean }) {
   return (
     <group position={[-3.1, 0, 2.2]}>
       <mesh position={[0, 3.16, 0]}>
@@ -297,7 +297,7 @@ function CathMonitors({ done }: { done: boolean }) {
         </mesh>
       ))}
       <group position={[-0.52, 2.26, 0]} rotation-y={0.12}>
-        <Screen size={[0.92, 0.72]} tex={done ? angioTex : standbyTex} glow={done ? 1.2 : 0.6} />
+        <Screen size={[0.92, 0.72]} tex={angio ? angioTex : standbyTex} glow={angio ? 1.2 : 0.6} />
       </group>
       <group position={[0.52, 2.26, 0]} rotation-y={-0.1}>
         <Screen size={[0.92, 0.72]} tex={hemoTex} />
@@ -386,6 +386,39 @@ function CeilingBoom({ mount, yaw = 0 }: { mount: [number, number, number]; yaw?
 const CWASH_RED = new Color('#ff5a4a')
 const CWASH_GRN = new Color('#3ae08a')
 const CWASH_TMP = new Color()
+/** The door-to-balloon clock, landing UNDER the sign.
+ *
+ *  It waits out the sign's own crossfade before it arrives — the sign saying
+ *  "completed" and the number saying how fast are two statements, and stacking
+ *  them in one fade makes them a single graphic instead of a beat and its
+ *  payoff. The lag is the whole gesture: procedure over... then the clock the
+ *  ER started, stopping.
+ *
+ *  Double-faced like the sign above it, so the corridor shot and the inside
+ *  shots both read it. */
+function DtbPlate({ show }: { show: boolean }) {
+  const wait = useRef(0)
+  const fade = useRef(0)
+  const mats = useRef<(MeshBasicMaterial | null)[]>([null, null])
+  useFrame((_, dt) => {
+    // clamp dt: a mount hitch would otherwise resolve the whole hold in a frame
+    const d = Math.min(dt, 0.05)
+    wait.current = show ? Math.min(1, wait.current + d / 0.85) : 0
+    fade.current = MathUtils.damp(fade.current, show && wait.current >= 1 ? 1 : 0, 3.4, d)
+    for (const m of mats.current) if (m) m.opacity = fade.current
+  })
+  return (
+    <group position={[0, -0.35, 0]}>
+      {([[-0.075, Math.PI], [0.075, 0]] as const).map(([z, ry], i) => (
+        <mesh key={i} position={[0, 0, z]} rotation-y={ry}>
+          <planeGeometry args={[1.5, 0.25]} />
+          <meshBasicMaterial ref={(m) => { mats.current[i] = m }} map={dtbTex} color={hdrCss('#ffffff', 1.3)} toneMapped={false} transparent opacity={0} depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
 function CathSign({ done }: { done: boolean }) {
   const fade = useRef(0)
   const redMats = useRef<(MeshBasicMaterial | null)[]>([null, null])
@@ -417,6 +450,7 @@ function CathSign({ done }: { done: boolean }) {
           </mesh>
         </group>
       ))}
+      <DtbPlate show={done} />
       <pointLight ref={(l) => { washes.current[0] = l }} position={[0, -0.15, -0.9]} intensity={2.2} distance={3.4} decay={2} color={CWASH_RED} />
       <pointLight ref={(l) => { washes.current[1] = l }} position={[0, -0.15, 0.9]} intensity={2.6} distance={3.8} decay={2} color={CWASH_RED} />
     </group>
@@ -604,7 +638,7 @@ function CathCrashCart() {
 //  lab, a long desk of monitors + keyboards, PC tower, printer, seated docs.
 //  The wall display across the lab faces straight at this window.
 // ---------------------------------------------------------------------------
-function ConsoleRoom({ done, glass }: { done: boolean; glass: boolean }) {
+function ConsoleRoom({ angio, glass }: { angio: boolean; glass: boolean }) {
   return (
     <group>
       {/* shell — a proper enclosed console box (opaque walls, facing in) */}
@@ -641,7 +675,7 @@ function ConsoleRoom({ done, glass }: { done: boolean; glass: boolean }) {
       {/* two desk monitors, screens toward the docs — the middle stays open so
           the long shot keeps a clear line to the patient. The right one is the
           review station: standby through the run, the angiogram after. */}
-      {([[-1.35, 0.12, hemoTex, 1.0], [0.85, -0.1, done ? angioTex : standbyTex, done ? 1.2 : 0.7]] as const).map(([x, ryy, tx, glow], i) => (
+      {([[-1.35, 0.12, hemoTex, 1.0], [0.85, -0.1, angio ? angioTex : standbyTex, angio ? 1.2 : 0.7]] as const).map(([x, ryy, tx, glow], i) => (
         <group key={i} position={[x as number, 1.32, -6.15]} rotation-y={ryy as number}>
           <RoundedBox args={[0.68, 0.42, 0.05]} radius={0.02} smoothness={2}><meshStandardMaterial color={DARK_BEZEL} metalness={0.4} roughness={0.45} /></RoundedBox>
           <mesh position={[0, 0, -0.03]} rotation-y={Math.PI}><planeGeometry args={[0.62, 0.36]} /><meshBasicMaterial map={tx as Texture} toneMapped={false} color={hdrCss('#ffffff', glow as number)} /></mesh>
@@ -700,14 +734,20 @@ function ConsoleRoom({ done, glass }: { done: boolean; glass: boolean }) {
   )
 }
 
-export function CathLab({ done = false, glass = false }: { done?: boolean; glass?: boolean } = {}) {
+// `done` and `angio` are two beats, not one flag. `done` ends the PROCEDURE —
+// the sign goes green, the X-ray plate dies, and the door-to-balloon clock the
+// ER started finally stops. `angio` is the next chapter arriving: the images
+// that will reveal the other two vessels and set up PTCA-vs-CABG. Landing them
+// together made the clock a detail on the same frame as the images, when it is
+// the payoff of three scenes and deserves the room to itself.
+export function CathLab({ done = false, angio = false, glass = false }: { done?: boolean; angio?: boolean; glass?: boolean } = {}) {
   return (
     <group>
       <Room />
       <AngioTable />
       <CArm />
       <CArmBase />
-      <CathMonitors done={done} />
+      <CathMonitors angio={angio} />
       {/* one service boom reaching in over the table */}
       <CeilingBoom mount={[3.9, H, -0.9]} yaw={Math.PI} />
       <CathBackTable pos={[-1.0, 0, 2.6]} ry={0.4 + Math.PI / 2} />
@@ -717,7 +757,7 @@ export function CathLab({ done = false, glass = false }: { done?: boolean; glass
       <XRayPlate done={done} />
       <CathSign done={done} />
       <CorridorSide />
-      <ConsoleRoom done={done} glass={glass} />
+      <ConsoleRoom angio={angio} glass={glass} />
       {/* the case in progress — patient on the table, operator + tech at the
           bedside, and a scrub arranging instruments at the back table */}
       <CathPatient />

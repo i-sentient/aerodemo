@@ -5,6 +5,11 @@
    ICU when Panel B docks (the inline `right` is set per step in WardHud.tsx).
    Display-only — the whole layer is pointer-events:none so orbiting still works.
    ============================================================ */
+/* NOT zoomed. This element's own geometry IS the layout: its `right` animates
+   to make room for the agent dock, and under zoom that inset resolves in zoomed
+   units, so the right edge stops short of the dock and leaves a white band down
+   the middle of the ward. Content scaling has to happen INSIDE a box, never on
+   a box that is positioning itself against something else. */
 .ward-hud{position:fixed;top:0;left:0;bottom:0;right:0;z-index:4;overflow:hidden;
   pointer-events:none;transition:right 1s cubic-bezier(.65,0,.35,1);
   font-family:"JetBrains Mono",ui-monospace,Consolas,"SF Mono",Menlo,monospace;color:#16494b}

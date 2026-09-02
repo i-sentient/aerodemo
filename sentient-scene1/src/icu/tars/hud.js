@@ -1,10 +1,11 @@
 import { beds, bedById } from './ontology.js';
 import { state, isPostopWorld, onModeChange, setMode } from './state.js';
 import { lerp } from './utils.js';
-import { HOOKUP, POD0, TRENDS, SCOPE_DETAIL, CONTROLS, MEASURED, WAVE_NUM, WATCH, PODS } from './postop.js';
+import { HOOKUP, POD0, TRENDS, SCOPE_DETAIL, CONTROLS, MEASURED, WAVE_NUM, WATCH, PODS, podByDay, podsUpTo } from './postop.js';
 import { makeMiniScope, makeTrend, WAVES } from './waveforms.js';
 import { makeWatchCam } from './watchcam.js';
 import { emrNavigate } from './apps.js';
+import { ecgAt, ecgPatternForBed } from '../ontology/ecg';
 
 let root, floorLayer, patientLayer, wipe, ecgCv, ecgX;
 let lsamRevealAt = 0, lsamShown = 0;
@@ -60,8 +61,11 @@ const TPL = `
       <div class="vit"><span>TEMP</span><b id="p_temp">--</b><i>°C</i></div>
     </div>
     <div class="tele tr" id="devRail"></div>
+    <!-- the .lsam class is only a CSS hook and keeps its old name; the LABEL is
+         iSAM's, because NEWS2 and deterioration are things a reasoner produces
+         and PLEXUS does not speak. -->
     <div class="tele bl lsam">
-      <div class="tk">L<b>Sam</b> TRAJECTORY · <span id="p_lstatus" class="st">ANALYZING</span></div>
+      <div class="tk">i<b>SAM</b> TRAJECTORY · <span id="p_lstatus" class="st">ANALYZING</span></div>
       <div class="lrow"><div><span>NEWS2</span><b id="p_news">…</b></div><div><span>DETERIORATION</span><b id="p_prob">…</b></div></div>
       <div class="lbar"><i id="p_bar"></i></div>
       <div class="verdict" id="p_verdict">computing…</div>
@@ -112,7 +116,11 @@ function railRender(ping) {
   const head = settingUp ? 'CONNECTED DEVICES · POD 0' : established ? 'CONNECTED · BEDSIDE ESTABLISHED' : `BEDSIDE · POD ${podDay}`;
   const count = podDay === 0 ? `${live.size} / ${HOOKUP.length}` : `${live.size} live`;
   rail.innerHTML = `<div class="tk">${head}<span class="hk-count">${count}</span></div>`
-    + (on.length ? on.map((d) => `<div class="kv hk-row${d.marker === ping ? ' hk-new' : ''}" data-dev="${d.key}"><span><i class="hk-led"></i>${d.label}</span><b>${d.short}</b></div>`).join('') : '<div class="kv hk-empty">establishing…</div>');
+    // an empty rail means two opposite things: on POD 0 nothing is connected YET,
+    // on POD 6 nothing is connected any more — and the second one is the payoff,
+    // so it must not read as a system still waiting to come up.
+    + (on.length ? on.map((d) => `<div class="kv hk-row${d.marker === ping ? ' hk-new' : ''}" data-dev="${d.key}"><span><i class="hk-led"></i>${d.label}</span><b>${d.short}</b></div>`).join('')
+      : podDay > 0 ? '<div class="kv hk-empty">nothing attached · unmonitored</div>' : '<div class="kv hk-empty">establishing…</div>');
   window.dispatchEvent(new CustomEvent('hud:markers', { detail: { keys: marks, ping: ping || null } }));
 }
 function hookupRail(n) {  // beat 0 path: the first n devices are on
@@ -133,15 +141,19 @@ function hookupRemove(keys) {
 // the previous day stays, that day's devices come off, the vitals land where
 // the weaning left them, and WATCH switches to that day's record.
 function setPod(day) {
-  podDay = Math.max(0, Math.min(PODS.length - 1, day | 0));
+  // podDay is a DAY, not an index. It used to be clamped to PODS.length - 1,
+  // which was the same number back when the days were 0,1,2,3,4 — with 0,3,6 that
+  // clamp silently turned POD 3 into POD 2 and lost the day entirely. Snap to a
+  // day that exists instead.
+  podDay = podByDay(day).pod;
   live.clear();
   const gone = new Set();
-  for (let i = 0; i <= podDay; i++) (PODS[i].off || []).forEach((k) => gone.add(k));
+  podsUpTo(podDay).forEach((p) => (p.off || []).forEach((k) => gone.add(k)));
   HOOKUP.forEach((d) => { if (!gone.has(d.key)) live.add(d.key); });
   // move the BASELINE too, not just the reading — ontology's random walk clamps
   // to b.base (the admission OMI numbers), so assigning vitals alone gets
   // dragged straight back to HR 118.
-  const v = PODS[podDay].vitals;
+  const v = podByDay(podDay).vitals;
   const b = bedById(state.focusId);
   if (b && v) { Object.assign(b.vitals, v); Object.assign(b.base, v); }
   railRender(null);
@@ -149,6 +161,10 @@ function setPod(day) {
   if (root && root.classList.contains('win-watch')) renderWatch();
   if (root && root.classList.contains('win-scope')) { scopeView = 'overview'; scopeDev = null; renderScope(); }
   window.dispatchEvent(new CustomEvent('hud:pod:changed', { detail: { day: podDay } })); // Panel C notes
+  /* ...and out to the host. POD 0 and POD 3 are the SAME view from outside this
+   * iframe — the day turns in here, on a beat — so without this the navigation
+   * bar could only ever know the day you JUMPED to, never the one you walked to. */
+  try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'icu:pod', day: podDay, chapter: state.chapter }, '*'); } catch { /* not framed */ }
 }
 export function currentPod() { return podDay; }
 
@@ -157,7 +173,7 @@ export function currentPod() { return podDay; }
 // than things popping out of existence in front of you.
 let dbEl = null, dbTimers = [];
 function dayBreak(day) {
-  const p = PODS[Math.max(0, Math.min(PODS.length - 1, day | 0))];
+  const p = podByDay(day);
   dbTimers.forEach(clearTimeout); dbTimers = [];
   if (!dbEl) {
     dbEl = document.createElement('div'); dbEl.className = 'daybreak';
@@ -204,8 +220,9 @@ function setWindow(w) {
 // literally what a pose model emits). Each day's log is what TARS quotes into
 // that POD's progress note — which the clinician then assesses, examines
 // against, and turns into recovery orders.
+// watchDay is a POD NUMBER, not an index into WATCH.days — the days are 0, 3, 6.
 let watchDay = 0, watchCam = null, watchClock = 0;
-const wDay = () => WATCH.days[watchDay] || WATCH.days[0];
+const wDay = () => WATCH.days.find((x) => x.pod === watchDay) || WATCH.days[0];
 // 24 h movement density, derived from the log's own timestamps — a logged event
 // makes its hour tall, the hours either side lift a little. The point of the
 // strip is that the record is CONTINUOUS: quiet hours are still observed hours.
@@ -254,7 +271,7 @@ function renderWatch() {
       <div class="wt-led">${d.ledger.map(([l, vv]) => `<div class="wt-li"><span>${l}</span><em>${vv}</em></div>`).join('')}</div></div>
     <div class="wt-card wt-gest"><div class="wt-h">GESTALT<span class="wt-src">camera-scored</span></div><div class="wt-g">${d.g}</div></div>
     <button class="wt-note" id="wtNote">→ feeds the POD ${d.pod} progress note</button>
-    <div class="wt-days">${WATCH.days.map((x, i) => `<button data-day="${i}"${i === watchDay ? ' class="on"' : ''}>POD ${x.pod}</button>`).join('')}</div>`;
+    <div class="wt-days">${WATCH.days.map((x) => `<button data-day="${x.pod}"${x.pod === watchDay ? ' class="on"' : ''}>POD ${x.pod}</button>`).join('')}</div>`;
 
   const cv = el.querySelector('#wtCanvas');
   watchCam = makeWatchCam(cv); watchCam.setPose(d.pose); watchCam.start();
@@ -264,7 +281,7 @@ function renderWatch() {
   el.querySelectorAll('[data-day]').forEach((b) => (b.onclick = () => { watchDay = +b.dataset.day; renderWatch(); }));
   el.querySelector('#wtNote').onclick = () => emrNavigate('notes'); // the record it writes into
 }
-window.addEventListener('hud:watch:day', (e) => { const n = e.detail && e.detail.day; if (n == null) return; watchDay = Math.max(0, Math.min(WATCH.days.length - 1, n)); if (root && root.classList.contains('win-watch')) renderWatch(); });
+window.addEventListener('hud:watch:day', (e) => { const n = e.detail && e.detail.day; if (n == null) return; watchDay = (WATCH.days.find((x) => x.pod === (n | 0)) || WATCH.days[0]).pod; if (root && root.classList.contains('win-watch')) renderWatch(); });
 const scOn = (k) => live.has(k); // still attached to the patient?
 
 // A LANE is the monitor grammar: the trace runs the full width with its own
@@ -294,40 +311,66 @@ const ventLine = () => { const v = dset('vent'); return `${v.mode} · FiO₂ ${v
 const pumpShort = () => { const p = dset('pumps'); return `norad ${fmt(p.norad, 2)} · dob ${fmt(p.dobut, 1)}`; };
 const bandLabel = (v) => (CONTROLS.warm.bands.find((b) => b.v === v) || {}).label || '—';
 
+/* What is NOT attached is not drawn.
+ *
+ * These tiles used to render greyed (.sc-off) for every device in HOOKUP whether
+ * or not it was on the patient, so POD 3 showed a ventilator, a balloon pump and
+ * four infusions that had all come out days earlier — a dimmed machine still
+ * reads as a machine that is there. Recovery is things LEAVING, and the panel
+ * should empty as they go.
+ *
+ * Tiles drop whole when their device is gone; the infusions grid and the chip
+ * row drop when nothing in them is left; and TELEMETRY's arterial and CVP lanes
+ * drop individually, because the monitor outlives both of them. */
 function scopeOverviewHTML() {
-  const off = (k) => (scOn(k) ? '' : ' sc-off');
   const v = dset('vent'), ib = dset('iabp');
-  return `
-    <div class="sc-hd"><span class="sc-t">SCOPE</span><span class="sc-sub">POD 0 · h1</span><span class="sc-ok">IN LIMITS</span></div>
-    <div class="sc-scroll">
-      <div class="sc-tile${off('monitor')}">
+  const t = [];
+
+  if (scOn('monitor')) t.push(`
+      <div class="sc-tile">
         <div class="sc-th">TELEMETRY<span class="sc-set">5-lead · sinus, paced backup</span></div>
         <div class="sc-click" data-open="monitor">${scLane('ecg', 40)}${scLane('pleth', 30)}</div>
-        <div class="sc-click${off('art')}" data-open="art">${scLane('abp', 30)}</div>
-        <div class="sc-click${off('cvc')}" data-open="cvc">${scLane('cvp', 26)}</div>
-      </div>
-      <div class="sc-tile${off('vent')}">
+        ${scOn('art') ? `<div class="sc-click" data-open="art">${scLane('abp', 30)}</div>` : ''}
+        ${scOn('cvc') ? `<div class="sc-click" data-open="cvc">${scLane('cvp', 26)}</div>` : ''}
+      </div>`);
+
+  if (scOn('vent')) t.push(`
+      <div class="sc-tile">
         <div class="sc-th">VENTILATOR<span class="sc-set">${v.mode}</span></div>
         <div class="sc-click" data-open="vent">${scLane('vent', 30)}${scLane('capno', 26)}</div>
         ${scChips([['FiO₂', v.fio2 + '%'], ['PEEP', v.peep], ['Vt', v.tv], ['f', v.rate]])}
-        <button class="sc-chip" data-open="ett">ET tube · ${POD0.ett.size} at ${POD0.ett.depth} cm · cuff ${POD0.ett.cuff}</button>
-      </div>
-      <div class="sc-tile${off('iabp')}">
+        ${scOn('ett') ? `<button class="sc-chip" data-open="ett">ET tube · ${POD0.ett.size} at ${POD0.ett.depth} cm · cuff ${POD0.ett.cuff}</button>` : ''}
+      </div>`);
+
+  if (scOn('iabp')) t.push(`
+      <div class="sc-tile">
         <div class="sc-th">IABP<span class="sc-set">${ib.ratio} · ${ib.trigger} trigger</span></div>
         <div class="sc-click" data-open="iabp">${scLane('iabp', 30)}</div>
         ${scChips([['Aug', ib.aug + '%'], ['Unassist', '96'], ['Assist EDP', '48']])}
-      </div>
+      </div>`);
+
+  const io = ['pumps', 'drains', 'ucath', 'warm'].filter(scOn);
+  if (io.length) t.push(`
       <div class="sc-tile">
         <div class="sc-th">INFUSIONS &amp; OUTPUTS<span class="sc-set">last 6 h</span></div>
         <div class="sc-grid">
-          ${['pumps', 'drains', 'ucath', 'warm'].map((k) => { const d = HOOKUP.find((x) => x.key === k); const cv = k === 'pumps' ? pumpShort() : d.short; return `<button class="sc-cell${off(k)}" data-open="${k}"><span class="sc-cl">${d.label}</span><b class="sc-cv">${cv}</b><canvas class="sc-trend" data-trend="${k}"></canvas></button>`; }).join('')}
+          ${io.map((k) => { const d = HOOKUP.find((x) => x.key === k); const cv = k === 'pumps' ? pumpShort() : d.short; return `<button class="sc-cell" data-open="${k}"><span class="sc-cl">${d.label}</span><b class="sc-cv">${cv}</b><canvas class="sc-trend" data-trend="${k}"></canvas></button>`; }).join('')}
         </div>
-      </div>
+      </div>`);
+
+  const chips = [['flowtron', 'Flowtron · cycling'], ['suction', 'Suction · standby']].filter(([k]) => scOn(k));
+  if (chips.length) t.push(`
       <div class="sc-chips">
-        <button class="sc-chip${off('flowtron')}" data-open="flowtron">Flowtron · cycling</button>
-        <button class="sc-chip${off('suction')}" data-open="suction">Suction · standby</button>
-      </div>
-    </div>`;
+        ${chips.map(([k, lb]) => `<button class="sc-chip" data-open="${k}">${lb}</button>`).join('')}
+      </div>`);
+
+  // the header said "POD 0 · h1" on every day, including the ones where nothing
+  // in the panel below it was from POD 0
+  const sub = podDay === 0 ? 'POD 0 · h1' : `POD ${podDay}`;
+  const body = t.length ? t.join('') : '<div class="pw-empty">nothing attached · unmonitored</div>';
+  return `
+    <div class="sc-hd"><span class="sc-t">SCOPE</span><span class="sc-sub">${sub}</span><span class="sc-ok">IN LIMITS</span></div>
+    <div class="sc-scroll">${body}</div>`;
 }
 function scopeDetailHTML(key) {
   const d = HOOKUP.find((x) => x.key === key); if (!d) return scopeOverviewHTML();
@@ -509,6 +552,49 @@ function renderScope() {
 // ---- connected-devices rail (top-right): every machine wired to this patient.
 // Chapter-aware: pre-cath is a quiet room; post-cath the pumps + site checks
 // light up. Timers tick live (see devTick).
+// Heparin is an ORDER, not a fixture. It was drawn in the ER and TARS said
+// there it needed a clinician — so it is absent from the rail until one signs,
+// and the list visibly GAINS a device the moment somebody presses APPROVE.
+// That is the ER's promise being collected on, in the only place it can be.
+let heparinOn = false;
+function startHeparin() {
+  heparinOn = true;
+  const rail = root && root.querySelector('#devRail');
+  if (rail) rail.innerHTML = devRailHTML();
+  pushAcuteMarkers('lac'); // the infusion starts: ping the cannula it runs through
+}
+/* ── the acute bedside, as DATA ──────────────────────────────────────────────
+   What is actually on him before the lab. Each entry knows where it sits on the
+   body, so the device rail and the twin's glow markers are one list read twice
+   rather than two lists maintained in parallel — which is exactly how the ECG
+   ended up drawn three different ways earlier in this act.
+
+   `markers` empty means the thing is in the bay, not on the patient: defib pads
+   on standby and a bed alarm are real devices with no anatomy. */
+const ACUTE_DEVICES = [
+  { label: 'MONITOR · 5-LEAD', value: 'continuous · ST-seg on', markers: ['chestR', 'chestL'] },
+  { label: 'O₂ · NASAL', value: '4 L/min · FiO₂ 28%', markers: ['face'] },
+  { label: 'IV · NS 0.9%', value: '80 mL/hr · 18G L-AC', markers: ['lac'] },
+  // the heparin runs through the SAME cannula — it pings that site rather than
+  // lighting a new one, because no new hole was made in him
+  { label: 'PUMP · HEPARIN', value: '1000 u/hr', markers: ['lac'], onlyWhenHeparin: true },
+  { label: 'NIBP', value: null, id: 'd_nibp', markers: ['rarm'] }, // value is a live timer
+  { label: 'DEFIB PADS', value: 'STANDBY', markers: [] },
+  { label: 'BED', value: 'EXIT-ALARM ON', markers: [] },
+];
+const acuteLive = () => ACUTE_DEVICES.filter((d) => !d.onlyWhenHeparin || heparinOn);
+function acuteRailRows() {
+  return acuteLive().map((d) => `<div class="kv"><span>${d.label}</span><b${d.id ? ` id="${d.id}"` : ''}>${d.value === null ? `q5m · next ${mmss(dev.nibp)}` : d.value}</b></div>`).join('');
+}
+/** Light the acute markers on the twin. Same event the postop hookup uses, so
+ *  Scene 4's twelve read as an escalation of something already established
+ *  rather than a mechanism appearing out of nowhere. */
+function pushAcuteMarkers(ping) {
+  if (isPostopWorld() || state.chapter === 'continued') return; // postop drives its own; post-cath shows the vascular layer
+  const keys = acuteLive().flatMap((d) => d.markers);
+  window.dispatchEvent(new CustomEvent('hud:markers', { detail: { keys, ping: ping || null } }));
+}
+
 const dev = { nibpEvery: 300, nibp: 300, hep: 3 * 3600 + 40 * 60, gtn: 5 * 3600 + 5 * 60, tr: 32 * 60, urine: 45, uAcc: 0 };
 const mmss = (t) => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
 const hm = (t) => Math.floor(t / 3600) + 'h ' + String(Math.floor((t % 3600) / 60)).padStart(2, '0') + 'm';
@@ -517,12 +603,13 @@ function devRailHTML() {
   if (isPostopWorld()) {
     // boot empty — the rail fills as Panel B connects each device. The stepdown
     // chapter reuses this shell for one frame only: its opening beat fires the
-    // POD-4 day-break, whose setPod rebuilds the rail at "telemetry only".
+    // POD-6 day-break, whose setPod rebuilds the rail at "nothing attached".
     podDay = 0; live.clear(); hkActive = true; feedOn.clear();
     return `<div class="tk">CONNECTED DEVICES · POD 0<span class="hk-count">0 / ${HOOKUP.length}</span></div><div class="kv hk-empty">establishing…</div>`;
   }
   if (state.chapter === 'continued') return `
       <div class="tk">CONNECTED DEVICES · LIVE</div>
+      <div class="kv"><span>MONITOR · 5-LEAD</span><b>continuous · ST-seg on</b></div>
       <div class="kv"><span>O₂ · NASAL</span><b>2 L/min · weaning</b></div>
       <div class="kv"><span>PUMP · HEPARIN</span><b id="d_hep">1000 u/hr · ${hm(dev.hep)}</b></div>
       <div class="kv"><span>PUMP · GTN</span><b id="d_gtn">25 µg/min · ${hm(dev.gtn)}</b></div>
@@ -532,13 +619,12 @@ function devRailHTML() {
       <div class="kv"><span>NIBP</span><b id="d_nibp">q15m · next ${mmss(dev.nibp)}</b></div>
       <div class="kv"><span>DEFIB PADS</span><b>STANDBY</b></div>
       <div class="kv"><span>BED</span><b>EXIT-ALARM ON</b></div>`;
+  // MONITOR leads: it is the most important thing attached to him, and
+  // ST-segment monitoring is what you run on an ACS patient waiting for a lab —
+  // the system is still watching the thing iSAM found.
   return `
       <div class="tk">CONNECTED DEVICES · LIVE</div>
-      <div class="kv"><span>O₂ · NASAL</span><b>4 L/min · FiO₂ 28%</b></div>
-      <div class="kv"><span>IV · NS 0.9%</span><b>80 mL/hr · 18G L-AC</b></div>
-      <div class="kv"><span>NIBP</span><b id="d_nibp">q5m · next ${mmss(dev.nibp)}</b></div>
-      <div class="kv"><span>DEFIB PADS</span><b>STANDBY</b></div>
-      <div class="kv"><span>BED</span><b>EXIT-ALARM ON</b></div>`;
+      ${acuteRailRows()}`;
 }
 let devAcc = 0;
 function devTick(dt) {
@@ -556,17 +642,6 @@ function devTick(dt) {
   }
 }
 
-function ecgSample(p, type) {
-  let y = 0;
-  if (p < 0.12) y = Math.sin(p / 0.12 * Math.PI) * 0.08;
-  else if (p < 0.18) y = -0.05;
-  else if (p < 0.2) y = -0.18;
-  else if (p < 0.23) y = 1.0;
-  else if (p < 0.26) y = -0.32;
-  else if (p < 0.46) y = type === 'critical' ? 0.34 : 0.02;
-  else if (p < 0.62) y = Math.sin((p - 0.46) / 0.16 * Math.PI) * (type === 'critical' ? 0.42 : 0.26);
-  return y + (Math.random() - 0.5) * 0.015;
-}
 function fitCanvas(cv, ctx) {
   const w = cv.clientWidth, h = cv.clientHeight; if (!w || !h) return null;
   const pw = Math.round(w * DPR); if (cv.width !== pw) { cv.width = pw; cv.height = Math.round(h * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); }
@@ -577,9 +652,15 @@ function drawEcg(dt) {
   const dim = fitCanvas(ecgCv, ecgX); if (!dim) return;
   // hookup gate: before the monitor connects, the strip is just noisy flatline
   const flat = hkActive && !feedOn.has('ecg');
+  // acuity still picks the COLOUR — red for critical is right either way — but
+  // the morphology comes off the bed, not the alarm level. Except in the
+  // post-op world, where the DAY can override it. POD 3 is the whole reason:
+  // its argument is a waveform shape, so the strip has to be drawing pericarditis
+  // while iSAM is describing pericarditis.
   const type = b.patient.acuity, hr = b.vitals.hr;
+  const pat = (isPostopWorld() && podByDay(podDay).ecg) || ecgPatternForBed(b);
   const n = Math.max(1, Math.round(dt * ECG_SPEED));
-  for (let i = 0; i < n; i++) { beatPhase = (beatPhase + (hr / 60) / ECG_SPEED) % 1; ecgBuf.push(flat ? (Math.random() - 0.5) * 0.03 : ecgSample(beatPhase, type)); }
+  for (let i = 0; i < n; i++) { beatPhase = (beatPhase + (hr / 60) / ECG_SPEED) % 1; ecgBuf.push(flat ? (Math.random() - 0.5) * 0.03 : ecgAt(beatPhase, pat) + (Math.random() - 0.5) * 0.015); }
   const maxN = Math.ceil(dim.w / ECG_GAP) + 2; while (ecgBuf.length > maxN) ecgBuf.shift();
   ecgX.clearRect(0, 0, dim.w, dim.h); const mid = dim.h * 0.55, amp = dim.h * 0.4;
   ecgX.strokeStyle = flat ? 'rgba(130,160,170,0.55)' : type === 'critical' ? '#ff6a64' : type === 'watch' ? '#ffc14a' : '#5fe6c4';
@@ -627,7 +708,16 @@ export function initHud(hostSel) {
   ecgCv = root.querySelector('#hudEcg'); ecgX = ecgCv.getContext('2d');
 
   root.querySelectorAll('.rrow').forEach((el) => (el.onclick = () => setMode('patient', el.dataset.bed)));
+  heparinOn = false; // a fresh mount starts before anyone has signed
   const rail = root.querySelector('#devRail'); if (rail) rail.innerHTML = devRailHTML();
+  /* Cutting STRAIGHT into Step-Down (the bar's POD 6 pill) has to look like POD 6
+   * on the first frame. The rail's post-op shell always boots at POD 0 —
+   * "CONNECTED DEVICES · POD 0 · establishing…" — because normally you arrive
+   * here having walked the hookup, and the chapter's opening beat fires the
+   * day-break that corrects it. Jumped into cold, that beat has not run yet, so
+   * you land on a POD-0 bedside for a patient who is going home. Seed it. */
+  if (state.chapter === 'stepdown') setPod(6);
+  pushAcuteMarkers();
 
   // Scene 4 · hookup wiring: chat beats drive connects (hud:hookup); hovering
   // a rail row or a glowing body marker surfaces the compact device card.
@@ -637,6 +727,7 @@ export function initHud(hostSel) {
   });
   window.addEventListener('hud:hookup:remove', (e) => hookupRemove((e.detail || {}).keys));
   window.addEventListener('hud:pod', (e) => setPod((e.detail || {}).day));
+  window.addEventListener('hud:heparin', () => startHeparin());
   window.addEventListener('hud:hookup:reset', () => {
     hookupReset();
     if (root.classList.contains('win-scope')) { scopeView = 'overview'; scopeDev = null; renderScope(); }
@@ -645,7 +736,14 @@ export function initHud(hostSel) {
   window.addEventListener('hud:scope:open', (e) => {
     const mk = e.detail && e.detail.marker;
     const dev = HOOKUP.find((d) => live.has(d.key) && d.marker === mk);
-    if (dev) { scopeView = 'detail'; scopeDev = dev.key; setWindow('scope'); }
+    if (!dev) return;
+    // The hover card has to go with the twin it belonged to. Opening SCOPE
+    // replaces the canvas the markers live on, so no further pointermove ever
+    // reaches it and the null-hover that dismisses the card never fires — it
+    // sat pinned over the feed until you went back and hovered a marker again.
+    // (hideCard is declared below; this runs on an event, long after.)
+    hideCard();
+    scopeView = 'detail'; scopeDev = dev.key; setWindow('scope');
   });
   // card lives on #hud (root) — a positioned, full-size layer — so it sits
   // BESIDE the cursor/marker (patientLayer collapses to ~0 height, which was
@@ -694,7 +792,7 @@ export function initHud(hostSel) {
   if (tabs) {
     if (!isPostopWorld()) tabs.style.display = 'none';
     // the tab always lands on the overview — markers are the detail entry
-    tabs.querySelectorAll('button').forEach((b) => (b.onclick = () => { scopeView = 'overview'; scopeDev = null; setWindow(b.dataset.w); }));
+    tabs.querySelectorAll('button').forEach((b) => (b.onclick = () => { hideCard(); scopeView = 'overview'; scopeDev = null; setWindow(b.dataset.w); }));
   }
 
   // the trajectory block (iSAM's) only appears when the story summons it

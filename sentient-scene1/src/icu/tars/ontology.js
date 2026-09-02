@@ -45,12 +45,16 @@ function medsFor(id) {
   return m.map((r) => ({ drug: r[0], dose: r[1], route: r[2], schedule: r[3], status: r[4] }));
 }
 function labsFor(id) {
+  // "(on arrival)" is provenance, not decoration: these came in with the
+  // patient as admission bloods. Unlabelled, the panel read as though an agent
+  // had ordered a lactate off-screen — the repeat, which an agent DOES order,
+  // is added at the gate (apps.js → agentOrderTroponin).
   if (id === 'ICU-04') return [
     { test: 'Troponin I', value: 'pending', ref: '<0.04 ng/mL', flag: '', status: 'ordered' },
-    { test: 'Lactate', value: '2.1', ref: '0.5–1.6 mmol/L', flag: 'high', status: 'resulted' }];
+    { test: 'Lactate (on arrival)', value: '2.1', ref: '0.5–1.6 mmol/L', flag: 'high', status: 'resulted' }];
   if (id === 'ICU-08') return [
     { test: 'Troponin I', value: 'pending', ref: '<0.04 ng/mL', flag: '', status: 'ordered' },
-    { test: 'Lactate', value: '2.4', ref: '0.5–1.6 mmol/L', flag: 'high', status: 'resulted' }];
+    { test: 'Lactate (on arrival)', value: '2.4', ref: '0.5–1.6 mmol/L', flag: 'high', status: 'resulted' }];
   if (id === 'ICU-02') return [
     { test: 'CRP', value: '88', ref: '<5 mg/L', flag: 'high', status: 'resulted' },
     { test: 'ABG pCO₂', value: '6.9', ref: '4.7–6.0 kPa', flag: 'high', status: 'resulted' }];
@@ -67,7 +71,9 @@ function mk(id, pos, rot, acuity, p, v, t, cardiac = false) {
     vitals: { ...v, conf: 0.97 },
     traj: { news2: t.news2, trend: t.trend, detProb: t.prob, lsam: t.lsam, verdict: t.verdict },
     base: { ...v },
-    alerts: acuity === 'critical' ? [{ severity: 'red', reason: 'ST-elevation + troponin trend', status: 'active' }]
+    // the reason has to know WHICH critical patient it is looking at: ICU-04 is
+    // septic shock, ICU-08 is an OMI with no ST elevation anywhere on the trace.
+    alerts: acuity === 'critical' ? [{ severity: 'red', reason: cardiac ? 'de Winter pattern · anterior OMI' : 'Lactate rising · NEWS2 escalating', status: 'active' }]
       : acuity === 'watch' ? [{ severity: 'amber', reason: 'NEWS2 rising', status: 'active' }] : [],
     meds: medsFor(id), labs: labsFor(id), orders: [],
   };

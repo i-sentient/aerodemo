@@ -258,7 +258,10 @@ body.theme-dark #stage.floor-mode{background:radial-gradient(1200px 900px at 50%
 .tbl th{text-align:left;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:700;padding:9px 15px;border-bottom:1px solid var(--line-2)}
 .tbl td{padding:10px 15px;border-bottom:1px solid var(--line-2);position:relative;color:var(--ink)}
 .tbl tr:last-child td{border-bottom:none}.tbl .dim{color:var(--ink-3)}
-.s-due{color:var(--amberD);font-weight:700}.s-given,.s-done{color:var(--greenD);font-weight:700}.s-low{color:var(--redD);font-weight:700}
+.s-due{color:var(--amberD);font-weight:700}
+/* HELD is a decision someone made, not a dose someone missed — reads as a
+   deliberate hold (blue) rather than an overdue task (amber). */
+.s-held{color:var(--blue,#3a5fb0);font-weight:700}.s-given,.s-done{color:var(--greenD);font-weight:700}.s-low{color:var(--redD);font-weight:700}
 .pillbadge{font-size:9px;font-weight:800;letter-spacing:.06em;padding:3px 7px;border-radius:7px;text-transform:uppercase}
 .b-auto{background:rgba(55,180,106,.18);color:var(--greenD)}.b-flag{background:rgba(226,75,74,.18);color:var(--redD)}.b-ok{background:rgba(93,202,165,.2);color:var(--tealD)}
 @keyframes flashG{0%{background:rgba(106,166,255,0)}25%{background:rgba(106,166,255,.34)}100%{background:rgba(106,166,255,0)}}
@@ -268,12 +271,32 @@ body.theme-dark #stage.floor-mode{background:radial-gradient(1200px 900px at 50%
 .lis-order{margin:14px 15px;display:flex;gap:9px}
 .lis-order button{cursor:pointer;border:none;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;background:linear-gradient(150deg,#5dcaa5,#2faa83);color:#06281f;box-shadow:var(--shadow-sm)}
 .lis-order button:disabled{background:rgba(255,255,255,.1);color:var(--ink-3);cursor:default}
-.pacs{margin:15px;border-radius:12px;background:#05080c;height:200px;position:relative;overflow:hidden;border:1px solid var(--line)}
+/* 200 -> 300: the vessel tree was fitting to a short frame, so a coronary
+   run came out stubby. Taller frame + longer vessels (renderPACS) reads as an
+   angiogram rather than a diagram of one. */
+.pacs{margin:15px;border-radius:12px;background:#05080c;height:300px;position:relative;overflow:hidden;border:1px solid var(--line)}
 .pacs .scan{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#5dcaa5,transparent);animation:scanp 2.4s linear infinite}
 @keyframes scanp{0%{top:0}100%{top:100%}}
 .pacs .lbl{position:absolute;top:10px;left:12px;color:#5dcaa5;font-size:10px;letter-spacing:.1em;font-family:var(--mono)}
 .pacs .lbl2{position:absolute;bottom:10px;right:12px;color:#6b7886;font-size:9px;font-family:var(--mono)}
 .pacs svg{position:absolute;inset:0;width:100%;height:100%}
+
+/* The serial comparison. Two panes of the SAME height stacked on one column, so
+   the two tracings sit on a shared vertical scale and the eye can run straight
+   down from one QRS to the other — side by side would put them on two baselines
+   and lose the whole point. Both panes reuse .pacs's own lbl/scan/svg rules by
+   inheriting the class, and only the geometry changes here. */
+.pacs2{margin:15px;display:flex;flex-direction:column;gap:9px}
+.p2u{border-radius:12px;background:#05080c;height:132px;position:relative;overflow:hidden;border:1px solid var(--line)}
+.p2u .scan{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#5dcaa5,transparent);animation:scanp 2.4s linear infinite}
+.p2u .lbl{position:absolute;top:9px;left:12px;color:#5dcaa5;font-size:9.5px;letter-spacing:.1em;font-family:var(--mono);z-index:2}
+.p2u .lbl2{position:absolute;bottom:8px;right:12px;color:#6b7886;font-size:9px;font-family:var(--mono);z-index:2}
+.p2u svg{position:absolute;left:0;right:0;top:30px;bottom:26px;width:100%;height:auto}
+/* day 0 is DIM and today is live — the past is reference, not a second finding */
+.p2u:first-child{opacity:.82}
+.mk{color:#8fb6c9;border-bottom:1px solid rgba(143,182,201,.5)}
+.p2f{padding:9px 12px;border-radius:10px;background:rgba(226,75,74,.07);border:1px solid rgba(226,75,74,.22);
+  font-size:10.5px;line-height:1.45;color:rgba(255,255,255,.8)}
 
 /* ---- EMR (glass) ---- */
 .emr{display:flex;flex-direction:column;height:100%;animation:rise .3s ease both}
@@ -313,7 +336,10 @@ body.theme-dark #stage.floor-mode{background:radial-gradient(1200px 900px at 50%
 .emr-body{flex:1;overflow-y:auto;padding:14px 16px;position:relative}
 .emr-body::-webkit-scrollbar{width:7px}.emr-body::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:8px}
 /* Case history — collapsible one-liners (click a heading to expand) */
-.case .case-item{border-bottom:1px solid var(--line-2)}
+/* position:relative so .agent-caret (position:absolute) anchors to the ROW an
+   agent is pointing at. Without it the caret resolves against .emr-body and
+   parks at the top-right of the panel whichever line is focused. */
+.case .case-item{position:relative;border-bottom:1px solid var(--line-2)}
 .case .case-item:last-child{border-bottom:0}
 .case .case-k{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 4px;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer}
 .case .case-k:hover{color:var(--blue)}
@@ -835,19 +861,34 @@ body.panela-only:not(.with-c) #panelC{display:none}
 /* &panelc=1 — A + C, still no B: display:none children leave no track, so the
    two live panels take the two columns in DOM order */
 body.panela-only.with-c #panels{grid-template-columns:minmax(0,1fr) minmax(0,540px)}
-/* The PLEXUS interface is read from across a room, not from a desk, so its
-   TYPE runs a third larger — the readouts, the device rail, the tabs, the
-   record. The 3D stage is deliberately NOT in that list: zooming the body
-   changed the canvas's box, so the scene re-framed and the twin grew with the
-   text instead of staying the picture it was composed as.
+/* ===== READ-FROM-THE-ROOM TYPE =========================================
+   Every panel is read from across a room, not from a desk, so its TYPE runs a
+   third larger — the readouts, the device rail, the tabs, the chat, the record.
+   This started life scoped to body.panela-only (the PLEXUS interface beat) and
+   is now unconditional, because the same three panels appear all through the
+   deck — the ER's TARS frame, pre-cath, post-cath, every post-op day — and a
+   presentation that is legible in one scene and not the next is worse than one
+   that is uniformly small.
+
+   WHAT IS DELIBERATELY NOT ZOOMED: the 3D stage. Zooming the body changed the
+   canvas's box, so the scene re-framed and the twin grew with the text instead
+   of staying the picture it was composed as. #stage and #c stay at 1; #hud and
+   .stage-hd — the chrome drawn OVER the scene — go up with everything else.
 
    #hud keeps its inset:0 and needs no size compensation: percentages inside a
    zoomed element already resolve in the zoomed space, so inset:0 still covers
    the stage exactly while everything drawn inside it lays out in a third less
    room and renders a third larger. (Measured, not assumed — sizing it to
-   1/1.33 "to compensate" made it 75% of the stage.) Panel C's 440px track is
+   1/1.33 "to compensate" made it 75% of the stage.) Panel C's track is
    untouched for the same reason: the record reads larger without the column
-   moving. */
-body.panela-only #topbar{zoom:1.33}
-body.panela-only #panelC{zoom:1.33}
-body.panela-only #hud{zoom:1.33}
+   moving, and the same now goes for Panel B's split percentages. */
+#topbar{zoom:1.33}
+#hud{zoom:1.33}
+.stage-hd{zoom:1.33}
+#panelC{zoom:1.33}
+/* #panelB is NOT in that list, and the reason is worth keeping: it is a grid
+   track in the three-split and an inset:0 child in the ward dock, so zooming it
+   changes how much room its contents believe they have — the chat re-wrapped and
+   the pre-cath split moved. Everything above is chrome sitting inside a box
+   somebody else sized; Panel B is the box. If its TYPE needs to be bigger, that
+   is a type change in panelb.css, not a zoom on the container. */

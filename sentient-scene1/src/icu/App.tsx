@@ -146,6 +146,16 @@ function ViewFraming({ cover }: { cover: number }) {
 // Landing on it fades out and hands control to the TARS ICU app (onEnterICU).
 export function WardApp({ onEnterICU }: { onEnterICU: () => void }) {
   const [step, setStep] = useState(0)
+  // Bed 8 does not go green because the beat opened — it goes green on iSAM's
+  // sentence, three lines in. Held here rather than derived from `step` because
+  // the cue is a line landing, which only the panel knows about.
+  const [bed8Flagged, setBed8Flagged] = useState(false)
+  useEffect(() => {
+    const on = () => setBed8Flagged(true)
+    window.addEventListener('ward:flagBed8', on)
+    return () => window.removeEventListener('ward:flagBed8', on)
+  }, [])
+  useEffect(() => { if (step < 2) setBed8Flagged(false) }, [step]) // so a replay replays
   const [leaving, setLeaving] = useState(false)
   const [chatFrac, setChatFrac] = useState(0.3) // chat width ↔ camera lens-shift, drag-adjustable
   // global light/dark — shared with the TARS phase via tars/state.js, so a
@@ -163,10 +173,21 @@ export function WardApp({ onEnterICU }: { onEnterICU: () => void }) {
   // presentation control: Space / → advance a beat (← / Backspace go back). The
   // final → (at LAST) dives straight into Chandrababu's Patient Hub — one
   // continuous keyboard flow, no separate roster click.
+  // Panel B raises this whenever a clinical gate opens or closes. The ward hides
+  // the panel's own foot and steps from THESE arrow keys, so without it → walked
+  // straight past an unsigned sign-off — the one promise the gate exists to make.
+  // Forward only: ← must still work, or a mis-step traps the room on the gate.
+  const gatedRef = useRef(false)
+  useEffect(() => {
+    const onGate = (e: Event) => { gatedRef.current = !!(e as CustomEvent).detail?.gated }
+    window.addEventListener('tars:gate', onGate)
+    return () => window.removeEventListener('tars:gate', onGate)
+  }, [])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowRight') {
         e.preventDefault()
+        if (gatedRef.current) return // awaiting sign-off — A approves, → does not
         if (stepRef.current >= LAST) setLeaving(true) // dive in
         else setStep((s) => Math.min(s + 1, LAST))
       } else if (e.code === 'ArrowLeft' || e.code === 'Backspace') {
@@ -235,7 +256,7 @@ export function WardApp({ onEnterICU }: { onEnterICU: () => void }) {
           <CameraRig step={shotStep} />
           <ViewFraming cover={step >= 2 ? chatFrac : 0} />
           <SceneEnvironment orb={false} dark={isDark} />
-          <Building step={shotStep} />
+          <Building step={shotStep} flagged={bed8Flagged} />
           <Postprocessing />
         </Canvas>
       </div>

@@ -381,14 +381,26 @@ function boardTexture() {
   x.fillStyle = '#eef2f4'; x.fillRect(0, 0, 512, 320)
   x.strokeStyle = '#9aa4ac'; x.lineWidth = 10; x.strokeRect(5, 5, 502, 310)
   x.fillStyle = '#1d2a33'; x.font = 'bold 36px ui-sans-serif, system-ui, sans-serif'
-  x.fillText('OR-1 · CABG ×3', 30, 62)
-  x.font = '27px ui-sans-serif, system-ui, sans-serif'
-  x.fillText('CHANDRABABU · ICU-08', 30, 112)
-  x.fillText('LIMA→LAD · SVG ×2', 30, 152)
-  x.fillStyle = '#b8402e'; x.fillText('COUNTS: OK', 30, 200)
-  x.fillStyle = '#2d6a4f'; x.fillText('PERFUSION: PRIMED', 30, 240)
-  x.fillStyle = '#5a6870'; x.font = '22px ui-monospace, monospace'
-  x.fillText('BLOOD: 2u PRBC READY', 30, 284)
+  x.fillText('OR-1 · CABG ×3', 30, 58)
+  x.font = '26px ui-sans-serif, system-ui, sans-serif'
+  x.fillText('CHANDRABABU · ICU-08', 30, 104)
+  x.font = '24px ui-sans-serif, system-ui, sans-serif'
+  x.fillText('LIMA→LAD · SVG→OM · SVG→PDA', 30, 142)
+  // The line that explains why this board exists TODAY. He reached theatre on
+  // the same admission because the lab took the culprit with a balloon and no
+  // stent, so no P2Y12 was ever loaded and there was no 3-5 day washout to wait
+  // out. A cardiac OR board would absolutely carry that — it is the reason the
+  // slot could be booked.
+  x.fillStyle = '#1f6f5c'; x.font = 'bold 23px ui-sans-serif, system-ui, sans-serif'
+  x.fillText('NO DAPT · NO WASHOUT · SAME DAY', 30, 186)
+  // OK in red read as an alarm; green is what "checked and fine" looks like
+  x.fillStyle = '#2d6a4f'; x.font = '26px ui-sans-serif, system-ui, sans-serif'
+  x.fillText('COUNTS: OK', 30, 228)
+  x.fillText('PERFUSION: PRIMED', 30, 264)
+  // 4 units, matching the pre-op set the clinician signed in the Hub
+  // ("cross-match 4u") — the board used to say 2 and contradict the order
+  x.fillStyle = '#5a6870'; x.font = '21px ui-monospace, monospace'
+  x.fillText('BLOOD: 4u PRBC CROSS-MATCHED', 30, 300)
   return tex(cv)
 }
 function WhiteBoard() {
@@ -749,19 +761,9 @@ export function ORScene({ onFinish }: { onFinish?: () => void } = {}) {
         />
         <Postprocessing dark />
       </Canvas>
-
-      <div
-        style={{
-          position: 'absolute', top: 16, left: 16,
-          font: '700 13px ui-sans-serif, system-ui, sans-serif', letterSpacing: 1,
-          color: '#cfe0ee', background: 'rgba(12,18,26,0.55)',
-          border: '1px solid rgba(120,160,200,0.3)', borderRadius: 10, padding: '6px 12px',
-          backdropFilter: 'blur(8px)',
-        }}
-      >
-        OPERATING THEATRE · OR-1{' '}
-        <span style={{ color: '#7f9bb2', fontWeight: 500 }}>· drag to orbit · Space/→ presets</span>
-      </div>
+      {/* same scaffold badge the cath lab carried, removed for the same reason:
+          it named the room the audience is standing in and advertised the dev
+          controls underneath it */}
     </div>
   )
 }

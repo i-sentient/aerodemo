@@ -177,7 +177,7 @@ const lerpMat = (m: any, color: string, emissive: string, ei: number, f: number)
 //  steps: <2 occupied · 2 flagged(green) · 3 violet orb grows→blink · 4 orb
 //         shrinks→brown blink · 5 clean(blue) · 6 red orb + red halo in ·
 //         7 red orb → dummy patient solidifies. border + edges follow colour.
-function HeroBed({ position, rotationY, step }: { position: Vec3; rotationY: number; step: number }) {
+function HeroBed({ position, rotationY, step, flagged }: { position: Vec3; rotationY: number; step: number; flagged?: boolean }) {
   const baseMat = useRef<any>(null)
   const headMat = useRef<any>(null)
   const mattMat = useRef<any>(null)
@@ -215,7 +215,7 @@ function HeroBed({ position, rotationY, step }: { position: Vec3; rotationY: num
     let fill: string = REST
     let mark: string = REST_EDGE
     let blink = false
-    if (step === 2) { fill = GREEN; mark = GREEN }
+    if (step === 2) { if (flagged) { fill = GREEN; mark = GREEN } }
     else if (step === 3) { fill = GREEN; mark = GREEN; blink = grown }
     else if (step === 4) { const c = shrunk ? BROWN : GREEN; fill = c; mark = c; blink = true }
     else if (step === 5) { fill = BLUE; mark = BLUE }
@@ -342,7 +342,7 @@ function HeroBed({ position, rotationY, step }: { position: Vec3; rotationY: num
 }
 
 // ===========================================================================
-export function Building({ step = 0 }: { step?: number }) {
+export function Building({ step = 0, flagged = false }: { step?: number; flagged?: boolean }) {
   return (
     <group>
       <AeroFloor />
@@ -354,7 +354,7 @@ export function Building({ step = 0 }: { step?: number }) {
       </mesh>
       {BED_SLOTS.map((s) =>
         s.index === HERO ? (
-          <HeroBed key={s.index} position={s.position} rotationY={s.rotationY} step={step} />
+          <HeroBed key={s.index} position={s.position} rotationY={s.rotationY} step={step} flagged={flagged} />
         ) : (
           <ICUBed key={s.index} position={s.position} rotationY={s.rotationY} label={`Bed ${s.index + 1}`} />
         ),

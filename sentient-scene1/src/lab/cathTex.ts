@@ -111,7 +111,7 @@ export const angioTex = make(720, 720, (c) => {
   c.fillStyle = '#c8d4de'
   c.fillText('CHANDRABABU · ICU-08', 22, h - 46)
   c.fillStyle = '#9fb0bd'
-  c.fillText('ANT OMI · DIAGNOSTIC', 22, h - 22)
+  c.fillText('ANT OMI · LAD POBA · TIMI 3 · NO STENT', 22, h - 22)
   c.textAlign = 'right'
   c.fillText('DAP 42 Gy·cm²', w - 22, 34)
   c.fillText('CINE', w - 22, 58)
@@ -238,6 +238,34 @@ export const cathCompletedTex = make(512, 128, (c) => {
   c.shadowColor = '#34d058'
   c.shadowBlur = 18
   c.fillText('CATH-1 · COMPLETED', 256, 68)
+})
+
+// --- the clock TARS started at the ER doors, stopping ------------------------
+//  Door-to-balloon is a real recorded cath-lab metric, which is what earns this
+//  a place in a room where the system is otherwise not the protagonist: it is
+//  not our interface intruding on the angio suite, it is the number this room
+//  already keeps, kept by the thing that started it three scenes ago.
+//  Wide and short so it reads as a strip UNDER the sign rather than a second
+//  sign competing with it.
+export const dtbTex = make(768, 128, (c) => {
+  c.fillStyle = 'rgba(4,14,9,0.92)'
+  roundRect(c, 4, 4, 760, 120, 14); c.fill()
+  c.strokeStyle = 'rgba(90,255,150,.34)'; c.lineWidth = 3
+  roundRect(c, 4, 4, 760, 120, 14); c.stroke()
+  c.textBaseline = 'middle'
+  // the label small and quiet on the left...
+  c.textAlign = 'left'
+  c.font = '600 26px ui-monospace, SFMono-Regular, monospace'
+  c.fillStyle = 'rgba(150,230,180,.72)'
+  c.letterSpacing = '4px'
+  c.fillText('DOOR-TO-BALLOON', 34, 64)
+  // ...the number big on the right, because the number is the point
+  c.textAlign = 'right'
+  c.font = 'bold 62px ui-monospace, SFMono-Regular, monospace'
+  c.fillStyle = '#4ade80'
+  c.shadowColor = '#34d058'; c.shadowBlur = 20
+  c.fillText('47 MIN', 730, 62)
+  c.shadowBlur = 0
 })
 
 // --- quiet idle screen for the in-room displays (the angio lives elsewhere) --

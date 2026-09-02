@@ -9,13 +9,31 @@
 // ============================================================================
 import type { EcgStripData } from './types'
 
-export type EcgPattern = 'sinus' | 'deWinter' | 'stemi' | 'oldInferior'
+export type EcgPattern = 'sinus' | 'deWinter' | 'stemi' | 'oldInferior' | 'pericarditis'
 
 const gauss = (t: number, c: number, w: number, a: number): number =>
   a * Math.exp(-((t - c) ** 2) / (2 * w * w))
 
-/** One heartbeat over normalized phase t ∈ [0,1). */
-function beat(t: number, pattern: EcgPattern): number {
+/** Which morphology a bed's monitor draws.
+ *
+ *  Read off the ontology's own `cardiac` flag, never off acuity. The ward holds
+ *  two critical patients and only one of them is an infarct — Okonkwo is in
+ *  septic shock — so an acuity switch drew a STEMI on both of them, and drew it
+ *  on the one man in the building we have spent the whole act establishing does
+ *  NOT have ST elevation. Two live monitors used to carry their own copy of that
+ *  switch; both now come through here.
+ *
+ *  Post-PCI morphology is deliberately not modelled: that belongs to the POD
+ *  arc, which is being rebuilt separately. */
+export function ecgPatternForBed(bed?: { cardiac?: boolean } | null): EcgPattern {
+  return bed && bed.cardiac ? 'deWinter' : 'sinus'
+}
+
+/** One heartbeat over normalized phase t ∈ [0,1).
+ *  The single source for every ECG on screen — baked strips call it in a loop,
+ *  live monitors sample it per frame. Noise-free by design: `makeEcgStrip` bakes
+ *  textures and needs determinism, so the animated callers add their own. */
+export function ecgAt(t: number, pattern: EcgPattern): number {
   // A healed infarct rewrites the QRS itself, not just the ST segment, so this
   // one cannot share the complex below — dead muscle generates no depolarising
   // vector, which is why the Q goes deep and wide and the R never recovers.
@@ -49,6 +67,17 @@ function beat(t: number, pattern: EcgPattern): number {
     // upsloping ST depression at the J-point + tall symmetric T
     if (t > 0.4 && t < 0.56) v += -0.1 + (t - 0.4) * 0.5
     v += gauss(t, 0.64, 0.055, 0.62) // tall T
+  } else if (pattern === 'pericarditis') {
+    // POST-CARDIAC-INJURY SYNDROME (POD 3). Two signs, and the first one is the
+    // one that matters: PR DEPRESSION — the segment between the P wave and the
+    // QRS sits BELOW baseline. An infarct does not do that. It is what lets this
+    // be told apart from the graft failure it otherwise looks like.
+    if (t > 0.20 && t < 0.29) v += -0.055
+    // ...and a CONCAVE ST elevation, modest, and the same in every territory.
+    // A STEMI's is convex and regional; this dishes upward into the T and would
+    // look identical in leads that share no blood supply.
+    if (t > 0.40 && t < 0.60) { const u = (t - 0.40) / 0.20; v += 0.12 - 0.04 * Math.sin(Math.PI * u) }
+    v += gauss(t, 0.66, 0.05, 0.26)
   } else {
     // STEMI — ST elevation plateau then T
     if (t > 0.4 && t < 0.6) v += 0.28
@@ -64,7 +93,7 @@ export function makeEcgStrip(
 ): number[] {
   const out: number[] = []
   for (let b = 0; b < beats; b++) {
-    for (let i = 0; i < perBeat; i++) out.push(beat(i / perBeat, pattern))
+    for (let i = 0; i < perBeat; i++) out.push(ecgAt(i / perBeat, pattern))
   }
   return out
 }

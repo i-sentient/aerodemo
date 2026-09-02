@@ -36,9 +36,13 @@ export type WardOrder = {
   label: string
   detail: string
   autonomy: 'autonomous' | 'gated'
+  /** a side effect, named rather than passed — chat.js resolves it (EFFECTS) */
+  effect?: 'heparin'
 }
 export type WardLine =
-  | { who: string; html: string; status?: string; orders?: never }
+  /** `effect` fires when the line LANDS, not when the beat starts — the whole
+   *  point is that the floor changes on the sentence that explains it. */
+  | { who: string; html: string; status?: string; effect?: 'flagBed8'; orders?: never }
   | { orders: WardOrder[]; who?: never; html?: never; status?: never }
 
 export const WARD_BEATS: Record<number, WardLine[]> = {
@@ -59,6 +63,10 @@ export const WARD_BEATS: Record<number, WardLine[]> = {
     {
       who: 'isam',
       status: 'scoring step-down eligibility',
+      // the bed goes green on THIS sentence. It used to turn the instant the
+      // beat opened, ~3.2 s before iSAM said why — the floor answering a
+      // question nobody had asked yet.
+      effect: 'flagBed8',
       html: `Bed 8 — <b>Jagan Mohan</b>. Off pressors, NEWS2 2 and falling, lactate normalised. <span class="em">Step-down eligible.</span>`,
     },
   ],
@@ -111,15 +119,21 @@ export const WARD_BEATS: Record<number, WardLine[]> = {
       status: 'reading the pre-hospital ECG',
       html: `Pre-hospital twelve-lead is through — <b style="color:var(--redD)">front-wall OMI · de Winter pattern.</b> No ST elevation in any territory.`,
     },
+    // the ward's OWN job. Pre-warning the lab and paging Mensah both already
+    // happened in the ER — repeating them here made the cath lab climb its
+    // ladder twice. What a ward actually does with an inbound is receive him.
     {
       orders: [
-        { label: 'Pre-warn cath lab', detail: 'Operational · door-to-balloon clock', autonomy: 'autonomous' },
-        { label: 'Page interventional cardiology', detail: 'Dr. Mensah · on call · operational', autonomy: 'autonomous' },
+        { label: 'Route to Bed 8', detail: 'Bed management · operational', autonomy: 'autonomous' },
+        { label: 'Cardiac monitor to the bay', detail: 'Equipment · 5-lead + defib standby', autonomy: 'autonomous' },
+        { label: 'Notify receiving nurse', detail: 'N. Adeyemi · operational', autonomy: 'autonomous' },
       ],
     },
   ],
 
-  // state 7 — arrival
+  // state 7 — arrival. The loading doses are NOT ordered here: the Patient Hub
+  // already gates ticagrelor + heparin together right after the verdict, with a
+  // nurse step behind it. Ordering heparin twice was the duplicate.
   7: [
     {
       who: 'tars',

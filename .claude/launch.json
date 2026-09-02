@@ -65,6 +65,26 @@
       "port": 5500
     },
     {
+      "//": "Spawns the deck on its real port. The url-only entry above can only",
+      "//2": "ATTACH, so when 5500 is dead there was no way to bring it back --",
+      "//3": "and `npm run dev` with no flag silently took Vite's default 5173,",
+      "//4": "which is why the deck kept looking offline while it was running.",
+      "//5": "The dev script now pins --port 5500 --strictPort, so this cannot",
+      "//6": "drift again and a clash fails loudly instead of moving ports.",
+      "name": "presentationAlpha-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/xmaiselphx/presentationAlpha",
+        "run",
+        "dev"
+      ],
+      "//7": "url must be the bare origin -- the deck's base is /presentationAlpha/,",
+      "//8": "so navigate there after the preview opens.",
+      "port": 5500,
+      "url": "http://localhost:5500/"
+    },
+    {
       "name": "presentationAlpha-view",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

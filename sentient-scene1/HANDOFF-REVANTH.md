@@ -1,102 +1,113 @@
-# Handoff — Revanth
+# Scene 1 — handoff
 
-Two asset-heavy jobs on the ICU app. Everything below lives in `sentient-scene1/`
-(one app, port 5210, branch `peela`). Run it with:
+Referenced from `src/icu/tars/apps.js`. Everything you need to run the demo and
+do the imaging work is here.
+
+---
+
+## 1 · Running it
+
+The presentation is **two repos, two dev servers**. You need both — Scene 1 is
+embedded in the deck by iframe, and it is roughly a third of the runtime.
 
 ```bash
-npm --prefix sentient-scene1 run dev        # http://localhost:5210
+# terminal 1 — the deck
+git clone git@github.com:i-sentient/presentationAlpha.git
+cd presentationAlpha && git checkout demo1-new && npm install && npm run dev   # → :5500
+
+# terminal 2 — Scene 1 (this repo)
+git clone git@github.com:i-sentient/aerodemo.git
+cd aerodemo/sentient-scene1 && git checkout peela && npm install && npm run dev -- --port 5210 --strictPort
 ```
 
-Direct test URLs for the ICU panel (skip the tower ride):
+Then open **`http://localhost:5500/presentationAlpha/`**.
 
-- `http://localhost:5210/icu.html?chapter=workup` → Scene 2 (ward tour → press `→` through it → TARS patient hub, **skeleton** body)
-- `http://localhost:5210/icu.html?chapter=continued` → Scene 3 (opens straight on the patient, **vascular** body)
-- Theme toggle = sun/moon button, top-right of the top bar. Light is default; the X-ray look mainly targets **dark**.
-- HMR is flaky in this app — hard-reload (Cmd+Shift+R) before trusting what you see.
-- When done: `npm --prefix sentient-scene1 run typecheck` and keep the browser console clean.
+> **The trailing path is not optional.** The deck sets `base: '/presentationAlpha/'`,
+> so bare `localhost:5500` returns a 302 with an empty body. It looks like the
+> server is down. It isn't.
+
+Scene 1 also runs standalone at `http://localhost:5210/` if you only want to work
+on it. It behaves identically; it just isn't wrapped in the deck.
+
+### Driving it
+
+| key | what it does |
+|---|---|
+| `→` `←` | next / previous beat |
+| `` ` `` | open the **navigation bar** — every stop in the deck *and* every stop inside Scene 1, one strip |
+| `Esc` | close the bar |
+
+The bar is how you get anywhere without walking the whole deck. Click `PRE-CATH`,
+`POST-CATH`, `POD 3` and so on. It works from inside Scene 1 too — the scene takes
+the keyboard by itself, and forwards those two keys back out.
+
+`?s=N` on the deck URL also jumps straight to section N.
 
 ---
 
-## Job 1 — X-ray body for the rotating patient figure (Panel A)
+## 2 · Your job — the PACS viewer
 
-**Goal:** the axial-rotate figure should read like a backlit X-ray of a *person* —
-a translucent flesh silhouette (bright at the edges, nearly invisible face-on)
-with the glowing skeleton/vessels inside, cold blue-violet on the dark stage.
-Reference image is with Yeshwanth (black background, blue-violet skeleton inside
-a ghosted body envelope).
+`renderPACS()` in **`src/icu/tars/apps.js`**. It has four branches. Two want real
+imagery. **Two do not — read this before you touch them.**
 
-### What's missing: the body envelope mesh
+### Replace these two — they are placeholder SVG sketches
 
-We only ship three system meshes — there is **no skin/body mesh**:
+| branch | reached from | what it must show |
+|---|---|---|
+| `state.chapter === 'continued'` | nav bar → **POST-CATH** | Coronary angiogram, **post-POBA**. Culprit proximal LAD reperfused by balloon, TIMI 3, **no stent deployed**. Residual: LCx 75% at a large OM, RCA 60% mid-vessel. Cine or a still is fine. |
+| `pacsView === 'echo'` | nav bar → **POD 3**, beat 6 | TTE, subcostal. Small **circumferential pericardial effusion, 8 mm**. No RV collapse, no respiratory variation — i.e. visibly *not* tamponade. |
 
-```
-src/icu/tars/assets/skeleton/overview-skeleton.glb   (3.3 MB)
-src/icu/tars/assets/systems/vascular.glb             (1.1 MB)
-src/icu/tars/assets/systems/nervous.glb              (3.2 MB)
-```
+The angiogram is the one that matters most: it is on screen while iSAM assembles
+the CABG decision, and it is the most-looked-at frame in the deck.
 
-**Export from the Blender scene** (the same scene the skeleton came from):
+If you have the CT angio as DICOM, convert to JPEG/PNG and drop it in
+`src/icu/tars/assets/` — Vite fingerprints anything imported from there.
 
-- Outer **skin surface only** — no organs, eyes, teeth
-- Same pose/origin/scale as the skeleton export — don't move anything, just export the skin
-- Decimate hard: ~30–80k tris is plenty for a smooth surface; target ≤ 2 MB
-- Draco is fine (decoder ships at `public/draco/`)
-- No materials needed — the app shaders it
-- Save to: `src/icu/tars/assets/systems/body.glb`
+### Do NOT replace these two — they are generated, on purpose
 
-### Integration points (`src/icu/tars/`)
+| branch | why |
+|---|---|
+| default (pre-cath 12-lead) | Drawn by `ecgPolyline()` from `src/icu/ontology/ecg.ts` — **the same generator that draws the live monitor strips**. Swapping in a picture makes the PACS tracing and the bedside monitor disagree, on the one patient whose entire diagnosis is a subtle ECG morphology. |
+| `pacsView === 'ecg2up'` (POD 3 two-up) | Same generator, day-0 vs today. The whole POD 3 argument is that the inferior Q waves are on **both** tracings. A hand-drawn or photographed pair breaks that proof. |
 
-- **`scene.js`**
-  - `SYSTEM_URLS` / `ensureLayer(name, cb)` — how layers stream in. The envelope
-    should be an **always-on wrap around whichever system layer is active**, not a
-    fourth toggle layer (the toggle UI was removed; defaults are per chapter:
-    `workup` = skeletal, `continued` = vascular, chosen off `state.chapter`).
-  - `robustPlace(root, 1.72)` height-normalizes every GLB, and there's per-layer
-    calibration for cross-source drift — registration should land close; nudge if
-    it's a hair off.
-  - `makeFigureFromGLTF(...)` assigns materials per-mesh. Vascular meshes matching
-    `/atrium|ventricl|heart|cardi|aort/i` get `userData.isHeart` + go into
-    `fig.heartMeshes` — **clicking the heart is the zoom control** (`heartHit()`
-    raycasts only `heartMeshes`, so the envelope won't interfere as long as you
-    don't add it to that array).
-- **`xray.js`** — the fresnel materials live here (`makeClinicalXrayMaterial` is
-  the closest starting point: alpha rises at grazing angles). The envelope wants a
-  new "skin" variant: near-zero alpha face-on, bright rim at the silhouette,
-  additive on dark.
-- **Theme:** `applySceneTheme(dark)` in `scene.js` swaps scene backgrounds/fog/
-  grounds off the global toggle (`body.theme-dark`). Give the envelope a light-mode
-  tuning too (see how the existing clinical material handles the light stage) so it
-  doesn't wash out in the default theme.
+If an ECG looks wrong, fix the **morphology** in `ontology/ecg.ts` and every
+surface that draws it — PACS, both live monitors, the ER card — updates together.
 
 ---
 
-## Job 2 — Real angiogram in PACS (Panel C)
+## 3 · The bits worth knowing before you edit
 
-**Goal:** the PACS app should show actual angiography imagery instead of the
-current inline-SVG placeholders.
+**`public/scenes.json` is a contract.** It lists Scene 1's fourteen stops and is
+read by *two* consumers: this app imports it, and the deck fetches it over HTTP
+from `:5210`. Add or rename a stop there and both sides pick it up — the deck
+re-reads it every time the nav bar opens. Do not keep a second copy anywhere.
 
-- **The one function:** `renderPACS()` in `src/icu/tars/apps.js`. It returns an
-  HTML string per chapter:
-  - `workup` → currently a fake 12-lead ECG polyline
-  - `continued` → currently a sketched coronary-tree SVG
-- **Story note (important):** for `continued`, the imagery must show the
-  **diagnostic angiogram with the blockages** — multi-vessel disease (think
-  proximal LAD ~90%, LCx ~75%, RCA ~60%). **Not** a stented/TIMI-3 result: the
-  story beat is "blocks found → PTCA vs CABG decision pending." A short cine loop
-  (muted, autoplaying `.mp4`/`.webm`) looks best in the viewer.
-- **Assets:** drop files under `sentient-scene1/public/pacs/` and reference them as
-  `/pacs/…`. Videos need `muted autoplay loop playsinline`.
-- The app re-renders on every `openApp('pacs')` call (the story auto-navigates to
-  PACS via `emrNavigate('imaging', …)`), so the markup must be stateless — it can
-  be torn down and rebuilt at any time.
-- Keep the `shell('pacs', …)` wrapper and the `.pacs` frame styling
-  (`src/icu/tars/styles.css`) or restyle within it. PACS is deliberately dark in
-  both themes — imaging viewers are dark IRL; keep it that way.
+**Don't touch the cross-frame messages** unless you mean to. Deck ⇄ Scene 1 ⇄ the
+ICU app talk over `postMessage`: `deck:jump`, `scene1:scenes`, `icu:mode`,
+`icu:pod`, `er:play`, `scenebar:toggle` / `scenebar:close`, `icu:ready`. They are
+what make the nav bar track where you are. Breaking one fails quietly — the bar
+just stops following.
+
+**The ICU app is nested twice** in some chapters: deck → Scene 1 → `icu.html`.
+That is why bar keys post to `window.top` rather than `window.parent`.
+
+**Dead clicks and frozen state** usually mean a failed Vite hot update, not a bug.
+Hard-reload before you debug.
 
 ---
 
-## Don't touch
+## 4 · The story, so the imagery matches it
 
-- `src/icu/tars/chat.js` (the story scripts/beats) — Yeshwanth iterates these.
-- Camera rigs/shots in `scene.js` and the host transitions in `src/App.tsx` —
-  ping Yeshwanth first if something seems to need a change.
+One patient. 58, diabetic, smoker. Chest pain forty minutes.
+
+1. It is an **OMI, not a STEMI** — ST segments *depressed*, a de Winter pattern.
+2. iSAM **holds the ticagrelor** because he may need surgery.
+3. The lab opens the LAD with a **balloon, no stent** — so no DAPT is committed.
+4. No stent + no P2Y12 = **no washout** → CABG ×3 the *same day*.
+5. POD 3 he spikes a fever that looks like graft failure. The **day-0 twelve-lead**
+   proves the Q waves are old → Dressler's, not a graft. He never goes back.
+6. **Six days**, door to staircase.
+
+The angiogram you supply is the evidence for step 3, and the echo is the evidence
+for step 5. Both should read as *unremarkable findings that rule something out* —
+that is the point of them.
