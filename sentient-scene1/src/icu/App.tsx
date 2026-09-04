@@ -1,0 +1,283 @@
+import { useEffect, useRef, useState } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { OrbitControls } from '@react-three/drei'
+import { MathUtils, NoToneMapping } from 'three'
+import { SceneEnvironment } from './scene/Environment'
+import { Building } from './scene/Building'
+import { Postprocessing } from './scene/Postprocessing'
+import { WardAgentPanel } from './WardAgentPanel'
+import { WardRoster } from './WardRoster'
+import { WardHud } from './WardHud'
+// @ts-ignore — plain-JS tars module, no type declarations
+import { state as tarsState, onThemeChange } from './tars/state.js'
+
+// ---------------------------------------------------------------------------
+//  ICU — floorplan view. Free orbit to inspect the room; Space / → snaps the
+//  camera to the next presentation shot (← / Backspace to go back), then hands
+//  control back so you can keep dragging. No timeline / cards / graph yet.
+// ---------------------------------------------------------------------------
+
+type Shot = { pos: [number, number, number]; look: [number, number, number] }
+const SHOTS: Shot[] = [
+  { pos: [0, 17, -17], look: [0, 0.5, 3] },        // 0 · establishing — high, wide, whole ring
+  { pos: [0, 4.6, -14.5], look: [0, 1.1, 3.8] },   // 1 · working — low, down the room
+  { pos: [0, 23, -3], look: [0, 0.3, 3] },         // 2 · bird's-eye scan — TARS surveys the ward
+  { pos: [-1.5, 3.89, -3.92], look: [5.09, 0.6, -2.19] }, // 3 · hero 3/4 — captured angle
+  { pos: [0, 23, -13], look: [0, 0.3, 3] },        // 4 · ring overview — whole 8-bed ring, centred (Panel C step)
+]
+// camera arc mapped to the beats (steps 0 & 1 swapped: open low, then pull high):
+//   0 working (low) · 1 establish (high) · 2 bird's-eye · 3-8 lifecycle → hero · 9 workspace → ring overview
+const STEP_SHOT = [1, 0, 2, 3, 3, 3, 3, 3, 3, 4]
+const N_BEATS = STEP_SHOT.length
+
+// camera rig: OrbitControls for free look, but a Space/→ beat tweens to a shot
+// and only then releases control back to the user.
+function CameraRig({ step }: { step: number }) {
+  const { camera } = useThree()
+  const controls = useRef<any>(null)
+  const goal = useRef(SHOTS[0])
+  const transit = useRef(false)
+
+  useEffect(() => {
+    goal.current = SHOTS[STEP_SHOT[Math.min(step, STEP_SHOT.length - 1)]]
+    transit.current = true
+    if (controls.current) controls.current.enabled = false
+  }, [step])
+
+  useFrame((_, dt) => {
+    if (!transit.current || !controls.current) return
+    const g = goal.current
+    const k = 2.0
+    camera.position.x = MathUtils.damp(camera.position.x, g.pos[0], k, dt)
+    camera.position.y = MathUtils.damp(camera.position.y, g.pos[1], k, dt)
+    camera.position.z = MathUtils.damp(camera.position.z, g.pos[2], k, dt)
+    const t = controls.current.target
+    t.x = MathUtils.damp(t.x, g.look[0], k, dt)
+    t.y = MathUtils.damp(t.y, g.look[1], k, dt)
+    t.z = MathUtils.damp(t.z, g.look[2], k, dt)
+    controls.current.update()
+    const dp = Math.hypot(
+      camera.position.x - g.pos[0],
+      camera.position.y - g.pos[1],
+      camera.position.z - g.pos[2],
+    )
+    if (dp < 0.06) {
+      transit.current = false
+      controls.current.enabled = true // hand control back to the user
+    }
+  })
+
+  // DEV: press "P" to capture the current camera as a ready-to-paste SHOT line.
+  // Orbit to the angle you want, hit P — the `{ pos: [...], look: [...] }` line
+  // pops up on screen AND is copied to your clipboard (no console needed).
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'p' && e.key !== 'P') return
+      const r = (n: number) => Math.round(n * 100) / 100
+      const t = controls.current?.target ?? { x: 0, y: 0, z: 0 }
+      const shot = `{ pos: [${r(camera.position.x)}, ${r(camera.position.y)}, ${r(camera.position.z)}], look: [${r(t.x)}, ${r(t.y)}, ${r(t.z)}] }`
+      // eslint-disable-next-line no-console
+      console.log('📷 SHOT →', shot)
+      navigator.clipboard?.writeText(shot).catch(() => {})
+
+      // on-screen toast so you never have to open DevTools
+      let el = document.getElementById('__shot_toast')
+      if (!el) {
+        el = document.createElement('div')
+        el.id = '__shot_toast'
+        el.style.cssText =
+          'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:9999;' +
+          'max-width:90vw;padding:12px 16px;border-radius:10px;font:13px/1.5 ui-monospace,monospace;' +
+          'background:#0f172a;color:#e2e8f0;box-shadow:0 8px 30px rgba(0,0,0,.35);' +
+          'border:1px solid #334155;white-space:pre-wrap;text-align:center;pointer-events:none;'
+        document.body.appendChild(el)
+      }
+      el.textContent = '📷 SHOT (copied to clipboard):\n' + shot
+      el.style.opacity = '1'
+      window.clearTimeout((el as any).__t)
+      ;(el as any).__t = window.setTimeout(() => { el!.style.opacity = '0' }, 6000)
+      el.style.transition = 'opacity .4s'
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [camera])
+
+  return (
+    <OrbitControls
+      ref={controls}
+      makeDefault
+      enableDamping
+      dampingFactor={0.08}
+      target={SHOTS[0].look}
+      minDistance={4}
+      maxDistance={90}
+      maxPolarAngle={Math.PI / 2.05}
+    />
+  )
+}
+
+// Keeps the ICU framed in the visible LEFT region while the panels overlay the
+// right — a smooth camera lens-shift (setViewOffset) instead of resizing the
+// canvas (the resize is what caused the jank). `cover` = fraction of the width
+// the panels take on the right: 0 (none) · 0.3 (Panel B) · 0.6 (Panel B + C).
+function ViewFraming({ cover }: { cover: number }) {
+  const { camera, size } = useThree()
+  const cur = useRef(0)
+  useFrame((_, dt) => {
+    cur.current = MathUtils.damp(cur.current, cover, 3, dt)
+    const c = cur.current
+    const cam = camera as unknown as {
+      setViewOffset: (fw: number, fh: number, x: number, y: number, w: number, h: number) => void
+      clearViewOffset: () => void
+      view?: { enabled: boolean }
+    }
+    if (c < 0.002) {
+      if (cam.view?.enabled) cam.clearViewOffset()
+      return
+    }
+    // shift the frustum left by half the covered width → ICU re-centres in [0,(1-c)·W]
+    cam.setViewOffset(size.width, size.height, (c * size.width) / 2, 0, size.width, size.height)
+  })
+  return null
+}
+
+// Scene-2: the ward tour gets ONE extra terminal step past its last shot.
+// Landing on it fades out and hands control to the TARS ICU app (onEnterICU).
+export function WardApp({ onEnterICU }: { onEnterICU: () => void }) {
+  const [step, setStep] = useState(0)
+  // Bed 8 does not go green because the beat opened — it goes green on iSAM's
+  // sentence, three lines in. Held here rather than derived from `step` because
+  // the cue is a line landing, which only the panel knows about.
+  const [bed8Flagged, setBed8Flagged] = useState(false)
+  useEffect(() => {
+    const on = () => setBed8Flagged(true)
+    window.addEventListener('ward:flagBed8', on)
+    return () => window.removeEventListener('ward:flagBed8', on)
+  }, [])
+  useEffect(() => { if (step < 2) setBed8Flagged(false) }, [step]) // so a replay replays
+  const [leaving, setLeaving] = useState(false)
+  const [chatFrac, setChatFrac] = useState(0.3) // chat width ↔ camera lens-shift, drag-adjustable
+  // global light/dark — shared with the TARS phase via tars/state.js, so a
+  // toggle here carries straight through the dive into the patient hub
+  const [isDark, setIsDark] = useState<boolean>(!!(tarsState as { dark?: boolean }).dark)
+  useEffect(() => {
+    document.body.classList.toggle('theme-dark', !!(tarsState as { dark?: boolean }).dark)
+    return onThemeChange((v: boolean) => { setIsDark(v); document.body.classList.toggle('theme-dark', v) })
+  }, [])
+  const [interfaceReady, setInterfaceReady] = useState(false)
+  const LAST = N_BEATS - 1 // final ward beat ("Taking us in") — → past it dives into the Patient Hub
+  const stepRef = useRef(0)
+  stepRef.current = step
+
+  // presentation control: Space / → advance a beat (← / Backspace go back). The
+  // final → (at LAST) dives straight into Chandrababu's Patient Hub — one
+  // continuous keyboard flow, no separate roster click.
+  // Panel B raises this whenever a clinical gate opens or closes. The ward hides
+  // the panel's own foot and steps from THESE arrow keys, so without it → walked
+  // straight past an unsigned sign-off — the one promise the gate exists to make.
+  // Forward only: ← must still work, or a mis-step traps the room on the gate.
+  const gatedRef = useRef(false)
+  useEffect(() => {
+    const onGate = (e: Event) => { gatedRef.current = !!(e as CustomEvent).detail?.gated }
+    window.addEventListener('tars:gate', onGate)
+    return () => window.removeEventListener('tars:gate', onGate)
+  }, [])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Space' || e.code === 'ArrowRight') {
+        e.preventDefault()
+        if (gatedRef.current) return // awaiting sign-off — A approves, → does not
+        if (stepRef.current >= LAST) setLeaving(true) // dive in
+        else setStep((s) => Math.min(s + 1, LAST))
+      } else if (e.code === 'ArrowLeft' || e.code === 'Backspace') {
+        e.preventDefault()
+        setStep((s) => Math.max(s - 1, 0))
+      }
+    }
+    // the agent panel asks for the same advance when a human signs something —
+    // approving IS the press, so it should not also need one
+    const onPanel = () => {
+      if (stepRef.current >= LAST) setLeaving(true)
+      else setStep((s) => Math.min(s + 1, LAST))
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('tars:advance', onPanel)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('tars:advance', onPanel)
+    }
+  }, [LAST])
+
+  // once the ward tour is on screen, tell the host shell to drop its loader cover
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      try { if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'icu:ready' }, '*') } catch { /* not framed */ }
+    })
+    return () => cancelAnimationFrame(id)
+  }, [])
+
+  // the ENTER ICU button arms `leaving`; once leaving, hand off to the ICU (tars)
+  // app after the fade settles. (No arrow-key trigger — the handoff is click-only.)
+  useEffect(() => {
+    if (!leaving) return
+    const id = window.setTimeout(onEnterICU, 900)
+    return () => window.clearTimeout(id)
+  }, [leaving, onEnterICU])
+
+  // ~a beat after Panel C has slid in and the camera has pulled back to the ring,
+  // the roster arms: clicking any patient hands off to the interface. Reads as
+  // "the floor settles, now pick a patient to step in" — not clickable mid-transition.
+  useEffect(() => {
+    if (step < LAST) {
+      setInterfaceReady(false)
+      return
+    }
+    const id = window.setTimeout(() => setInterfaceReady(true), 1050)
+    return () => window.clearTimeout(id)
+  }, [step, LAST])
+
+  // camera/building hold on the last real shot during the handoff step
+  const shotStep = Math.min(step, LAST)
+  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__ward = { step, leaving }
+
+  return (
+    <>
+      {/* ICU 3D view — a full-screen canvas that NEVER resizes (no per-frame WebGL
+          resize = no jank). The camera lens-shifts the ICU into the visible left
+          region as the panels slide over the right (see ViewFraming). */}
+      <div style={{ position: 'fixed', inset: 0 }}>
+        <Canvas
+          shadows
+          dpr={[1, 2]}
+          gl={{ antialias: true, alpha: true, toneMapping: NoToneMapping }}
+          camera={{ position: SHOTS[0].pos, fov: 49 }}
+        >
+          <CameraRig step={shotStep} />
+          <ViewFraming cover={step >= 2 ? chatFrac : 0} />
+          <SceneEnvironment orb={false} dark={isDark} />
+          <Building step={shotStep} flagged={bed8Flagged} />
+          <Postprocessing />
+        </Canvas>
+      </div>
+
+      {/* instrument-panel chrome framing the ICU (brackets, texture, title, capacity) */}
+      <WardHud step={step} rightFrac={chatFrac} />
+
+      {/* bed roster — top-left; at the final step it arms: click a patient to enter the interface */}
+      <WardRoster step={step} armed={interfaceReady && !leaving} onSelect={() => setLeaving(true)} />
+
+      {/* Panel B docks at state 2; shifts to the middle column when Panel C arrives */}
+      <WardAgentPanel step={step} width={chatFrac} onResize={setChatFrac} />
+
+      {/* fade to the dark ICU scanner as tars boots */}
+      <div
+        style={{
+          position: 'fixed', inset: 0, background: '#06080c',
+          opacity: leaving ? 1 : 0, pointerEvents: 'none',
+          transition: 'opacity 0.85s ease', zIndex: 50,
+        }}
+      />
+    </>
+  )
+}

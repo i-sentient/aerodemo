@@ -1,0 +1,39 @@
+/* ============================================================
+   WARD-PHASE PANEL B — container geometry ONLY. The panel's own
+   styles live in tars/panelb.css (imported by tars/chat.js), so
+   the ward dock and the patient-hub 3-split share ONE copy and
+   can never drift apart again. This file just docks it.
+   ============================================================ */
+
+/* the sliding dock: far-right corner, real Panel-B dimensions (30% × full height) */
+.ward-agent-dock{position:fixed;top:0;right:0;bottom:0;width:30vw;z-index:41;
+  transform:translateX(108%);transition:transform 1s cubic-bezier(.65,0,.35,1),right 1s cubic-bezier(.65,0,.35,1);pointer-events:none}
+.ward-agent-dock.in{transform:none;pointer-events:auto}
+/* LEFT variant — the transit dock. It takes ATLAS's side rather than the
+   journey's: the journey caption is the one readout that is about this patient
+   MOVING, which is the whole beat, while ATLAS is a room census and there is no
+   room during a transfer. Slides in from the other edge and flips the seam. */
+.ward-agent-dock.side-left{right:auto;left:0;transform:translateX(-108%)}
+/* MUST outrank .ward-agent-dock.in — equal specificity and a later position in
+   the file meant the off-screen transform above won and the panel never slid in */
+.ward-agent-dock.side-left.in{transform:none}
+.ward-agent-dock.side-left #panelB{border-left:0;border-right:1px solid rgba(40,70,110,.28)}
+/* #panelB must FILL the dock. NOTE: #panelB.p2{position:relative} (in the shared
+   panelb.css) has equal specificity, so target #panelB.p2 here to outrank it and
+   keep the panel stretched to the dock's full height. */
+.ward-agent-dock #panelB.p2{position:absolute;inset:0}
+/* a real column beside the ICU — a crisp divider seam, NOT a drop shadow */
+.ward-agent-dock #panelB{border-left:1px solid rgba(40,70,110,.28)}
+
+/* tars' global font vars, provided locally: tars/styles.css (:root) isn't loaded
+   during the ward phase, so the shared panel rules resolve their vars from here */
+#panelB{--font:"Segoe UI",Inter,-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,"SF Mono",Menlo,monospace}
+
+/* drag handle on the dock's left edge — the divider between floor and chat.
+   The 1px seam brightens on hover/drag, exactly like the 3-split gutters. */
+.ward-drag{position:absolute;left:-4px;top:0;bottom:0;width:11px;cursor:col-resize;z-index:12}
+.ward-drag::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:transparent;transition:background .15s,box-shadow .15s}
+.ward-drag:hover::after,.ward-drag.dragging::after{background:rgba(60,100,150,.55);box-shadow:0 0 8px rgba(90,140,200,.4)}
+body.ward-resizing{cursor:col-resize;user-select:none;-webkit-user-select:none}
+

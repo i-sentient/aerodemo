@@ -1,0 +1,423 @@
+/* TYPE RUNS ~1.31x THROUGHOUT. Panel B is read from across a room like every
+   other panel, but it is the one that cannot take `zoom`: it is a grid track in
+   the three-split and an inset:0 child in the ward dock, so zooming the
+   CONTAINER shrinks the space its contents lay out in — the chat re-wraps and
+   the split moves. So the sizes below are raised directly and every box is left
+   where it was. The notch chins have no fixed heights; fitNotch measures them at
+   runtime, so they grow to fit on their own. */
+/* ============================================================
+   PANEL B — the agent-swap surface (TARS · iSAM · humans).
+   SINGLE SOURCE OF TRUTH: imported by chat.js, so the ward-tour
+   dock and the patient-hub 3-split always share these styles.
+   (Container geometry stays with each host: ward-panelb.css docks
+   it over the ICU; styles.css lays out the 3-split grid.)
+   ============================================================ */
+/* ===================================================== PANEL B : SPLIT 2 — agent-swap surface (TARS · iSAM) */
+#panelB.p2{position:relative;overflow:hidden;font-family:var(--font);
+  --p2-canvas:#F2F1EF; --p2-plate:#17151d;
+  --p2-text:#171717; --p2-soft:rgba(23,23,23,.5);
+  --p2-hbg:#1A1A1A; --p2-hink:rgba(255,255,255,.95); --p2-hinksoft:rgba(255,255,255,.6); --p2-hdot:#1A1A1A;
+  --p2-nw0:rgba(23,23,23,.22); --p2-nw1:rgba(23,23,23,.08);
+  --p2-em:#1f7a6a; --redD:#b3122a; --amberD:#8a5a00; --greenD:#0d6b45;
+  /* Three named things, three hues, and the split is by KIND:
+       --plexus  the signal layer            red
+       --model   iSAM's models (VIGIL, CRASH-PREDICT)   violet
+       --redD    the alarm — risk, elevation, deterioration
+     PLEXUS gets its own red rather than --redD because --redD means "something
+     is wrong" and PLEXUS is never warning about anything; it is the floor the
+     rest is standing on. Violet for the models because they are instruments,
+     not findings — and against iSAM's green plate it is the one accent that
+     cannot be mistaken for either red. */
+  --plexus:#ff3b30; --model:#c3a6ff; --verdict:#ff4d3d;
+  --ord-glass:rgba(255,255,255,.55); --ord-line:rgba(23,23,23,.15);
+  --ord-green:16,120,80; --ord-amber:170,110,10;
+  background:var(--p2-canvas);transition:background .5s ease}
+#panelB.p2.dark{--p2-canvas:#121114; --p2-plate:#191720;
+  --p2-text:rgba(255,255,255,.92); --p2-soft:rgba(255,255,255,.45);
+  --p2-hbg:#F5F4F2; --p2-hink:#171717; --p2-hinksoft:rgba(23,23,23,.55); --p2-hdot:#F5F4F2;
+  --p2-nw0:rgba(255,255,255,.30); --p2-nw1:rgba(255,255,255,.12);
+  --p2-em:#8fe6d4; --redD:#ff8a8a; --amberD:#ffcf6a; --greenD:#7fe0b0;
+  --plexus:#ff5c52; --model:#cbb4ff; --verdict:#ff4d3d; /* lifted for the dark plate — see the light-theme note */
+  --ord-glass:rgba(255,255,255,.055); --ord-line:rgba(255,255,255,.17);
+  --ord-green:127,224,176; --ord-amber:255,207,106}
+
+/* per-speaker radial washes */
+.p2-wash{position:absolute;inset:0;z-index:0;pointer-events:none}
+#panelB.p2.dark .p2-wash{mix-blend-mode:screen}
+.p2-wash.prev{opacity:.4;transition:opacity .8s ease}
+@keyframes ambientIn{0%{opacity:0}30%{opacity:.8}100%{opacity:.4}}
+
+/* ---- the two notches (tap body = swap · caret = expand) ---- */
+.p2-notch{position:absolute;left:14px;right:14px;height:88px;overflow:hidden;z-index:4;cursor:pointer;
+  transition:height .45s cubic-bezier(.4,0,.2,1),background .5s ease;-webkit-tap-highlight-color:transparent}
+.p2-notch.top{top:0;height:100px;border-radius:0 0 40px 40px;background:var(--p2-plate);box-shadow:0 16px 44px rgba(20,16,12,.16)}
+.p2-notch.top.exp{height:248px}
+/* The state estimate is the tallest thing the chin ever holds — two graph rows,
+   two captions, a header and a verdict, ~270px of content against .exp's 206.
+   It gets its own height rather than growing every expanded chin, because the
+   one-line widgets would then sit in a pool of dead plate. chat.js adds .tall
+   with the panel and drops it when the chin is wiped. */
+.p2-notch.top.exp.tall{height:340px}
+.p2-notch.bottom{bottom:0;border-radius:40px 40px 0 0;background:var(--p2-hbg);box-shadow:0 -16px 44px rgba(20,16,12,.16)}
+.p2-notch.bottom.exp{height:264px}
+/* the decision card is the largest thing either chin ever holds — six chips and
+   five reasons over two options. chat.js measures and sets the exact height;
+   this is the floor so a failed measurement clips gracefully. */
+.p2-notch.bottom.exp.tall{height:430px}
+.nblobs{position:absolute;inset:0;z-index:0}
+#panelB.p2.dark .nblobs{mix-blend-mode:screen}
+.nblob{position:absolute;transform:translate(-50%,-50%);border-radius:50%;filter:blur(30px);will-change:transform}
+@keyframes bd0{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(calc(-50% + 9px),calc(-50% - 8px))}}
+@keyframes bd1{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(calc(-50% - 8px),calc(-50% + 7px))}}
+@keyframes bd2{0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(calc(-50% + 7px),calc(-50% + 9px))}}
+
+.notch-inner{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;padding:11px 18px 12px}
+.notch-dots{position:absolute;top:14px;right:18px;z-index:3;display:flex;gap:6px}
+.pd{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.35);transition:background .4s}
+.pd.on{background:rgba(255,255,255,.95)}
+.p2-notch.bottom .pd{background:var(--p2-hinksoft)}.p2-notch.bottom .pd.on{background:var(--p2-hink)}
+.notch-id{margin-top:9px}
+.notch-name{font-size:34px;font-weight:300;letter-spacing:-.01em;line-height:1;color:rgba(255,255,255,.96)}
+.notch-role{margin-top:6px;font-size:12.5px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.7)}
+.p2-notch.bottom .notch-name{color:var(--p2-hink)}
+.p2-notch.bottom .notch-role{color:var(--p2-hinksoft)}
+.p2-notch.bottom.awaiting #humanStatus{color:var(--redD);font-weight:700}
+.p2-notch.bottom.awaiting{animation:chinAwait 1.5s ease-in-out infinite}
+@keyframes chinAwait{0%,100%{box-shadow:0 -16px 44px rgba(20,16,12,.16)}50%{box-shadow:0 -16px 44px rgba(20,16,12,.16),0 0 0 2px var(--redD)}}
+.notch-action{display:none;margin-top:12px}
+.p2-notch.exp .notch-action{display:block;animation:fadeUp .45s ease both}
+/* ---- iSAM · physiological state estimate (chat.js, beats 6-8) -------------
+   ONE panel that assembles, two component rows. A row is dim and dead until
+   its beat fills it, so the gap between them is visible on screen — and that
+   gap is the entire reason beat 7 exists.
+   .ps-out is width-reserved from the first frame: the number has to land INTO
+   a waiting slot, not shove the graph sideways as it arrives. */
+.pstate{display:flex;flex-direction:column;gap:9px;width:100%;margin-top:12px}
+.ps-hd{display:flex;align-items:baseline;gap:8px;font-size:12px;font-weight:800;letter-spacing:.15em;color:rgba(255,255,255,.9)}
+/* the title is one flex item, not two — as bare text runs "PLEXUS" and "STATE"
+   become separate anonymous items and the space between them is dropped */
+.ps-ttl b{color:var(--plexus);font-weight:800}
+.ps-src{font:500 10.5px ui-monospace,SFMono-Regular,monospace;letter-spacing:.04em;color:rgba(255,255,255,.5);margin-left:auto}
+.ps-row{display:flex;align-items:center;gap:10px;min-height:44px;padding-left:9px;
+  border-left:2px solid rgba(255,255,255,.16);opacity:.42;
+  transition:opacity .45s ease,border-color .45s ease}
+.ps-row.live{opacity:1;border-left-color:var(--redD)}
+/* one colour, not two: .ps-row already carries opacity .42 -> 1 on .live, so
+   the label dims with its row for free. Overriding the colour as well was
+   dimming the same thing twice and cost the model its hue while it waited. */
+.ps-m{flex:0 0 94px;font:800 13px ui-monospace,SFMono-Regular,monospace;letter-spacing:.08em;line-height:1.3;color:var(--model)}
+.ps-bd{flex:1;min-width:0;display:flex;align-items:center;gap:12px}
+.ps-graph{flex:1;min-width:0}
+.ps-out{flex:0 0 100px;text-align:center}
+.ps-wait{font:600 10.5px ui-monospace,SFMono-Regular,monospace;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.38)}
+/* 52, not 40: the ST separation between the live trace and VIGIL's prediction
+   is ~0.375 of an R wave, so the canvas has to be tall enough for that to be
+   worth pixels. The spark stays shorter — it is a shape, not a measurement. */
+.ps-spark{width:100%;height:42px;display:block}
+.ps-ecg{width:100%;height:60px;display:block}
+.ps-cap{margin-top:3px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.72)}
+.ps-cap b{color:var(--redD)}
+/* the forecast's unit rides small next to the dot digits — "min" at .v-pct's
+   15px next to a 6px-cell numeral reads as a third number, not a unit */
+.ps-unit{font-size:12px;font-weight:600;color:var(--redD);margin-left:2px;align-self:flex-end;padding-bottom:2px}
+.ps-verdict{margin-top:1px;font-size:12.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.92);text-align:center}
+.ps-verdict b{color:var(--redD)}
+/* The named machinery keeps its colour wherever it is SAID, not only where it
+   is labelled — so "CRASH-PREDICT says he doesn't hold" in the feed reads as
+   the same object as the row it just filled. Nest inside .em freely: these sit
+   on the word itself and beat the colour the parent span sets. */
+.mdl{color:var(--model);font-weight:700}
+.plx{color:var(--plexus);font-weight:700}
+
+.trend{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:12px}
+.trend-lb{font-size:9.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.92);text-align:center}
+.trend-lb b{color:var(--redD)}
+.trend-spark{width:100%;height:56px;display:block}
+.verdict{display:flex;align-items:center;gap:12px;margin-top:12px}
+.v-ecg{flex:1;min-width:0;height:46px;display:block}
+.v-risk{flex:0 0 auto;text-align:center}
+.v-num{display:flex;align-items:flex-start;justify-content:center}
+.v-num svg{height:26px;width:auto}
+.v-pct{font-size:19.5px;font-weight:300;color:var(--redD);margin-left:1px}
+/* 8px made the label decoration rather than a legend — and the legend is the
+   only thing distinguishing this number from the ER card's confidence. */
+.v-lb{font-size:12.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.82);margin-top:4px}
+/* A NUMBER WITH A GAUGE is a risk; a number alone is a measurement. Same
+   pattern the HUD's own trajectory block uses (styles.css .tele.lsam .lbar),
+   and it is what stops 86% being compared against the ER's 96%. */
+.v-bar{height:3px;border-radius:3px;background:rgba(255,255,255,.16);overflow:hidden;margin-top:5px}
+.v-bar i{display:block;height:100%;width:0;border-radius:3px;background:var(--redD);transition:width .6s ease}
+.v-verdict{margin-top:9px;font-size:12.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:rgba(255,255,255,.92);text-align:center}
+.v-verdict b{color:var(--redD)}
+.v-reading{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.6);white-space:nowrap}
+/* The CLINICIAN's card. It sits in the chin, which INVERTS against the panel —
+   dark chin under a light panel and vice versa — so nothing here may hardcode a
+   colour. The ink rides --p2-hink/--p2-hinksoft, which are defined per mode and
+   are always the contrasting pair; the tint and the rail ride the amber triple,
+   which is bright in dark mode and deep in light, so it carries on either chin.
+   It was inheriting .ord's white-on-nothing and coming out as a washed cream
+   plate with an invisible white ball. */
+.ord.gated.signoff{
+  align-items:center; border-radius:5px; padding-left:15px;
+  --ord-rgb:var(--ord-amber);
+  color:var(--p2-hink);
+  background:linear-gradient(148deg, rgba(var(--ord-rgb),.22), rgba(var(--ord-rgb),.07) 62%);
+  border:1px solid rgba(var(--ord-rgb),.5);
+  box-shadow:none;
+  animation:ordLive 2.1s ease-in-out infinite}
+.ord.gated.signoff::before{display:none}
+.ord.signoff .bd{display:flex;flex-direction:column;gap:8px}
+.ord.signoff .sel{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:17px;font-weight:600;color:var(--p2-hink);line-height:1.2;user-select:none}
+.ord.signoff .sel input{position:absolute;opacity:0;width:0;height:0}
+.ord.signoff .ball{width:16px;height:16px;border-radius:4px;border:2px solid var(--p2-hinksoft);background:transparent;flex:0 0 auto;transition:all .15s}
+.ord.signoff .sel input:checked + .ball{background:var(--p2-hink);border-color:var(--p2-hink)}
+.ord.signoff .sel:has(input:not(:checked)){opacity:.5}
+/* DECISION card — two real courses of action; the doctor picks (iSAM's lean is ringed) */
+.ord.decide{display:flex;flex-direction:column;gap:8px;align-items:stretch;border-radius:8px}
+.ord.decide .opt{display:grid;grid-template-columns:1fr auto;grid-template-areas:"l c" "s c" "w w";gap:1px 10px;align-items:center;text-align:left;padding:10px 12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);cursor:pointer;transition:background .15s,border-color .15s,transform .12s}
+.ord.decide .opt:hover{background:rgba(255,255,255,.16);transform:translateY(-1px)}
+.ord.decide .opt .ol{grid-area:l;font-size:18.5px;font-weight:800;color:#fff;letter-spacing:.04em}
+.ord.decide .opt .os{grid-area:s;font-size:12.5px;color:rgba(255,255,255,.72)}
+.ord.decide .opt .oc{grid-area:c;font-size:8.5px;font-weight:800;letter-spacing:.08em;color:#fff;background:rgba(255,255,255,.14);padding:3px 7px;border-radius:12px;white-space:nowrap}
+.ord.decide .opt.lean{border-color:#fff;background:rgba(255,255,255,.18);box-shadow:0 0 14px rgba(255,255,255,.25)}
+.ord.decide .opt.lean .oc{background:#fff;color:#7c2a24}
+/* ---- the convergence, made structural ------------------------------------
+   iSAM's recommendation is only worth what the room can see it converged, and
+   six inputs inside a sentence is a paragraph nobody finishes. The chips are
+   the working; the bullets under each option are what actually separates them
+   — support under the lean, cost under the other, so the alternative is argued
+   against rather than hidden. */
+.dfx{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:1px 2px 3px}
+.dfx-k{font:800 8px ui-monospace,SFMono-Regular,monospace;letter-spacing:.15em;text-transform:uppercase;color:rgba(255,255,255,.52);margin-right:3px}
+.dfx-c{font:700 9px ui-monospace,SFMono-Regular,monospace;letter-spacing:.05em;color:#fff;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.22);padding:3px 7px;border-radius:7px;white-space:nowrap}
+.ord.decide .opt .ow{grid-area:w;display:flex;flex-direction:column;gap:3px;margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,.2)}
+.ord.decide .opt .ow i{font-style:normal;font-size:9.5px;line-height:1.4;color:rgba(255,255,255,.76);text-indent:-9px;padding-left:9px}
+.ord.decide .opt .ow i::before{content:"▸ ";color:rgba(255,255,255,.42)}
+.ord.decide .opt.lean .ow i{color:rgba(255,255,255,.94)}
+
+/* ---- iSAM · coronary decision case (chat.js showCase) ---------------------
+   A synopsis that arrives at a verdict.
+
+   Reading on top, verdict under a rule — both on iSAM's own plate. The verdict
+   carries in WEIGHT and full white, not in a different material: a solid slab
+   was tried here and it read as a foreign object dropped on the panel.
+
+   Five sources in two columns: stacked, they pushed the verdict off the bottom
+   of the chin and made a short list look like a long one. */
+.icase{display:flex;flex-direction:column;gap:7px;width:100%;margin-top:12px}
+
+.ic-inhd{display:flex;align-items:baseline;gap:8px;margin-top:1px;
+  font:800 10.5px ui-monospace,SFMono-Regular,monospace;letter-spacing:.15em;text-transform:uppercase;color:rgba(255,255,255,.5)}
+.ic-inhd span{margin-left:auto;font-weight:600;letter-spacing:.09em;color:rgba(255,255,255,.38)}
+
+.ic-in{position:relative;display:grid;grid-auto-flow:column;grid-template-rows:repeat(3,auto);gap:5px 26px}
+/* column flow, not row flow: it groups the patient's own facts on the left and
+   what the studies found on the right, instead of interleaving them */
+/* ONE divider, dead centre. Two hairlines — one tucked behind each column's
+   labels — cut the block into four strips; a single line reads as two halves,
+   which is what it is. */
+.ic-in::before{content:"";position:absolute;left:50%;top:1px;bottom:1px;width:1px;background:rgba(255,255,255,.2)}
+.ic-row{display:flex;align-items:baseline;min-width:0}
+/* the right column is MIRRORED — value inboard, label out at the panel edge.
+   Labels on the two outer edges and one rule down the middle is the symmetry;
+   both columns reading left-to-right put four ragged edges in the same block. */
+.ic-row.rev{flex-direction:row-reverse}
+.ic-src{flex:0 0 66px;font:800 10.5px ui-monospace,SFMono-Regular,monospace;letter-spacing:.09em;color:var(--model)}
+.ic-row.rev .ic-src{text-align:right}
+.ic-val{flex:1;min-width:0;padding-left:10px;font-size:13.5px;line-height:1.35;color:rgba(255,255,255,.88);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ic-row.rev .ic-val{padding-left:0;padding-right:10px;text-align:right}
+/* A row awaiting its source. It has to read as RESERVED rather than as absent —
+   the empty slot is what makes the panel visibly incomplete, and the echo
+   landing in it is the beat. Dimmed and italic, label included, so the eye skips
+   it on the first pass and notices when it fills. */
+.ic-row.pend .ic-src{color:rgba(195,166,255,.34)}
+.ic-row.pend .ic-val{color:rgba(255,255,255,.3);font-style:italic}
+
+/* Left/right, because that is the axis the rest of the panel already uses —
+   CORONARY DECISION | revascularisation, READING | 6 SOURCES. Centring the
+   verdict broke the one alignment rule the panel had. Both sides are
+   label-over-value, so the captions share a baseline and the values share
+   theirs: symmetric without being centred. */
+/* inset to the VALUE rail, not the label rail: 50px source column + 10px gap.
+   The verdict is a conclusion drawn from the evidence, so it lines up under the
+   evidence rather than under the names of the systems it came from. Mirrored on
+   the right so the block stays balanced. */
+.ic-verdict{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;
+  margin-top:8px;padding-top:11px;border-top:1px solid rgba(255,255,255,.24);
+  padding-left:60px;padding-right:60px}
+.ic-vb{min-width:0}
+.ic-vk,.ic-ck{font:800 10.5px ui-monospace,SFMono-Regular,monospace;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.5)}
+/* the CALL is the biggest thing here. The dot font is 7 cells tall, so at any
+   generous cell size it out-measures the label it is qualifying — which had the
+   confidence shouting over the recommendation it belongs to. */
+/* White, not red. Red is a low-luminance colour — even at full brightness it
+   sits at 0.25, which is mid-green, so it cannot carry text on this plate at
+   any blob value (2.03 at the darkest we tried). The call reads in WEIGHT, and
+   red survives as the rule beneath it, where contrast is not the job. */
+.ic-lb{margin-top:5px;font:800 34px ui-monospace,SFMono-Regular,monospace;letter-spacing:.02em;color:#fff;line-height:1}
+.ic-lb::after{content:"";display:block;width:52px;height:3px;border-radius:2px;margin-top:7px;background:var(--verdict)}
+.ic-cf{flex:0 0 auto;text-align:right}
+.ic-cn{display:flex;align-items:flex-end;justify-content:flex-end;gap:2px;margin-top:5px}
+.ic-cn svg{display:block}
+.ic-cn i{font-style:normal;font:400 16px ui-monospace,SFMono-Regular,monospace;color:var(--verdict);padding-bottom:1px}
+.chin-input{display:none;margin-top:auto;margin-bottom:14px;align-items:center;gap:8px;padding-top:12px}
+.p2-notch.bottom.exp .chin-input{display:flex;animation:fadeUp .45s ease both}
+.chin-field{flex:1;min-width:0;background:rgba(127,127,127,.12);border:1px solid rgba(127,127,127,.28);border-radius:8px;padding:10px 14px;color:var(--p2-hink);font-size:12.5px;outline:none}
+.chin-field::placeholder{color:var(--p2-hinksoft)}
+.chin-mic{flex:0 0 auto;width:40px;height:40px;border-radius:8px;border:1px solid rgba(127,127,127,.28);background:rgba(127,127,127,.12);color:var(--p2-hink);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s}
+.chin-mic:hover{background:rgba(127,127,127,.22)}
+.recon{display:flex;flex-direction:column;gap:8px}
+.adm{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.adm-lb{font-size:13px;font-weight:600;color:var(--p2-hink)}
+.adm-btn{flex:0 0 auto;padding:6px 15px;border-radius:8px;border:1px solid rgba(127,127,127,.3);background:rgba(127,127,127,.12);color:var(--p2-hink);font-size:11px;font-weight:700;letter-spacing:.03em;cursor:pointer;transition:background .2s}
+.adm-btn:hover{background:rgba(127,127,127,.22)}
+.adm.done .adm-lb{opacity:.55}
+.adm.done .adm-btn{background:var(--greenD);border-color:transparent;color:#fff;cursor:default}
+.notch-detail{display:none;margin-top:auto;align-items:flex-end;justify-content:space-between;gap:8px}
+.p2-notch.exp .notch-detail{display:flex;animation:fadeUp .45s ease both}
+.notch-stat{display:flex;align-items:flex-end;gap:6px}
+.notch-stat .unit{font-size:8.5px;font-weight:500;letter-spacing:.16em;color:rgba(255,255,255,.7);padding-bottom:2px}
+.p2-notch.bottom .notch-stat .unit{color:var(--p2-hinksoft)}
+.notch-caret{position:absolute;z-index:3;right:15px;width:26px;height:26px;border-radius:50%;border:none;cursor:pointer;
+  background:rgba(255,255,255,.15);color:rgba(255,255,255,.9);font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;
+  transition:transform .4s ease;-webkit-tap-highlight-color:transparent}
+.p2-notch.top .notch-caret{top:13px}
+.p2-notch.bottom .notch-caret{bottom:13px;background:var(--p2-hink);color:var(--p2-hbg)}
+.p2-notch.exp .notch-caret{transform:rotate(180deg)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---- conversation feed ---- */
+#chat.p2-feed{position:absolute;top:102px;bottom:136px;left:18px;right:18px;z-index:1;
+  display:flex;flex-direction:column;justify-content:center;gap:13px;overflow-y:auto}
+#chat.p2-feed::-webkit-scrollbar{width:6px}#chat.p2-feed::-webkit-scrollbar-thumb{background:rgba(120,120,120,.25);border-radius:8px}
+.msg{max-width:84%;display:flex;flex-direction:column;gap:5px;animation:msgIn .5s ease both;transition:opacity .6s ease}
+.msg.old{opacity:.32}
+.msg.sys{align-self:flex-start;text-align:left}
+.msg.hum{align-self:flex-end;text-align:right}
+.msg .who{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--p2-soft)}
+.msg.hum .who{justify-content:flex-end}
+.msg .who .wd{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.msg .bub{font-size:19px;font-weight:400;line-height:1.5;color:var(--p2-text);letter-spacing:-.005em;transition:color .5s ease}
+.msg.old .bub{font-weight:300}
+.bub b{font-weight:600}.bub .em{font-weight:600;color:var(--p2-em)}
+.bub.typing{display:inline-flex;gap:6px;align-items:center}
+.bub.typing i{width:7px;height:7px;border-radius:50%;background:var(--p2-soft);animation:td 1s infinite}
+.bub.typing i:nth-child(2){animation-delay:.15s}.bub.typing i:nth-child(3){animation-delay:.3s}
+@keyframes td{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:.9;transform:translateY(-3px)}}
+@keyframes msgIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+
+/* ---- order cards (autonomy firewall) ---- */
+/* CENTRED, not hung off the agent's side. Messages take a side because they
+   have a speaker; an order has no speaker — it is a thing the system did, and
+   sitting it centre stops it reading as one more turn in a conversation. */
+.orders{display:flex;flex-direction:column;gap:9px;align-self:center;width:94%;margin-top:2px;animation:msgIn .5s ease both}
+.ord{position:relative;border-radius:18px;padding:11px 13px;display:flex;align-items:center;gap:11px;font-size:16.5px;overflow:hidden;color:#fff;
+  border:1px solid rgba(255,255,255,.28);box-shadow:0 10px 26px rgba(40,30,20,.2)}
+.ord::before{content:"";position:absolute;left:0;right:0;top:0;height:46%;pointer-events:none;background:linear-gradient(to bottom,rgba(255,255,255,.14),transparent)}
+.ord .ic{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;flex:0 0 auto;color:#fff;background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.4)}
+.ord .bd{flex:1;min-width:0}.ord .bd .lb{font-weight:600;color:#fff}.ord .bd .dt{font-size:14px;color:rgba(255,255,255,.74);margin-top:1px}
+.ord .tag{font-size:8px;font-weight:700;letter-spacing:.12em;padding:3px 8px;border-radius:8px;text-transform:uppercase;white-space:nowrap;background:rgba(255,255,255,.26);color:#fff;border:1px solid rgba(255,255,255,.32)}
+/* ── GLASS + HAIRLINE ──────────────────────────────────────────────────────
+   These were solid, fully saturated gradient pills with white ink on a light
+   cream panel — the loudest thing on screen, louder than the verdict they were
+   supposed to support, and made of a different material from everything around
+   them. The ER's CV card is the OTHER surface where this system speaks, and it
+   is glass and hairlines; matching it makes the two read as one product.
+
+   Colour survives only where it carries meaning: a 2 px rail, the icon's
+   outline, the AUTO/GATED tag and the status word. Everything else is the
+   panel's own ink, so the card reads as cut from the panel rather than laid on
+   top of it. Both keys are existing theme vars, so the dark variant follows for
+   free.
+
+   Scoped to .autonomous/.gated — the two classes addOrders creates — because
+   the post-op signoff and decide cards are white-on-colour by design and would
+   go invisible on glass. */
+.ord.autonomous{--ord-key:var(--greenD); --ord-rgb:var(--ord-green)}
+.ord.gated{--ord-key:var(--amberD); --ord-rgb:var(--ord-amber)}
+.ord.autonomous, .ord.gated{
+  border-radius:5px; padding-left:15px; color:var(--p2-text);
+  /* TINTED glass, not white glass. The fill was rgba(255,255,255,.55) on an
+     off-white canvas — no hue and almost no value difference, which is what
+     made it read as a flat plate. A diagonal wash of the state colour at 14%
+     down to 4% gives the card a light source and picks up the warmth of the
+     panel's own agent washes, which pure white was fighting.
+     Dark ink is what buys this: the solid version was loud because of WHITE
+     TEXT ON FULL SATURATION, not because it had a gradient. At 14% with the
+     panel's own ink it stays quiet and reads as material rather than paint. */
+  background:
+    linear-gradient(148deg, rgba(var(--ord-rgb), .14), rgba(var(--ord-rgb), .04) 62%),
+    var(--ord-glass);
+  backdrop-filter:blur(7px); -webkit-backdrop-filter:blur(7px);
+  border:1px solid var(--ord-line); box-shadow:none;
+  transition:box-shadow .5s ease, opacity .5s ease, transform .34s cubic-bezier(.2,.8,.3,1)}
+
+/* Each row LANDS on its own now (chat.js addOrders staggers them ~420 ms apart),
+   and .orders' msgIn only fires once — for whichever row mounts the wrapper. So
+   every row carries its own entrance. It has to be a TRANSITION and not an
+   animation: .ord.autonomous:not(.done) below already owns `animation` on these
+   elements for the ordLive bloom, and a second `animation` declaration at higher
+   specificity would simply replace it. */
+.ord.pre{opacity:0;transform:translateY(9px)}
+
+/* ...and only the LIVE one breathes. Every card looked identical whether it was
+   working or finished, so the block sat there static — which is most of what
+   read as dull. The bloom fades on .done, so the row you should be watching is
+   the one that is moving. */
+.ord.autonomous:not(.done), .ord.gated:not(.done){
+  box-shadow:0 0 0 1px rgba(var(--ord-rgb), .22), 0 6px 22px rgba(var(--ord-rgb), .20);
+  animation:ordLive 2.1s ease-in-out infinite}
+@keyframes ordLive{
+  0%,100%{box-shadow:0 0 0 1px rgba(var(--ord-rgb), .18), 0 6px 20px rgba(var(--ord-rgb), .16)}
+  50%    {box-shadow:0 0 0 1px rgba(var(--ord-rgb), .30), 0 8px 28px rgba(var(--ord-rgb), .28)}}
+/* the top sheen is a solid-surface affordance — glass has nothing to catch */
+.ord.autonomous::before, .ord.gated::before{display:none}
+.ord.autonomous::after, .ord.gated::after, .ord.gated.signoff::after{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:2px;
+  background:linear-gradient(to bottom, rgba(var(--ord-rgb),1), rgba(var(--ord-rgb),.22))}
+.ord.autonomous .ic, .ord.gated .ic{
+  width:24px;height:24px;border-radius:4px;background:transparent;border:1px solid var(--ord-key)}
+.ord.autonomous .bd .lb, .ord.gated .bd .lb{color:var(--p2-text)}
+.ord.autonomous .bd .dt, .ord.gated .bd .dt{color:var(--p2-soft)}
+.ord.autonomous .tag, .ord.gated .tag{
+  background:transparent;color:var(--ord-key);border:1px solid var(--ord-key);border-radius:3px}
+.ord.autonomous .state, .ord.gated .state{color:var(--ord-key)}
+.ord.autonomous .spin, .ord.gated .spin{border-color:var(--ord-line);border-top-color:var(--ord-key)}
+/* a finished order recedes further than it used to — on glass the live one has
+   to be the one you look at */
+.ord.autonomous.done, .ord.gated.done{opacity:.66}
+/* Solid CHIN INK, inverted — a light pill on a dark chin, a dark pill on a
+   light one, so it is the highest-contrast thing in the panel in either mode.
+   It was a fixed near-black lozenge: a heavy blot on a light chin and nearly
+   invisible on a dark one. Not amber, deliberately — the card around it is
+   amber, and the one control that must be unmistakable should not share its
+   colour. No pulse either: the card already breathes, and two things pulsing
+   next to each other is noise. */
+.ord .confirm{cursor:pointer;font-size:9.5px;font-weight:800;letter-spacing:.06em;
+  padding:6px 13px;border-radius:4px;border:1px solid transparent;
+  background:var(--p2-hink);color:var(--p2-hbg);
+  transition:transform .12s ease,filter .2s ease}
+.ord .confirm:hover{transform:translateY(-1px);filter:brightness(1.08)}
+.ord .state{font-size:13px;font-weight:700;letter-spacing:.06em;color:#fff;display:flex;align-items:center;gap:6px;white-space:nowrap}.ord.done{opacity:.94}
+.spin{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* ---- stepping foot ---- */
+.p2-foot{position:absolute;bottom:80px;left:20px;right:20px;z-index:3;display:flex;align-items:center;gap:10px;pointer-events:none}
+.p2-hint{flex:1;font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--p2-soft);animation:hintPulse 2.6s ease-in-out infinite;text-align:center}
+.p2-next{display:none}
+@keyframes hintPulse{0%,100%{opacity:.4}50%{opacity:.85}}
+.p2-next{pointer-events:auto;cursor:pointer;border:none;width:38px;height:38px;border-radius:50%;font-size:17px;font-weight:700;flex:0 0 auto;
+  background:var(--p2-text);color:var(--p2-canvas);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.22);transition:transform .18s,opacity .18s}
+.p2-next:hover{transform:translateY(-1px)}
+.p2-next:disabled{opacity:.3;cursor:default;transform:none}
+
+/* ---- dark-mode toggle (right edge) ---- */
+.p2-dark{position:absolute;top:50%;right:12px;transform:translateY(-50%);z-index:6;width:40px;height:40px;border-radius:50%;cursor:pointer;
+  border:1px solid var(--p2-soft);background:transparent;display:flex;align-items:center;justify-content:center;transition:border .5s ease;-webkit-tap-highlight-color:transparent}
+.p2-dark::before{content:"";width:15px;height:15px;border-radius:50%;background:var(--p2-text);box-shadow:inset -6px -2px 0 0 var(--p2-canvas);transition:box-shadow .5s ease,background .5s ease}
+#panelB.p2.dark .p2-dark::before{box-shadow:none}
+
+/* keep @keyframes rise — shared with Panel C (.app-card / .emr) */
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}

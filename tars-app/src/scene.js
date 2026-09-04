@@ -10,7 +10,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 import { beds, COL, bedById } from './ontology.js';
 import { state, setMode, onModeChange } from './state.js';
-import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial } from './xray.js';
+import { glowTexture, makeHologramMaterial, makeClinicalMaterial, makeClinicalXrayMaterial, makeGridMaterial, makeBodyHologramMaterial } from './xray.js';
 
 // Patient figure = real anatomical system layers (GLB) rendered as teal holograms.
 import { buildHuman } from './human.js';
@@ -160,26 +160,44 @@ function buildPatient() {
   patientScene.userData.ring = ring;
 }
 
-// ---- patient figure = switchable anatomical system layers (skeletal / vascular / nervous) ----
+// ---- patient figure = switchable anatomical system layers (skeletal / vascular / nervous / body / grid) ----
 // Skeleton: AnatomyTOOL.org overview skeleton (CC BY-SA 4.0). Vascular & nervous: derived from
 // Z-Anatomy (CC BY-SA), curve-tessellated, decimated and Draco-compressed for the web.
+// Body + Grid (whole-body flesh surface): BodyParts3D skin FMA7163, (c) The Database Center for
+// Life Science, licensed under CC BY-SA 2.1 Japan — genitalia removed, smoothed, decimated and
+// Draco-compressed. `grid` is a coarse wireframe of the same body (the simulation-mesh look).
 const SYSTEM_URLS = {
   skeletal: new URL('./assets/skeleton/overview-skeleton.glb', import.meta.url).href,
   vascular: new URL('./assets/systems/vascular.glb', import.meta.url).href,
   nervous: new URL('./assets/systems/nervous.glb', import.meta.url).href,
+  body: new URL('./assets/systems/body.glb', import.meta.url).href,
+  // grid draws its lattice procedurally (see makeGridMaterial), so it wants the solid body
+  // surface — not grid.glb, whose wires are baked tubes at a fixed cell count.
+  grid: new URL('./assets/systems/body.glb', import.meta.url).href,
 };
-const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f72 };
+const SYSTEM_COLORS = { skeletal: 0x35808d, vascular: 0x2f8d80, nervous: 0x4a8f72, body: 0x3f8fe0, grid: 0x4a8f72 };
 const SKELETON_URL = SYSTEM_URLS.skeletal; // floor twin reuses the skeleton
 
-function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff } = {}) {
-  const root = gltf.scene; root.updateMatrixWorld(true);
+function makeFigureFromGLTF(gltf, { heart = false, color = 0x49e0ff, grid = false, holo = false } = {}) {
+  // clone: BODY and GRID are two different renderings of the same GLB, and the floor twin
+  // shares the skeleton GLB with the SKELETAL layer. three hands back the same gltf.scene for
+  // a repeated URL, so without this the second figure would re-parent the first's meshes and
+  // overwrite its materials. Geometry stays shared — only the node tree is duplicated.
+  const root = gltf.scene.clone(true); root.updateMatrixWorld(true);
   let box = new THREE.Box3().setFromObject(root), size = new THREE.Vector3(); box.getSize(size);
   root.scale.setScalar(1.72 / (size.y || 1.72)); root.updateMatrixWorld(true);
   box = new THREE.Box3().setFromObject(root); const c = new THREE.Vector3(); box.getCenter(c);
   root.position.x -= c.x; root.position.z -= c.z; root.position.y -= box.min.y;
   const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 2.0);
   const mats = [];
-  root.traverse((o) => { if (o.isMesh) { o.material = makeClinicalXrayMaterial(clip, color); o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; mats.push(o.material); } });
+  root.traverse((o) => {
+    if (o.isMesh) {
+      if (grid) o.material = makeGridMaterial(clip, color);
+      else if (holo) o.material = makeBodyHologramMaterial(clip, color);
+      else o.material = makeClinicalXrayMaterial(clip, color);
+      o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; mats.push(o.material);
+    }
+  });
   const group = new THREE.Group(); group.add(root); group.visible = false;
   let hsp = null;
   if (heart) { hsp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0xff5a52, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })); hsp.scale.set(0.34, 0.34, 1); hsp.position.set(0.02, 1.24, 0.14); group.add(hsp); }
@@ -211,7 +229,7 @@ function ensureLayer(name, cb) {
   if (loadingNames.has(name)) return;
   loadingNames.add(name);
   getLoader().load(SYSTEM_URLS[name], (g) => {
-    figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name] });
+    figs[name] = makeFigureFromGLTF(g, { heart: name === 'vascular', color: SYSTEM_COLORS[name], grid: name === 'grid', holo: name === 'body' });
     patientScene.add(figs[name].group); loadingNames.delete(name); cb && cb();
   }, undefined, (e) => { loadingNames.delete(name); console.warn('[TARS] layer load failed', name, e); });
 }
@@ -318,7 +336,7 @@ export function initScene(canvasEl) {
   // layer toggle (Body / Skeleton) over the scanner stage
   layerToggleEl = document.createElement('div');
   layerToggleEl.className = 'layer-toggle'; layerToggleEl.style.display = 'none';
-  layerToggleEl.innerHTML = '<button data-l="skeletal" class="on">SKELETAL</button><button data-l="vascular">VASCULAR</button><button data-l="nervous">NERVOUS</button>';
+  layerToggleEl.innerHTML = '<button data-l="skeletal" class="on">SKELETAL</button><button data-l="vascular">VASCULAR</button><button data-l="nervous">NERVOUS</button><button data-l="body">BODY</button><button data-l="grid">GRID</button>';
   document.getElementById('stage').appendChild(layerToggleEl);
   layerToggleEl.querySelectorAll('button').forEach((b) => (b.onclick = () => setLayer(b.dataset.l)));
 

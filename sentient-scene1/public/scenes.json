@@ -1,0 +1,70 @@
+[
+  {
+    "label": "ATL · UI",
+    "view": "er",
+    "step": 10
+  },
+  {
+    "label": "ATL · ADM",
+    "view": "er-onto",
+    "phase": "plan"
+  },
+  {
+    "label": "TARS",
+    "view": "er-onto",
+    "phase": "tars"
+  },
+  {
+    "label": "TARS · UI",
+    "view": "er-story",
+    "step": 15
+  },
+  {
+    "label": "iSAM",
+    "view": "er-story",
+    "step": 22
+  },
+  {
+    "label": "JUMP",
+    "view": "icu-return",
+    "phase": "onto"
+  },
+  {
+    "label": "TRIAGE",
+    "view": "icu-story",
+    "mode": "ward"
+  },
+  {
+    "label": "PRE-CATH",
+    "view": "icu-story",
+    "mode": "tars",
+    "seek": "bedside"
+  },
+  {
+    "label": "CATH",
+    "view": "cath-lab"
+  },
+  {
+    "label": "POST-CATH",
+    "view": "icu-continued"
+  },
+  {
+    "label": "OR",
+    "view": "or-room"
+  },
+  {
+    "label": "POST-OP 0",
+    "view": "icu-postop",
+    "pod": 0
+  },
+  {
+    "label": "POD 3",
+    "view": "icu-postop",
+    "seek": "pod3",
+    "pod": 3
+  },
+  {
+    "label": "POD 6",
+    "view": "icu-stepdown"
+  }
+]

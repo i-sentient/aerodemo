@@ -1,0 +1,115 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tars-app",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "tars-app",
+        "run",
+        "dev"
+      ],
+      "port": 5180
+    },
+    {
+      "name": "sentient-scene1",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "sentient-scene1",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5210",
+        "--strictPort"
+      ],
+      "port": 5210
+    },
+    {
+      "name": "sentient-ward",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "sentient-ward",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5300",
+        "--strictPort"
+      ],
+      "port": 5300
+    },
+    {
+      "name": "sentient-scene1-view",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "sentient-scene1",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5211",
+        "--strictPort"
+      ],
+      "port": 5211
+    },
+    {
+      "//": "5500 is the LIVE deck and is always already running. url-only =",
+      "//2": "attach, never spawn, so a preview can never fight it for the port.",
+      "name": "presentationAlpha",
+      "url": "http://localhost:5500/",
+      "port": 5500
+    },
+    {
+      "//": "Spawns the deck on its real port. The url-only entry above can only",
+      "//2": "ATTACH, so when 5500 is dead there was no way to bring it back --",
+      "//3": "and `npm run dev` with no flag silently took Vite's default 5173,",
+      "//4": "which is why the deck kept looking offline while it was running.",
+      "//5": "The dev script now pins --port 5500 --strictPort, so this cannot",
+      "//6": "drift again and a clash fails loudly instead of moving ports.",
+      "name": "presentationAlpha-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/xmaiselphx/presentationAlpha",
+        "run",
+        "dev"
+      ],
+      "//7": "url must be the bare origin -- the deck's base is /presentationAlpha/,",
+      "//8": "so navigate there after the preview opens.",
+      "port": 5500,
+      "url": "http://localhost:5500/"
+    },
+    {
+      "name": "presentationAlpha-view",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/xmaiselphx/presentationAlpha",
+        "run",
+        "dev"
+      ],
+      "port": 5501,
+      "autoPort": true
+    },
+    {
+      "name": "sentient-castle",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "sentient-castle",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5400",
+        "--strictPort"
+      ],
+      "port": 5400
+    }
+  ]
+}
